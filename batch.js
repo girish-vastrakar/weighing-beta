@@ -1,4 +1,4 @@
-/* ====== BETA: QR scanning, automatic batches and the job card ======
+/* ====== QR scanning, automatic batches and the job card ======
    Flow: scan the sample's QR → choose the test → W1, W2 as before.
    Saving W2 puts the sample in the next free slot of this machine's open batch for that test.
    A full batch (or one started early) is loaded by scanning the oven / furnace QR, ticking C for each slot in order.
@@ -315,7 +315,7 @@ function placeFromText(txt) {
 function codeFromText(txt) {
   const raw = String(txt).trim(), up = raw.toUpperCase();
   const codes = S.data ? S.data.samples.map(s => s.code) : [];
-  const hit = codes.find(c => c.toUpperCase() === up);
+  const hit = codes.find(c => c.toUpperCase() === up) || Object.keys(NAMES).find(c => c.toUpperCase() === up);
   if (hit) return hit;
   const byName = Object.keys(NAMES).find(c => String(NAMES[c].name || '').toUpperCase() === up);
   if (byName) return byName;
@@ -399,6 +399,8 @@ function onScan(txt, purpose, bid) {
   }
   const code = codeFromText(txt);
   if (!code) { S.modal = { type: 'addcode', code: String(txt).trim().toUpperCase().slice(0, 20) }; render(); return; }
+  // a code from the Name Tags sheet that has no weights yet joins the list by itself
+  if (!sample(code)) enqueue({ action: 'addCodes', codes: [code], worker: S.worker });
   S.code = code; S.view = 'sample'; S.walk = null; render();
 }
 function loadInto(b, p) {

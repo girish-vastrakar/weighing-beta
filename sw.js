@@ -1,6 +1,6 @@
 // Service worker for the weighing app.
 // Change VERSION whenever you upload a new index.html so phones pick it up.
-const VERSION = 'beta-v9';
+const VERSION = 'lab-v2';
 const SHELL = ['./', './index.html', './batch.js', './manifest.json',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png'];
 
@@ -10,7 +10,7 @@ self.addEventListener('install', e => {
 
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys()
-    .then(keys => Promise.all(keys.filter(k => k.startsWith('beta-') && k !== VERSION).map(k => caches.delete(k))))
+    .then(keys => Promise.all(keys.filter(k => /^(beta|lab)-/.test(k) && k !== VERSION).map(k => caches.delete(k))))
     .then(() => self.clients.claim()));
 });
 

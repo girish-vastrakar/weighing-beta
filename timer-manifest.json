@@ -1,6 +1,6 @@
 {
-  "name": "Lab Timer Beta",
-  "short_name": "Lab Timer Beta",
+  "name": "Lab Timer",
+  "short_name": "Lab Timer",
   "description": "Oven and furnace timers for proximate analysis, linked to the weighing data.",
   "id": "./timer.html",
   "start_url": "./timer.html",
@@ -8,7 +8,7 @@
   "display": "standalone",
   "orientation": "any",
   "background_color": "#eef2f4",
-  "theme_color": "#d9480f",
+  "theme_color": "#1f2a33",
   "icons": [
     {
       "src": "timer-icon-192.png",

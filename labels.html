@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>QR labels (Beta)</title>
+<title>QR labels</title>
 <style>
   :root { --ink: #1f2a33; --muted: #5a6872; --line: #d3dbe0; --base: #eef2f4; --surface: #fff; }
   body { margin: 0; background: var(--base); color: var(--ink); font: 16px/1.4 system-ui, sans-serif; }
@@ -32,7 +32,6 @@
 </style>
 </head>
 <body>
-<div class="betabar noprint" role="note" style="position:sticky;top:0;z-index:1000;background:#d9480f;color:#fff;font:600 13px/1.3 system-ui,sans-serif;text-align:center;padding:6px 12px">BETA · test data only · not the real lab results</div>
 <div class="wrap">
   <div class="noprint">
     <h1>QR labels</h1>
@@ -63,7 +62,7 @@ function make() {
   document.getElementById('samples').innerHTML = codes.map(c => label(c)).join('');
 }
 document.getElementById('places').innerHTML = PLACES.map(p => label(p)).join('');
-document.getElementById('codes').value = Array.from({ length: 20 }, (x, i) => 'Q' + String(i + 1).padStart(2, '0')).join(', ');
+document.getElementById('codes').value = '';
 document.getElementById('make').addEventListener('click', make);
 make();
 </script>

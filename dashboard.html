@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Lab timeline (Beta)</title>
+<title>Lab timeline</title>
 <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -81,7 +81,6 @@
 </style>
 </head>
 <body>
-<div class="betabar" role="note" style="position:sticky;top:0;z-index:1000;background:#d9480f;color:#fff;font:600 13px/1.3 system-ui,sans-serif;text-align:center;padding:6px 12px">BETA · test data only · not the real lab results</div>
 <div class="wrap" id="root"><div class="empty">Loading…</div></div>
 <div id="tip" hidden></div>
 
@@ -97,8 +96,8 @@ const TESTS = [
 ];
 const EQUIP = ['Oven', 'Furnace'];
 
-const store = { get: k => { try { return localStorage.getItem('beta:' + k) || ''; } catch (e) { return ''; } },
-                set: (k, v) => { try { localStorage.setItem('beta:' + k, v); } catch (e) {} } };
+const store = { get: k => { try { return localStorage.getItem('lab:' + k) || ''; } catch (e) { return ''; } },
+                set: (k, v) => { try { localStorage.setItem('lab:' + k, v); } catch (e) {} } };
 let KEY = store.get('ghkey');                      // shared with the app on the same phone / computer
 (function keyFromLink() {
   const m = location.hash.match(/key=([^&]+)/);

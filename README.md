@@ -1,3 +1,4 @@
 # weighing-beta
 
-Sandbox copy of the weighing app (Climitra/weighing) for trying new designs. It reads and writes test data in girish-vastrakar/weighing_data_QR, never the real weighing-data.
+The lab's proximate weighing app with QR scanning and automatic batches (job card).
+Saves to girish-vastrakar/weighing_data_QR. Pages: https://girish-vastrakar.github.io/weighing-beta/
