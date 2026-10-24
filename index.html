@@ -1779,6 +1779,7 @@ async function load(showToast) {
 function renderNotReady(err) {
   if (S.view === 'setup' || S.view === 'name') return;
   const t = T();
+  if (KEY && !err) { app.innerHTML = `<div class="empty">${esc(t.loading)}</div>`; return; }   // first load still on its way
   const msg = !KEY ? t.notSetUp : err && err.code === 'KEY' ? t.keyBad : t.loadFail + ' ' + (err && err.code === 'OFFLINE' ? t.offline : (err && err.message || ''));
   const askKey = !KEY || (err && err.code === 'KEY');      // no key, or a refused one: ask for it right here
   app.innerHTML = `<div class="empty">${esc(askKey ? (KEY ? 'The GitHub key was not accepted. Paste a new one.' : 'Paste the GitHub key to connect this phone.') : msg)}
