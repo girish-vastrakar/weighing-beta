@@ -36,8 +36,9 @@
   <div class="noprint">
     <h1>QR labels</h1>
     <p class="sub">Stick an oven or furnace label next to each door. Sample labels hold just the sample code, which is what the app reads.</p>
-    <label for="codes"><b>Sample codes</b> (one per line or separated by commas)</label>
-    <textarea id="codes"></textarea>
+    <label for="codes"><b>Sample codes</b></label>
+    <p class="sub" style="margin:2px 0 6px">One code (T45), a range (T45-T60), or several separated by commas.</p>
+    <textarea id="codes" placeholder="T01"></textarea>
     <div class="row">
       <button id="make">Make labels</button>
       <button class="primary" onclick="window.print()">Print</button>
@@ -57,8 +58,21 @@ function svg(text) {
   return q.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
 }
 const label = (text, title) => `<div class="lab">${svg(text)}<b>${esc(title || text)}</b></div>`;
+// Same rules as Setup → Add sample codes in the app: T45, T45-T60, or a list
+function parseCodes(txt) {
+  const out = [];
+  txt.toUpperCase().split(/[,;\s]+/).filter(Boolean).forEach(part => {
+    const m = part.match(/^([A-Z]*)(\d+)-([A-Z]*)(\d+)$/);
+    if (m) {
+      const a = +m[2], b = +m[4], w = m[2].length;
+      if (b - a > 500 || b < a) return;
+      for (let i = a; i <= b; i++) out.push(m[1] + String(i).padStart(w, '0'));
+    } else out.push(part);
+  });
+  return [...new Set(out)];
+}
 function make() {
-  const codes = document.getElementById('codes').value.split(/[\s,;]+/).map(c => c.trim().toUpperCase()).filter(Boolean);
+  const codes = parseCodes(document.getElementById('codes').value);
   document.getElementById('samples').innerHTML = codes.map(c => label(c)).join('');
 }
 document.getElementById('places').innerHTML = PLACES.map(p => label(p)).join('');
