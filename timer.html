@@ -136,8 +136,8 @@ const DEFAULT_MIN = { MC: 60, VM: 7, ASH: 60 };
 const SECTIONS = [
   { id: 'O1', name: 'Oven 1',    tests: { MC: 12 } },
   { id: 'O2', name: 'Oven 2',    tests: { MC: 12 } },
-  { id: 'F1', name: 'Furnace 1', tests: { VM: 18, ASH: 15 } },
-  { id: 'F2', name: 'Furnace 2', tests: { VM: 18, ASH: 15 } }
+  { id: 'F1', name: 'Furnace 1', tests: { VM: 18, ASH: 10 } },
+  { id: 'F2', name: 'Furnace 2', tests: { VM: 18, ASH: 10 } }
 ];
 const SNOOZE = [10, 15, 30];
 /* ====================== */
@@ -175,7 +175,10 @@ const L = {
     busyElsewhere: s => `${s} was just started on another device.`,
     conflictCancelled: s => `${s} was started on another device at the same moment. This timer was cancelled.`,
     clockOff: m => `This phone's clock is ${m} min off. Timers will look wrong on other devices. Fix Date & time in the phone settings.`,
-    keyTitle: 'Connect this device', keyText: 'Paste the same GitHub key used for the weighing app, or open the setup link with #key=… once.', connect: 'Connect' },
+    keyTitle: 'Connect this device', keyText: 'Paste the same GitHub key used for the weighing app, or open the setup link with #key=… once.', connect: 'Connect',
+    useApp: 'Timers start in the weighing app: scan this oven / furnace there to load a batch.', fromApp: no => `Batch ${no} · from the weighing app`,
+    batchesTitle: 'Batches being filled', batchesSub: 'From the weighing app. They go in when full (or started early) and the oven / furnace is scanned.',
+    fill: (n, c) => `${n} of ${c}`, readyToLoad: 'ready to load', stopAlarm: 'STOP alarm – taking out', w3Left: 'Still to weigh (W3):', slot: 'slot' },
   gu: { other: 'English', title: 'લેબ ટાઇમર', free: 'ખાલી', tapStart: 'શરૂ કરવા ટેપ કરો',
     test: { MC: 'ભેજ', VM: 'VM', ASH: 'રાખ' },
     readyAt: t => `${t} વાગ્યે તૈયાર`, samples: n => `${n} સેમ્પલ`, snoozed: (n, m) => `${n} વાર સ્નૂઝ · +${m} મિનિટ`,
@@ -205,7 +208,10 @@ const L = {
     busyElsewhere: s => `${s} હમણાં જ બીજા ડિવાઇસ પર શરૂ થયું છે.`,
     conflictCancelled: s => `${s} એ જ સમયે બીજા ડિવાઇસ પર શરૂ થયું હતું. આ ટાઇમર રદ થયું.`,
     clockOff: m => `આ ફોનની ઘડિયાળ ${m} મિનિટ ખોટી છે. બીજા ડિવાઇસ પર ટાઇમર ખોટા દેખાશે. ફોનના સેટિંગમાં તારીખ અને સમય સુધારો.`,
-    keyTitle: 'આ ડિવાઇસ જોડો', keyText: 'વજન એપ માટે વપરાયેલી GitHub કી અહીં નાખો.', connect: 'જોડો' }
+    keyTitle: 'આ ડિવાઇસ જોડો', keyText: 'વજન એપ માટે વપરાયેલી GitHub કી અહીં નાખો.', connect: 'જોડો',
+    useApp: 'ટાઇમર વજન એપમાં શરૂ થાય છે: બેચ લોડ કરવા ત્યાં આ ઓવન / ફર્નેસ સ્કેન કરો.', fromApp: no => `બેચ ${no} · વજન એપ માંથી`,
+    batchesTitle: 'ભરાતી બેચ', batchesSub: 'વજન એપ માંથી. ભરાઈ જાય (કે વહેલી શરૂ થાય) અને ઓવન / ફર્નેસ સ્કેન થાય ત્યારે અંદર જાય છે.',
+    fill: (n, c) => `${n} / ${c}`, readyToLoad: 'લોડ કરવા તૈયાર', stopAlarm: 'અલાર્મ બંધ – બહાર કાઢું છું', w3Left: 'W3 બાકી:', slot: 'ખાનું' }
 };
 const S = { lang: store.get('lang') || 'en', file: null, ts: null, loaded: 0, err: null,
             batches: (() => { try { return JSON.parse(store.get('timer-batches')) || []; } catch (e) { return []; } })(),
@@ -252,10 +258,26 @@ async function ghFile(path) {
   if (!res.ok) throw new Error('GitHub ' + res.status);
   return res.json();
 }
+// data.json is read every 15 s so a batch loaded in the weighing app shows here quickly; If-None-Match makes an
+// unchanged file a free 304. timestamps.json (only for "prepared by") is read once a minute.
+let DATATAG = '', tsAt = 0;
+async function ghData() {
+  const hdr = { Authorization: 'Bearer ' + KEY, Accept: 'application/vnd.github.raw+json' };
+  if (DATATAG && S.file) hdr['If-None-Match'] = DATATAG;
+  const res = await fetch(`https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${GH.data}?ref=${GH.branch}`, { cache: 'no-store', headers: hdr });
+  if (res.status === 304) return S.file;
+  if (res.status === 404) return {};
+  if (res.status === 401 || res.status === 403) throw Object.assign(new Error('key'), { key: true });
+  if (!res.ok) throw new Error('GitHub ' + res.status);
+  DATATAG = res.headers.get('ETag') || '';
+  return res.json();
+}
 async function load() {
   if (!KEY) { renderKey(); return; }
   try {
-    const [f, t] = await Promise.all([ghFile(GH.data), ghFile(GH.ts)]);
+    const needTs = !S.ts || Date.now() - tsAt > 55000;
+    const [f, t] = await Promise.all([ghData(), needTs ? ghFile(GH.ts) : Promise.resolve(S.ts)]);
+    if (needTs) tsAt = Date.now();
     S.file = f; S.ts = t; S.loaded = Date.now(); S.err = null;
     store.set('timer-cache', JSON.stringify({ f, t, at: S.loaded }));
   } catch (e) {
@@ -299,6 +321,7 @@ const key = (c, k) => c + '|' + k;
 function claimed() {
   const set = new Set();
   S.batches.forEach(b => b.samples.forEach(c => set.add(key(c, b.test))));
+  appAll().forEach(b => b.slots.forEach(c => set.add(key(c, b.test))));
   return set;
 }
 // W2 saved, no W3, not already in a batch. Oldest W2 first (ones from before the time log come first, by code).
@@ -317,6 +340,28 @@ function tidy() {
   S.batches = S.batches.filter(b => b.state !== 'out' || b.samples.some(c => stateOf(c, b.test) === 'w2'));
   if (S.batches.length !== before) saveBatches();
 }
+
+/* ---------- batches of the weighing app (data.json batches) ----------
+   A batch loaded into an oven / furnace in the weighing app is shown here as a running timer with its alarm.
+   The weighing app owns it: this page only reads it. Stopping or snoozing its alarm is kept on this device (MUTE). */
+const CAP = { MC: 12, VM: 18, ASH: 10 };
+let MUTE = (() => { try { return JSON.parse(store.get('timer-mute')) || {}; } catch (e) { return {}; } })();
+function saveMute() { const now = Date.now(); Object.keys(MUTE).forEach(k => { if (MUTE[k] < now - 86400000) delete MUTE[k]; }); store.set('timer-mute', JSON.stringify(MUTE)); }
+const appAll = () => Object.values((S.file && S.file.batches) || {});
+const slotLive = (b, i) => !(b.out && b.out[i]) && stateOf(b.slots[i], b.test) !== 'gone';
+// loaded and timed, with a sample still waiting for W3
+function appBatches() {
+  return appAll().filter(b => b.place && b.start && b.mins && SECTIONS.some(x => x.id === b.place))
+    .map(b => {
+      const samples = b.slots.filter((c, i) => slotLive(b, i));
+      return { id: 'app-' + b.bid, app: true, no: b.no, section: b.place, test: b.test, samples, start: b.start, end: b.start + b.mins * 60000,
+               planned: b.mins, snoozes: 0, snoozeMin: 0, state: 'run', events: [],
+               left: samples.filter(c => stateOf(c, b.test) === 'w2') };
+    })
+    .filter(b => b.left.length && Date.now() - b.end < ABANDONED_MS);
+}
+const live = () => S.batches.concat(appBatches());
+const muted = b => b.app && MUTE[b.id] > Date.now();
 
 /* ---------- timerlog.json: a permanent record of every batch ----------
    { "batches": { "<id>": { section, test, capacity, samples, plannedMin, started, ready, events, takenOut, actualMin, stoppedEarly, cancelled } } }
@@ -428,7 +473,7 @@ function applyShared(remote) {
   S.batches = list; saveBatches();
   settleDoubleStarts();
   tidy();
-  if (S.batches.some(b => b.state === 'run')) keepAwake();
+  if (live().some(b => b.state === 'run')) keepAwake();
 }
 
 // Two devices started the same section at the same moment: the earlier start keeps it, and the device that made the later one
@@ -476,7 +521,7 @@ async function clockCheck(w) {
 }
 
 /* ---------- timers ---------- */
-const sectionBatch = id => S.batches.find(b => b.section === id && b.state !== 'out');
+const sectionBatch = id => live().find(b => b.section === id && b.state !== 'out');
 function startBatch(sec, test, minutes, chosen) {
   const list = chosen ? chosen.slice(0, sec.tests[test]) : waiting(test).slice(0, sec.tests[test]);
   const now = Date.now();
@@ -546,7 +591,7 @@ async function keepAwake() {
   try { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } catch (e) {}
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible') { if (S.batches.some(b => b.state !== 'out')) keepAwake(); load(); pullShared(); }
+  if (document.visibilityState === 'visible') { if (live().some(b => b.state !== 'out')) keepAwake(); load(); pullShared(); }
 });
 
 /* ---------- screens ---------- */
@@ -569,7 +614,7 @@ function tileHTML(sec) {
       <span class="tag">${esc(t.test[b.test])} · ${esc(t.samples(b.samples.length))}</span>
       <span class="readout">${ringing ? '+' + countdown(-left) : countdown(left)}</span>
       <span class="bar"><i style="width:${pct}%"></i></span>
-      <span class="meta">${esc(t.readyAt(hm(b.end)))}${b.snoozes ? ' · ' + esc(t.snoozed(b.snoozes, b.snoozeMin)) : ''}</span></button>`;
+      <span class="meta">${esc(t.readyAt(hm(b.end)))}${b.snoozes ? ' · ' + esc(t.snoozed(b.snoozes, b.snoozeMin)) : ''}${b.app ? ' · ' + esc(t.fromApp(b.no)) : ''}</span></button>`;
 }
 
 function nextFree(k) {
@@ -581,23 +626,41 @@ function listsHTML() {
   const tests = ['MC', 'VM', 'ASH'];
   const wait = tests.map(k => ({ k, list: waiting(k) })).filter(x => x.list.length);
   const outs = S.batches.filter(b => b.state === 'out');
+  const filling = appAll().filter(b => !b.place && b.slots.length).sort((a, b) => a.made - b.made);
+  const w3 = appBatches().filter(b => b.end <= Date.now());
   return `<div class="lists">
+    ${filling.length ? `<div class="card"><h2>${esc(t.batchesTitle)}</h2><p class="sub">${esc(t.batchesSub)}</p>
+      ${filling.map(b => `<div class="grp" style="${cvar(b.test)}"><i></i>${esc(t.test[b.test])} · ${esc(b.no)}
+          <span class="meta" style="font-weight:400">${esc(t.fill(b.slots.length, CAP[b.test] || b.slots.length))}${b.ready || b.slots.length >= (CAP[b.test] || 0) ? ' · ' + esc(t.readyToLoad) : ''}</span></div>
+        <div class="codes">${b.slots.map((c, i) => `<span class="code">${i + 1}. ${esc(c)}</span>`).join('')}</div>`).join('')}</div>` : ''}
     <div class="card"><h2>${esc(t.waitingTitle)}</h2><p class="sub">${esc(t.waitingSub)}</p>
       ${wait.length ? wait.map(x => `<div class="grp" style="${cvar(x.k)}"><i></i>${esc(t.test[x.k])} · ${x.list.length}
           <span class="meta" style="font-weight:400">(${esc(nextFree(x.k))})</span></div>
         ${prepHTML(x.list, x.k, c => `<span class="code">${esc(c)}</span>`)}`).join('')
         : `<p class="none">${esc(t.nothingWaiting)}</p>`}</div>
     <div class="card"><h2>${esc(t.outTitle)}</h2><p class="sub">${esc(t.outSub)}</p>
+      ${w3.map(b => `<div class="grp" style="${cvar(b.test)}"><i></i>${esc(secName(b.section))} · ${esc(t.test[b.test])} · ${esc(b.no)}</div>
+        <div class="codes">${b.samples.map((c, i) => `<span class="code ${stateOf(c, b.test) !== 'w2' ? 'done' : ''}">${i + 1}. ${esc(c)}</span>`).join('')}</div>`).join('')}
       ${outs.length ? outs.map(b => `<div class="grp" style="${cvar(b.test)}"><i></i>${esc(secName(b.section))} · ${esc(t.test[b.test])}
           <span class="meta" style="font-weight:400">${esc(hm(b.out))}</span></div>
         ${prepHTML(b.samples, b.test, c => `<span class="code ${stateOf(c, b.test) !== 'w2' ? 'done' : ''}">${esc(c)}</span>`)}`).join('')
-        : `<p class="none">${esc(t.nothingOut)}</p>`}</div>
+        : w3.length ? '' : `<p class="none">${esc(t.nothingOut)}</p>`}</div>
   </div>`;
 }
 
 function sheetHTML() {
   const sh = S.sheet; if (!sh) return '';
   const t = T(), sec = SECTIONS.find(s => s.id === sh.sec), b = sectionBatch(sec.id);
+  if (b && b.app) {   // a weighing-app batch: details only, the weighing app runs it
+    return `<div class="modal" data-act="close-bg"><div class="sheet" style="${cvar(b.test)}" role="dialog" aria-modal="true">
+      <h3>${esc(secName(sec.id))} · ${esc(t.test[b.test])}</h3>
+      <p class="meta">${esc(t.fromApp(b.no))} · ${esc(t.started(hm(b.start)))} · ${esc(t.readyAt(hm(b.end)))}</p>
+      <div class="readout" id="sheet-cd" style="margin:10px 0">${countdown(b.end - Date.now())}</div>
+      <div class="goin"><b>${esc(t.inside)} (${b.samples.length} / ${sec.tests[b.test]})</b>
+        <div class="codes" style="margin-top:6px">${b.samples.map((c, i) => `<span class="code ${stateOf(c, b.test) !== 'w2' ? 'done' : ''}">${i + 1}. ${esc(c)}</span>`).join('')}</div></div>
+      <div class="btnrow"><button class="secondary" data-act="close">${esc(t.close)}</button></div>
+    </div></div>`;
+  }
   if (b) {   // running batch details
     return `<div class="modal" data-act="close-bg"><div class="sheet" style="${cvar(b.test)}" role="dialog" aria-modal="true">
       <h3>${esc(secName(sec.id))} · ${esc(t.test[b.test])}</h3>
@@ -648,7 +711,7 @@ function sheetHTML() {
 }
 
 function alarmHTML() {
-  const b = S.batches.filter(x => x.state === 'run' && x.end <= Date.now()).sort((a, c) => a.end - c.end)[0];
+  const b = live().filter(x => x.state === 'run' && x.end <= Date.now() && !muted(x)).sort((a, c) => a.end - c.end)[0];
   if (!b) { stopSound(); return ''; }
   ring();
   const t = T(), sec = SECTIONS.find(s => s.id === b.section), over = Math.floor((Date.now() - b.end) / 60000);
@@ -659,7 +722,7 @@ function alarmHTML() {
     ${b.samples.length ? `<div class="lbl">${esc(t.takeOut)}</div><div class="codes">${b.samples.map(c => `<span class="code">${esc(c)}</span>`).join('')}</div>` : ''}
     <div class="lbl">${esc(t.snoozeLbl)}</div>
     <div class="snz">${SNOOZE.map(m => `<button data-act="snooze" data-id="${b.id}" data-min="${m}">${m} ${esc(t.m)}</button>`).join('')}</div>
-    <button class="stop" data-act="takeout" data-id="${b.id}">${esc(t.stopOut)}</button>
+    <button class="stop" data-act="takeout" data-id="${b.id}">${esc(b.app ? t.stopAlarm : t.stopOut)}</button>
   </div></div>`;
 }
 
@@ -667,7 +730,7 @@ function render() {
   if (!KEY) { renderKey(); return; }
   const t = T();
   document.documentElement.lang = S.lang; document.title = t.title;
-  const active = S.batches.some(b => b.state === 'run');
+  const active = live().some(b => b.state === 'run');
   const soundBlocked = active && (!AC || AC.state !== 'running');
   // keep the half-typed time if the sheet is open
   app.innerHTML = `<header><h1>${esc(t.title)}</h1>
@@ -688,7 +751,7 @@ let lastSig = '';
 function tick() {
   const now = Date.now();
   // an end time, a snooze or the codes inside changing on another device redraws too; so do the two banners
-  const sig = S.batches.map(b => b.id + b.state + (b.end <= now) + b.end + b.snoozes + b.samples.length).join() + (S.sheet ? JSON.stringify(S.sheet) : '') + S.armed + (S.sharedErr >= 3) + S.clockOff;
+  const sig = live().map(b => b.id + b.state + (b.end <= now) + b.end + b.snoozes + b.samples.length + muted(b)).join() + (S.sheet ? JSON.stringify(S.sheet) : '') + S.armed + (S.sharedErr >= 3) + S.clockOff;
   if (sig !== lastSig || document.querySelector('.alarm')) {
     if (!document.activeElement || !['hh', 'mm', 'key', 'newcode'].includes(document.activeElement.id)) { lastSig = sig; render(); return; }
   }
@@ -743,6 +806,7 @@ document.addEventListener('click', e => {
     case 'sound': unlockAudio(); setTimeout(render, 200); break;
     case 'open': {
       const sec = SECTIONS.find(s => s.id === el.dataset.sec), first = Object.keys(sec.tests)[0];
+      if (!sectionBatch(sec.id)) { toast(T().useApp); break; }      // batches are started from the weighing app
       S.sheet = { sec: sec.id, test: first, min: DEFAULT_MIN[first], sel: waiting(first).slice(0, sec.tests[first]), extra: [] };
       S.armed = null; render(); break;
     }
@@ -796,8 +860,14 @@ document.addEventListener('click', e => {
       if (S.armed !== arm) { S.armed = arm; render(); setTimeout(() => { if (S.armed === arm) { S.armed = null; render(); } }, 4000); break; }
       resetBatch(b); S.sheet = null; S.armed = null; render(); break;
     }
-    case 'snooze': { const b = S.batches.find(x => x.id === el.dataset.id); if (b) snooze(b, +el.dataset.min); render(); break; }
-    case 'takeout': { const b = S.batches.find(x => x.id === el.dataset.id); if (b) takeOut(b); render(); break; }
+    case 'snooze': {
+      if (/^app-/.test(el.dataset.id)) { MUTE[el.dataset.id] = Date.now() + el.dataset.min * 60000; saveMute(); stopSound(); toast(T().snoozedTo(hm(MUTE[el.dataset.id]))); render(); break; }
+      const b = S.batches.find(x => x.id === el.dataset.id); if (b) snooze(b, +el.dataset.min); render(); break;
+    }
+    case 'takeout': {
+      if (/^app-/.test(el.dataset.id)) { MUTE[el.dataset.id] = Date.now() + 2 * ABANDONED_MS; saveMute(); stopSound(); render(); break; }
+      const b = S.batches.find(x => x.id === el.dataset.id); if (b) takeOut(b); render(); break;
+    }
   }
 });
 document.addEventListener('change', e => { if ((e.target.id === 'hh' || e.target.id === 'mm') && S.sheet) { S.sheet.min = readTime(); render(); } });
@@ -812,9 +882,9 @@ document.addEventListener('keydown', e => {
 })();
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});
 render(); load(); pullShared(); setTimeout(syncLog, 2000);
-if (S.batches.some(b => b.state !== 'out')) keepAwake();
+if (live().some(b => b.state !== 'out')) keepAwake();
 setInterval(tick, 1000);
-setInterval(() => { if (document.visibilityState === 'visible') load(); }, 60000);
+setInterval(() => { if (document.visibilityState === 'visible') load(); }, 15000);
 setInterval(() => { if (document.visibilityState === 'visible') pullShared(); }, SHARED_MS);
 </script>
 </body>
