@@ -1780,8 +1780,11 @@ function renderNotReady(err) {
   if (S.view === 'setup' || S.view === 'name') return;
   const t = T();
   const msg = !KEY ? t.notSetUp : err && err.code === 'KEY' ? t.keyBad : t.loadFail + ' ' + (err && err.code === 'OFFLINE' ? t.offline : (err && err.message || ''));
-  app.innerHTML = `<div class="empty">${esc(msg)}
+  const askKey = !KEY || (err && err.code === 'KEY');      // no key, or a refused one: ask for it right here
+  app.innerHTML = `<div class="empty">${esc(askKey ? (KEY ? 'The GitHub key was not accepted. Paste a new one.' : 'Paste the GitHub key to connect this phone.') : msg)}
     ${err && err.detail ? `<p style="font-size:.8rem;margin-top:14px">Details: ${esc(err.detail)}</p>` : ''}
+    ${askKey ? `<input class="field" id="key" type="password" autocomplete="off" placeholder="github_pat_…" style="margin:16px 0 8px">
+    <button class="primary wide" data-act="save-key">Connect</button>` : ''}
     <div class="btnrow" style="margin-top:20px"><button class="secondary" data-act="setup">⚙ Setup</button>
     <button class="secondary" data-act="refresh">${esc(t.tryAgain)}</button></div></div>`;
 }
