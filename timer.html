@@ -1,0 +1,822 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f2a33">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Lab Timer">
+<title>Lab Timer (Beta)</title>
+<link rel="manifest" href="timer-manifest.json">
+<link rel="icon" type="image/png" href="timer-icon-192.png">
+<link rel="apple-touch-icon" href="timer-icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Noto+Sans+Gujarati:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #1f2a33; --muted: #5a6872; --base: #eef2f4; --surface: #ffffff; --line: #d3dbe0;
+    --ok: #2e7d4f; --err: #b3261e; --warn: #9a5b00; --panel: #15212a; --digits: #e6f6ec;
+    --MC: #a8426b; --MC-bg: #f5e3eb; --VM: #3c7a2a; --VM-bg: #e1f0d8; --ASH: #574a9c; --ASH-bg: #e9e6f5;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--base); color: var(--ink);
+    font: 17px/1.4 'Atkinson Hyperlegible', 'Noto Sans Gujarati', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    -webkit-tap-highlight-color: transparent; }
+  button, input { font: inherit; color: inherit; }
+  button { cursor: pointer; }
+  :focus-visible { outline: 3px solid #2b6cb0; outline-offset: 2px; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 14px 16px 40px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 14px; }
+  header h1 { margin: 0; font-size: 1.35rem; }
+  .clock { font-variant-numeric: tabular-nums; color: var(--muted); font-weight: 700; }
+  .pill { background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 8px 14px; font-weight: 700; font-size: .9rem; }
+  .hb { display: flex; gap: 8px; align-items: center; }
+  .banner { background: #fff1b8; color: #7a5300; border: 2px solid #e0b300; border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; font-weight: 700; display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+  .banner button { border: 0; background: #7a5300; color: #fff; border-radius: 10px; padding: 10px 14px; font-weight: 700; }
+
+  /* four sections */
+  .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  @media (min-width: 900px) { .grid { grid-template-columns: repeat(4, 1fr); } }
+  .tile { position: relative; text-align: left; border: 2px solid var(--line); background: var(--surface); border-radius: 18px;
+          padding: 14px; min-height: 190px; display: flex; flex-direction: column; gap: 8px; }
+  .tile .name { font-size: 1.15rem; font-weight: 700; }
+  .tile .what { color: var(--muted); font-size: .92rem; }
+  .tile.free .state { margin-top: auto; color: var(--muted); font-weight: 700; }
+  .tile.free .startcue { display: inline-block; margin-top: 4px; padding: 10px 14px; border-radius: 12px; background: var(--ink); color: #fff; font-weight: 700; text-align: center; }
+  .tile.run { border-color: var(--c); }
+  .readout { background: var(--panel); color: var(--digits); border-radius: 12px; padding: 10px 12px; font-weight: 700;
+             font-size: 2.1rem; line-height: 1.1; font-variant-numeric: tabular-nums; letter-spacing: .02em; text-align: center; }
+  .tag { align-self: flex-start; padding: 3px 10px; border-radius: 8px; font-weight: 700; font-size: .85rem; background: var(--c-bg); color: var(--c); }
+  .meta { font-size: .88rem; color: var(--muted); }
+  .bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--c); }
+  .tile.ring { border-color: var(--err); animation: flash 1s steps(2) infinite; }
+  .tile.ring .readout { background: var(--err); color: #fff; }
+  @keyframes flash { 50% { background: #fde2e1; } }
+  @media (prefers-reduced-motion: reduce) { .tile.ring { animation: none; background: #fde2e1; } }
+
+  /* lists below */
+  .lists { display: grid; grid-template-columns: 1fr; gap: 12px; margin-top: 14px; }
+  @media (min-width: 900px) { .lists { grid-template-columns: 1fr 1fr; } }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; }
+  .card h2 { margin: 0 0 4px; font-size: 1.05rem; }
+  .card .sub { color: var(--muted); font-size: .88rem; margin: 0 0 10px; }
+  .grp { margin: 10px 0 4px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+  .grp i { width: 10px; height: 10px; border-radius: 3px; background: var(--c); }
+  .codes { display: flex; flex-wrap: wrap; gap: 6px; }
+  .code { padding: 4px 9px; border-radius: 8px; border: 1px solid var(--line); font-variant-numeric: tabular-nums; font-size: .92rem; }
+  .code.done { text-decoration: line-through; color: var(--muted); }
+  .none { color: var(--muted); }
+  .prep { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin: 8px 0 4px; font-size: .88rem; color: var(--muted); font-weight: 700; }
+  .prep .link { padding: 0; font-size: .88rem; }
+
+  /* sheets / dialogs */
+  .modal { position: fixed; inset: 0; background: rgba(20,30,38,.55); display: flex; align-items: flex-end; justify-content: center; z-index: 20; }
+  @media (min-width: 700px) { .modal { align-items: center; } }
+  .sheet { background: var(--surface); width: 100%; max-width: 560px; max-height: 92vh; overflow: auto;
+           border-radius: 20px 20px 0 0; padding: 20px 18px calc(18px + env(safe-area-inset-bottom)); }
+  @media (min-width: 700px) { .sheet { border-radius: 20px; } }
+  .sheet h3 { margin: 0 0 4px; font-size: 1.4rem; }
+  .seg { display: flex; gap: 8px; margin: 12px 0; }
+  .seg button { flex: 1; padding: 14px; border-radius: 12px; border: 2px solid var(--line); background: var(--surface); font-weight: 700; font-size: 1.05rem; }
+  .seg button[aria-pressed="true"] { border-color: var(--c); background: var(--c-bg); color: var(--c); }
+  .timeset { display: flex; align-items: center; justify-content: center; gap: 8px; background: var(--panel); color: var(--digits);
+             border-radius: 14px; padding: 12px; margin: 10px 0; }
+  .timeset input { width: 3.2ch; background: none; border: 0; border-bottom: 2px solid #4b5d68; color: var(--digits);
+                   font-weight: 700; font-size: 2.6rem; text-align: center; font-variant-numeric: tabular-nums; outline: none; }
+  .timeset span { font-size: 1rem; color: #9fb3bf; }
+  .adj { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .adj button { padding: 12px 0; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); font-weight: 700; }
+  .link { background: none; border: 0; text-decoration: underline; color: var(--muted); padding: 8px 0; font-weight: 700; }
+  .btnrow { display: flex; gap: 10px; margin-top: 14px; }
+  .primary { flex: 1; border: 0; border-radius: 14px; padding: 18px; font-weight: 700; font-size: 1.15rem; background: var(--c, var(--ink)); color: #fff; }
+  .secondary { flex: 1; border: 1px solid var(--line); border-radius: 14px; padding: 16px; font-weight: 700; background: var(--surface); }
+  .danger { background: var(--err) !important; color: #fff !important; border: 0 !important; }
+  .goin { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-top: 10px; }
+  .goin b { display: block; margin-bottom: 6px; }
+  .pick { padding: 9px 12px; border-radius: 10px; border: 2px solid var(--line); background: var(--surface); font-weight: 700;
+          font-variant-numeric: tabular-nums; min-width: 64px; }
+  .pick[aria-pressed="true"] { background: var(--c); border-color: var(--c); color: #fff; }
+  .pick[aria-pressed="false"] { color: var(--muted); text-decoration: line-through; }
+  .pick .x { margin-left: 6px; opacity: .8; }
+  .addrow { display: flex; gap: 8px; margin-top: 10px; }
+  .addrow input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font-weight: 700; text-transform: uppercase; }
+  .addrow button { border: 0; border-radius: 10px; padding: 10px 14px; background: var(--ink); color: #fff; font-weight: 700; }
+  .quick { display: flex; gap: 14px; margin-top: 6px; }
+  .warnbox { background: #fff1b8; color: #7a5300; border-radius: 10px; padding: 10px 12px; font-weight: 700; margin-top: 10px; }
+
+  /* alarm */
+  .alarm { position: fixed; inset: 0; z-index: 40; background: var(--err); color: #fff; display: flex; align-items: center; justify-content: center; padding: 18px; }
+  .alarm .box { width: 100%; max-width: 620px; text-align: center; }
+  .alarm .big { font-size: 2.3rem; font-weight: 700; line-height: 1.15; margin: 8px 0; }
+  .alarm .over { font-size: 1.2rem; font-weight: 700; opacity: .95; }
+  .alarm .codes { justify-content: center; margin: 14px 0 6px; }
+  .alarm .code { border-color: rgba(255,255,255,.6); color: #fff; font-size: 1.05rem; }
+  .alarm .snz { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 18px; }
+  .alarm .snz button { border: 2px solid #fff; background: transparent; color: #fff; border-radius: 14px; padding: 16px 0; font-weight: 700; font-size: 1.15rem; }
+  .alarm .stop { width: 100%; margin-top: 12px; border: 0; border-radius: 16px; padding: 22px; font-size: 1.35rem; font-weight: 700; background: #fff; color: var(--err); }
+  .alarm .lbl { margin-top: 16px; font-weight: 700; opacity: .9; }
+
+  .toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 24px; background: var(--ink); color: #fff; padding: 12px 18px; border-radius: 12px; z-index: 50; font-weight: 700; max-width: 92%; }
+  .keybox { max-width: 520px; margin: 40px auto; }
+  .keybox input { width: 100%; padding: 12px; border: 1px solid var(--line); border-radius: 12px; margin: 10px 0; }
+</style>
+</head>
+<body>
+<div class="betabar" role="note" style="position:sticky;top:0;z-index:1000;background:#d9480f;color:#fff;font:600 13px/1.3 system-ui,sans-serif;text-align:center;padding:6px 12px">BETA · test data only · not the real lab results</div>
+<div class="wrap" id="app"><p>Loading…</p></div>
+
+<script>
+/* ====== SETTINGS ====== */
+const GH = { owner: 'girish-vastrakar', repo: 'weighing_data_QR', branch: 'main', data: 'data.json', ts: 'timestamps.json', log: 'timerlog.json' };
+// Suggested times in minutes (the worker can change them on every start)
+const DEFAULT_MIN = { MC: 60, VM: 7, ASH: 60 };
+// The four sections: which tests they take and how many samples fit (the order is the order workers fill them)
+const SECTIONS = [
+  { id: 'O1', name: 'Oven 1',    tests: { MC: 12 } },
+  { id: 'O2', name: 'Oven 2',    tests: { MC: 12 } },
+  { id: 'F1', name: 'Furnace 1', tests: { VM: 18, ASH: 15 } },
+  { id: 'F2', name: 'Furnace 2', tests: { VM: 18, ASH: 15 } }
+];
+const SNOOZE = [10, 15, 30];
+/* ====================== */
+
+const TS_NAME = { MC: 'Moisture', VM: 'VM', ASH: 'Ash' };
+const store = { get: k => { try { return localStorage.getItem('beta:' + k) || ''; } catch (e) { return ''; } },
+                set: (k, v) => { try { localStorage.setItem('beta:' + k, v); } catch (e) {} } };
+const L = {
+  en: { other: 'ગુજરાતી', title: 'Lab Timer', free: 'Free', tapStart: 'Tap to start',
+    test: { MC: 'Moisture', VM: 'VM', ASH: 'Ash' },
+    readyAt: t => `ready at ${t}`, samples: n => `${n} sample${n === 1 ? '' : 's'}`, snoozed: (n, m) => `snoozed ${n}× · +${m} min`,
+    waitingTitle: 'Waiting to go in', waitingSub: 'W2 saved, not in an oven or furnace yet. Grouped by who prepared them (saved W2), oldest first.',
+    outTitle: 'Taken out: weigh W3', outSub: 'These leave the list when W3 is saved in the weighing app.',
+    prepBy: w => `Prepared by ${w}`, noPrep: 'Name not recorded', onlyThese: n => `Tick only these ${n}`,
+    nothingWaiting: 'Nothing waiting.', nothingOut: 'Nothing waiting for W3.', next: s => `next: ${s}`, allBusy: 'all sections busy',
+    startIn: s => `Start ${s}`, chooseTest: 'Which test is going in?', timeLbl: 'Timer', h: 'h', m: 'min',
+    suggested: m => `Suggested: ${fmtDur(m)}`, resetSugg: 'Back to suggested time',
+    goesIn: (n, cap) => `Going in: ${n} of max ${cap}`, extra: n => `${n} more will stay waiting for the next batch.`,
+    pickHelp: 'Oldest are ticked. Tap a code to take it out or put it back.', addPh: 'Add a code, e.g. T240', add: 'Add',
+    oldest: n => `Tick oldest ${n}`, clear: 'Untick all', full: cap => `Only ${cap} fit. Untick one first.`,
+    notWaiting: c => `${c} added (it has no W2 yet).`, already: c => `${c} is already in another batch.`,
+    editInside: 'Tap ✕ to remove a code that is not inside. Add one that is.', removed: c => `${c} removed.`,
+    noneWaiting: 'No samples with W2 are waiting for this test. You can still start the timer.',
+    start: 'Start timer', cancel: 'Cancel', close: 'Close',
+    running: 'Running', addTime: 'Add time', stopEarly: 'Stop early', confirmStop: 'Tap again to stop',
+    reset: 'Reset (started by mistake)', confirmReset: 'Tap again to reset', resetHelp: 'Cancels this timer. The samples go back to waiting and the batch is not counted.',
+    wasReset: s => `${s} reset. Samples are back in the waiting list.`,
+    started: t => `started ${t}`, inside: 'Inside',
+    ready: (s, t) => `${s} · ${t} is ready`, takeOut: 'Take out:', overdue: m => `${m} min over time`,
+    snoozeLbl: 'Snooze', stopOut: 'STOP – taken out', snoozedTo: t => `Snoozed. Rings again at ${t}.`,
+    soundOff: 'Alarm sound is off until you tap once.', soundOn: 'Turn on sound',
+    keepOpen: 'Keep this screen open. Alarms only ring while the app is on screen.',
+    offline: 'Could not reach the lab data. Showing the last list.', updated: t => `data ${t}`,
+    notShared: 'Could not reach the shared timers. Showing the last list. Timers keep running.',
+    busyElsewhere: s => `${s} was just started on another device.`,
+    conflictCancelled: s => `${s} was started on another device at the same moment. This timer was cancelled.`,
+    clockOff: m => `This phone's clock is ${m} min off. Timers will look wrong on other devices. Fix Date & time in the phone settings.`,
+    keyTitle: 'Connect this device', keyText: 'Paste the same GitHub key used for the weighing app, or open the setup link with #key=… once.', connect: 'Connect' },
+  gu: { other: 'English', title: 'લેબ ટાઇમર', free: 'ખાલી', tapStart: 'શરૂ કરવા ટેપ કરો',
+    test: { MC: 'ભેજ', VM: 'VM', ASH: 'રાખ' },
+    readyAt: t => `${t} વાગ્યે તૈયાર`, samples: n => `${n} સેમ્પલ`, snoozed: (n, m) => `${n} વાર સ્નૂઝ · +${m} મિનિટ`,
+    waitingTitle: 'અંદર મૂકવાના બાકી', waitingSub: 'W2 સેવ થયું છે, હજી ઓવન/ફર્નેસમાં નથી. કોણે તૈયાર કર્યા (W2 સેવ કર્યું) તે મુજબ, જૂના પહેલા.',
+    outTitle: 'બહાર કાઢ્યા: W3 નું વજન કરો', outSub: 'વજન એપમાં W3 સેવ થતાં યાદીમાંથી નીકળી જશે.',
+    prepBy: w => `તૈયાર કરનાર: ${w}`, noPrep: 'નામ નોંધાયું નથી', onlyThese: n => `ફક્ત આ ${n} પસંદ કરો`,
+    nothingWaiting: 'કંઈ બાકી નથી.', nothingOut: 'W3 માટે કંઈ બાકી નથી.', next: s => `હવે: ${s}`, allBusy: 'બધા વિભાગ ચાલુ છે',
+    startIn: s => `${s} શરૂ કરો`, chooseTest: 'કયો ટેસ્ટ અંદર જાય છે?', timeLbl: 'ટાઇમર', h: 'કલાક', m: 'મિનિટ',
+    suggested: m => `સૂચવેલ: ${fmtDur(m)}`, resetSugg: 'સૂચવેલ સમય પર પાછા',
+    goesIn: (n, cap) => `અંદર જશે: ${n} (વધુમાં વધુ ${cap})`, extra: n => `${n} બીજા આગલા બેચ માટે બાકી રહેશે.`,
+    pickHelp: 'જૂના પસંદ કરેલા છે. કોડ કાઢવા કે પાછો મૂકવા તેના પર ટેપ કરો.', addPh: 'કોડ ઉમેરો, દા.ત. T240', add: 'ઉમેરો',
+    oldest: n => `જૂના ${n} પસંદ કરો`, clear: 'બધા કાઢો', full: cap => `ફક્ત ${cap} જ આવે છે. પહેલા એક કાઢો.`,
+    notWaiting: c => `${c} ઉમેર્યો (હજી W2 નથી).`, already: c => `${c} બીજા બેચમાં છે.`,
+    editInside: 'અંદર ન હોય તે કોડ ✕ થી કાઢો. અંદર હોય તે ઉમેરો.', removed: c => `${c} કાઢ્યો.`,
+    noneWaiting: 'આ ટેસ્ટ માટે W2 વાળા કોઈ સેમ્પલ બાકી નથી. છતાં ટાઇમર શરૂ કરી શકો છો.',
+    start: 'ટાઇમર શરૂ કરો', cancel: 'રદ કરો', close: 'બંધ કરો',
+    running: 'ચાલુ', addTime: 'સમય ઉમેરો', stopEarly: 'વહેલું બંધ કરો', confirmStop: 'બંધ કરવા ફરી ટેપ કરો',
+    reset: 'રીસેટ (ભૂલથી શરૂ થયું)', confirmReset: 'રીસેટ કરવા ફરી ટેપ કરો', resetHelp: 'આ ટાઇમર રદ થશે. સેમ્પલ પાછા બાકીની યાદીમાં જશે અને આ બેચ ગણાશે નહીં.',
+    wasReset: s => `${s} રીસેટ થયું. સેમ્પલ પાછા બાકીની યાદીમાં છે.`,
+    started: t => `${t} વાગ્યે શરૂ`, inside: 'અંદર',
+    ready: (s, t) => `${s} · ${t} તૈયાર છે`, takeOut: 'બહાર કાઢો:', overdue: m => `${m} મિનિટ વધુ થઈ`,
+    snoozeLbl: 'સ્નૂઝ', stopOut: 'બંધ – બહાર કાઢ્યું', snoozedTo: t => `સ્નૂઝ થયું. ${t} વાગ્યે ફરી વાગશે.`,
+    soundOff: 'એક વાર ટેપ કરો ત્યાં સુધી અલાર્મનો અવાજ બંધ છે.', soundOn: 'અવાજ ચાલુ કરો',
+    keepOpen: 'આ સ્ક્રીન ખુલ્લી રાખો. એપ સ્ક્રીન પર હોય ત્યારે જ અલાર્મ વાગે છે.',
+    offline: 'લેબ ડેટા મળ્યો નથી. છેલ્લી યાદી દેખાય છે.', updated: t => `ડેટા ${t}`,
+    notShared: 'શેર થયેલા ટાઇમર મળ્યા નથી. છેલ્લી યાદી દેખાય છે. ટાઇમર ચાલુ રહે છે.',
+    busyElsewhere: s => `${s} હમણાં જ બીજા ડિવાઇસ પર શરૂ થયું છે.`,
+    conflictCancelled: s => `${s} એ જ સમયે બીજા ડિવાઇસ પર શરૂ થયું હતું. આ ટાઇમર રદ થયું.`,
+    clockOff: m => `આ ફોનની ઘડિયાળ ${m} મિનિટ ખોટી છે. બીજા ડિવાઇસ પર ટાઇમર ખોટા દેખાશે. ફોનના સેટિંગમાં તારીખ અને સમય સુધારો.`,
+    keyTitle: 'આ ડિવાઇસ જોડો', keyText: 'વજન એપ માટે વપરાયેલી GitHub કી અહીં નાખો.', connect: 'જોડો' }
+};
+const S = { lang: store.get('lang') || 'en', file: null, ts: null, loaded: 0, err: null,
+            batches: (() => { try { return JSON.parse(store.get('timer-batches')) || []; } catch (e) { return []; } })(),
+            sheet: null, armed: null,
+            sharedErr: 0,      // pulls of the shared timers that failed in a row
+            clockOff: 0,       // minutes this phone's clock is off from GitHub's (0 = fine)
+            starting: false };
+// This device's own id: it marks which device started a batch (so a double start can be settled by the device that made the later one)
+const DEV = store.get('timer-dev') || (() => { const v = Math.random().toString(36).slice(2, 8); store.set('timer-dev', v); return v; })();
+L.en.sec = { O1: 'Oven 1', O2: 'Oven 2', F1: 'Furnace 1', F2: 'Furnace 2' };
+L.gu.sec = { O1: 'ઓવન 1', O2: 'ઓવન 2', F1: 'ફર્નેસ 1', F2: 'ફર્નેસ 2' };
+const T = () => L[S.lang] || L.en;
+const secName = id => T().sec[id];
+const app = document.getElementById('app');
+let KEY = store.get('ghkey');
+(function keyFromLink() {
+  const m = location.hash.match(/key=([^&]+)/);
+  if (m) { KEY = decodeURIComponent(m[1]).trim(); store.set('ghkey', KEY); history.replaceState(null, '', location.pathname); }
+})();
+
+/* ---------- helpers ---------- */
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const p2 = n => String(n).padStart(2, '0');
+const hm = t => { const d = new Date(t); return `${p2(d.getHours())}:${p2(d.getMinutes())}`; };
+function fmtDur(min) { const h = Math.floor(min / 60), m = Math.round(min % 60); return h ? `${h} h${m ? ' ' + m + ' min' : ''}` : `${m} min`; }
+function countdown(ms) {
+  const s = Math.max(0, Math.ceil(ms / 1000)), h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), x = s % 60;
+  return h ? `${h}:${p2(m)}:${p2(x)}` : `${p2(m)}:${p2(x)}`;
+}
+const cvar = k => `--c:var(--${k});--c-bg:var(--${k}-bg)`;
+const codeNum = c => +((c.match(/\d+/) || [0])[0]);
+function saveBatches() { store.set('timer-batches', JSON.stringify(S.batches)); }
+function toast(msg) {
+  const el = document.createElement('div'); el.className = 'toast'; el.textContent = msg; el.setAttribute('role', 'status');
+  document.body.appendChild(el); setTimeout(() => el.remove(), 3500);
+}
+
+/* ---------- lab data (read only) ---------- */
+async function ghFile(path) {
+  const res = await fetch(`https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${path}?ref=${GH.branch}`,
+    { cache: 'no-store', headers: { Authorization: 'Bearer ' + KEY, Accept: 'application/vnd.github.raw+json' } });
+  if (res.status === 404) return {};
+  if (res.status === 401 || res.status === 403) throw Object.assign(new Error('key'), { key: true });
+  if (!res.ok) throw new Error('GitHub ' + res.status);
+  return res.json();
+}
+async function load() {
+  if (!KEY) { renderKey(); return; }
+  try {
+    const [f, t] = await Promise.all([ghFile(GH.data), ghFile(GH.ts)]);
+    S.file = f; S.ts = t; S.loaded = Date.now(); S.err = null;
+    store.set('timer-cache', JSON.stringify({ f, t, at: S.loaded }));
+  } catch (e) {
+    if (e.key) { renderKey(); return; }
+    S.err = e;
+  }
+  tidy(); render();
+}
+// state of one sample test in the weighing data
+function stateOf(code, k) {
+  const s = S.file && S.file.samples && S.file.samples[code];
+  if (!s || !s.w || !s.w[k]) return 'gone';
+  const w = s.w[k], pct = s.pct && s.pct[k];
+  if (w[2] != null || pct != null) return 'w3';
+  if (w[1] != null) return 'w2';
+  return 'gone';
+}
+function w2Time(code, k) {
+  const e = S.ts && S.ts[code] && S.ts[code][TS_NAME[k]] && S.ts[code][TS_NAME[k]].W2;
+  return e ? Date.parse(e.at) : null;
+}
+// Who prepared a sample for a test = whoever saved its W2 in the weighing app
+function prepBy(code, k) {
+  const e = S.ts && S.ts[code] && S.ts[code][TS_NAME[k]] && S.ts[code][TS_NAME[k]].W2;
+  return e && e.by && e.by !== 'Unknown' ? String(e.by).trim() : '';
+}
+const prepKey = w => w.toLowerCase().replace(/\s+/g, ' ');
+// Codes split by who prepared them, keeping the list order inside each group; names not recorded go last
+function byPrep(codes, k) {
+  const m = new Map();
+  codes.forEach(c => { const w = prepBy(c, k), id = prepKey(w);
+    if (!m.has(id)) m.set(id, { id, who: w, codes: [] }); m.get(id).codes.push(c); });
+  return [...m.values()].sort((a, b) => (a.id === '') - (b.id === ''));
+}
+function prepHTML(codes, k, chip, extra) {
+  const t = T();
+  return byPrep(codes, k).map(g => `<div class="prep"><span>${esc(g.who ? t.prepBy(g.who) : t.noPrep)} · ${g.codes.length}</span>${extra ? extra(g) : ''}</div>
+    <div class="codes">${g.codes.map(chip).join('')}</div>`).join('');
+}
+const key = (c, k) => c + '|' + k;
+function claimed() {
+  const set = new Set();
+  S.batches.forEach(b => b.samples.forEach(c => set.add(key(c, b.test))));
+  return set;
+}
+// W2 saved, no W3, not already in a batch. Oldest W2 first (ones from before the time log come first, by code).
+function waiting(k) {
+  if (!S.file || !S.file.codes) return [];
+  const cl = claimed();
+  return S.file.codes.filter(c => stateOf(c, k) === 'w2' && !cl.has(key(c, k)))
+    .map(c => ({ code: c, t: w2Time(c, k) }))
+    .sort((a, b) => (a.t == null ? -1 : 0) - (b.t == null ? -1 : 0) || (a.t || 0) - (b.t || 0) || codeNum(a.code) - codeNum(b.code))
+    .map(x => x.code);
+}
+// Taken-out batches disappear once every sample has W3 (or was reset in the weighing app)
+function tidy() {
+  if (!S.file || !S.file.codes) return;
+  const before = S.batches.length;
+  S.batches = S.batches.filter(b => b.state !== 'out' || b.samples.some(c => stateOf(c, b.test) === 'w2'));
+  if (S.batches.length !== before) saveBatches();
+}
+
+/* ---------- timerlog.json: a permanent record of every batch ----------
+   { "batches": { "<id>": { section, test, capacity, samples, plannedMin, started, ready, events, takenOut, actualMin, stoppedEarly, cancelled } } }
+   Kept on this device until GitHub has it, so nothing is lost if the internet drops. */
+const isoLocal = ms => { const d = new Date(ms), off = -d.getTimezoneOffset(), a = Math.abs(off);
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}T${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}${off >= 0 ? '+' : '-'}${p2(Math.floor(a / 60))}:${p2(a % 60)}`; };
+let LQ = (() => { try { return JSON.parse(store.get('timer-logq')) || {}; } catch (e) { return {}; } })();
+let logBusy = false, logTimer = null;
+function logEntry(b) {
+  const sec = SECTIONS.find(s => s.id === b.section);
+  return { id: b.id, sectionId: b.section, section: L.en.sec[b.section], test: b.test, testName: TS_NAME[b.test],
+    // expected = the app's oldest-first guess at Start; the dashboard confirms the real batch from the W3 times
+    capacity: sec.tests[b.test], expectedCount: b.samples.length, expected: b.samples, plannedMin: b.planned,
+    preparedBy: Object.fromEntries(b.samples.map(c => [c, prepBy(c, b.test) || null])),
+    started: isoLocal(b.start), ready: isoLocal(b.end),
+    events: (b.events || []).map(e => ({ type: e.type, at: isoLocal(e.at), min: e.min })),
+    takenOut: b.out ? isoLocal(b.out) : null, stoppedEarly: !!b.early,
+    actualMin: b.out ? Math.round((b.out - b.start) / 6000) / 10 : null,
+    // started by mistake and reset: kept as a record, but the dashboard leaves it out
+    cancelled: b.cancelled ? isoLocal(b.cancelled) : null,
+    // which device started it, and when this entry was last changed (the later change wins when two devices write at once)
+    device: b.device || null, updated: isoLocal(Date.now()) };
+}
+function logBatch(b) { LQ[b.id] = logEntry(b); store.set('timer-logq', JSON.stringify(LQ)); syncLog(); }
+const b64e = str => { const by = new TextEncoder().encode(str); let bin = ''; for (let i = 0; i < by.length; i += 0x8000) bin += String.fromCharCode.apply(null, by.subarray(i, i + 0x8000)); return btoa(bin); };
+const b64d = b64 => new TextDecoder().decode(Uint8Array.from(atob(b64.replace(/\s/g, '')), c => c.charCodeAt(0)));
+async function syncLog() {
+  clearTimeout(logTimer); logTimer = null;
+  if (logBusy || !KEY || !Object.keys(LQ).length) return;
+  logBusy = true;
+  const batch = Object.assign({}, LQ);
+  const url = `https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${GH.log}`;
+  const hdr = { Authorization: 'Bearer ' + KEY, Accept: 'application/vnd.github+json' };
+  try {
+    for (let attempt = 0; ; attempt++) {
+      const r = await fetch(url + '?ref=' + GH.branch, { cache: 'no-store', headers: hdr });
+      let file = { batches: {} }, sha;
+      if (r.ok) { const m = await r.json(); sha = m.sha;
+        file = m.content ? JSON.parse(b64d(m.content)) : await (await fetch(url + '?ref=' + GH.branch, { cache: 'no-store', headers: { ...hdr, Accept: 'application/vnd.github.raw+json' } })).json(); }
+      else if (r.status !== 404) throw new Error('GitHub ' + r.status);
+      file.batches = file.batches || {};
+      Object.values(batch).forEach(e => { file.batches[e.id] = mergeEntry(file.batches[e.id], e); });
+      const body = { message: `timer: ${Object.values(batch).map(e => `${e.section} ${e.testName}`).join(', ')}`, branch: GH.branch,
+                     content: b64e(JSON.stringify(file, null, 1)) };
+      if (sha) body.sha = sha;
+      const w = await fetch(url, { method: 'PUT', headers: { ...hdr, 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (w.ok) { await clockCheck(w); break; }
+      if ((w.status === 409 || w.status === 422) && attempt < 4) continue;   // saved elsewhere meanwhile: read again
+      throw new Error('GitHub ' + w.status);
+    }
+    Object.keys(batch).forEach(id => { if (JSON.stringify(LQ[id]) === JSON.stringify(batch[id])) delete LQ[id]; });
+    store.set('timer-logq', JSON.stringify(LQ));
+  } catch (e) { logTimer = setTimeout(syncLog, 30000); }
+  logBusy = false;
+  if (Object.keys(LQ).length && !logTimer) syncLog();
+}
+
+/* ---------- shared timers: timerlog.json is read back, so every device shows the same timers ----------
+   The running and the taken-out batches come from timerlog.json. Every action is written to it at once (logBatch), and every
+   device reads it again about every 10 s (the ETag makes a quiet poll free) and whenever the app comes to the front. This
+   device's own changes that GitHub does not have yet (timer-logq) win until they are written. The alarm itself stays local:
+   it rings on every device that has the app open, and stops on all of them once one device snoozes or takes the batch out. */
+const SHARED_MS = 10000, KEEP_OUT_MS = 7 * 86400000, ABANDONED_MS = 12 * 3600000;
+
+// Two devices writing one batch: the later change wins, the events of both are kept, and the two states a batch never leaves
+// (taken out, reset) stick, so a device that has not heard of them yet cannot bring the batch back.
+function mergeEntry(remote, mine) {
+  if (!remote) return mine;
+  const ms = e => (e && e.updated ? Date.parse(e.updated) : 0) || 0;
+  const out = Object.assign({}, ms(mine) >= ms(remote) ? mine : remote);
+  const seen = new Set(), events = [];
+  [].concat(remote.events || [], mine.events || []).forEach(x => { const k = x.type + '|' + x.at; if (!seen.has(k)) { seen.add(k); events.push(x); } });
+  out.events = events.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+  const gone = remote.cancelled ? remote : mine.cancelled ? mine : null;
+  if (gone) out.cancelled = gone.cancelled;
+  const taken = remote.takenOut ? remote : mine.takenOut ? mine : null;
+  if (taken) { out.takenOut = taken.takenOut; out.stoppedEarly = taken.stoppedEarly; out.actualMin = taken.actualMin; }
+  return out;
+}
+
+// a timerlog.json entry as the batch this page works with
+function fromEntry(e) {
+  const events = (e.events || []).map(x => ({ type: x.type, at: Date.parse(x.at), min: x.min }));
+  const sn = events.filter(x => x.type === 'snooze');
+  return { id: e.id, section: e.sectionId, test: e.test, samples: (e.expected || e.samples || []).slice(),
+    start: Date.parse(e.started), end: Date.parse(e.ready), planned: e.plannedMin, device: e.device || null,
+    snoozes: sn.length, snoozeMin: sn.reduce((a, x) => a + (x.min || 0), 0), events,
+    state: e.takenOut ? 'out' : 'run', early: !!e.stoppedEarly, out: e.takenOut ? Date.parse(e.takenOut) : null,
+    cancelled: e.cancelled ? Date.parse(e.cancelled) : null };
+}
+
+function applyShared(remote) {
+  const now = Date.now(), entries = Object.assign({}, remote);
+  Object.keys(LQ).forEach(id => { entries[id] = mergeEntry(remote[id], LQ[id]); });
+  // a batch this device has that GitHub never heard of (made before the timers were shared): hand it over
+  S.batches.forEach(b => { if (!entries[b.id] && !b.cancelled) { logBatch(b); entries[b.id] = LQ[b.id]; } });
+  const list = [];
+  Object.values(entries).forEach(e => {
+    if (!e || !e.id || !e.started || !e.ready || !SECTIONS.some(s => s.id === e.sectionId) || !TS_NAME[e.test]) return;
+    const b = fromEntry(e);
+    if (b.cancelled) return;                                               // reset by mistake: its samples are waiting again
+    if (b.state === 'out' && now - b.out > KEEP_OUT_MS) return;           // long gone
+    if (b.state === 'run' && now - b.end > ABANDONED_MS) return;          // left running and forgotten, not a live timer
+    list.push(b);
+  });
+  // earliest start first; the log keeps a start to the second, so a tie is settled by the id (it begins with the start in ms),
+  // the same way on every device
+  list.sort((a, c) => a.start - c.start || (a.id < c.id ? -1 : a.id > c.id ? 1 : 0));
+  S.batches = list; saveBatches();
+  settleDoubleStarts();
+  tidy();
+  if (S.batches.some(b => b.state === 'run')) keepAwake();
+}
+
+// Two devices started the same section at the same moment: the earlier start keeps it, and the device that made the later one
+// cancels it (so that two devices do not both write it).
+function settleDoubleStarts() {
+  const first = {};
+  S.batches.filter(b => b.state === 'run').forEach(b => {
+    if (!first[b.section]) { first[b.section] = b; return; }
+    if (b.device === DEV) resetBatch(b, T().conflictCancelled(secName(b.section)));
+  });
+}
+
+let LOGTAG = '', pullP = null;
+async function pullShared() {
+  if (!KEY) return;
+  if (pullP) await pullP;
+  const mine = pullP = (async () => {
+    try {
+      const hdr = { Authorization: 'Bearer ' + KEY, Accept: 'application/vnd.github.raw+json' };
+      if (LOGTAG) hdr['If-None-Match'] = LOGTAG;
+      const ctl = typeof AbortController === 'function' ? new AbortController() : null;
+      const to = ctl && setTimeout(() => ctl.abort(), 6000);
+      let res;
+      try { res = await fetch(`https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${GH.log}?ref=${GH.branch}`,
+        { cache: 'no-store', headers: hdr, signal: ctl ? ctl.signal : undefined }); }
+      finally { if (to) clearTimeout(to); }
+      if (res.status === 304) { S.sharedErr = 0; return; }                  // nothing changed since the last read
+      if (res.status === 404) { LOGTAG = ''; S.sharedErr = 0; applyShared({}); return; }
+      if (!res.ok) throw new Error('GitHub ' + res.status);
+      const tag = res.headers.get('ETag') || '', file = await res.json();
+      LOGTAG = tag; S.sharedErr = 0; applyShared((file && file.batches) || {});
+    } catch (e) { S.sharedErr++; }
+  })();
+  try { await mine; } finally { if (pullP === mine) pullP = null; }
+}
+
+// This phone's clock against GitHub's (the time of our own write): end times are absolute, so a wrong clock shows wrong countdowns elsewhere
+async function clockCheck(w) {
+  try {
+    const j = await w.json(), at = Date.parse(j.commit.committer.date);
+    if (!isFinite(at)) return;
+    const d = at - Date.now();
+    S.clockOff = Math.abs(d) > 90000 ? Math.round(d / 60000) : 0;
+  } catch (e) {}
+}
+
+/* ---------- timers ---------- */
+const sectionBatch = id => S.batches.find(b => b.section === id && b.state !== 'out');
+function startBatch(sec, test, minutes, chosen) {
+  const list = chosen ? chosen.slice(0, sec.tests[test]) : waiting(test).slice(0, sec.tests[test]);
+  const now = Date.now();
+  S.batches.push({ id: now.toString(36) + DEV.slice(0, 2), section: sec.id, test, samples: list, start: now, end: now + minutes * 60000,
+                   planned: minutes, snoozes: 0, snoozeMin: 0, state: 'run', events: [], device: DEV });
+  saveBatches(); unlockAudio(); keepAwake();
+  logBatch(S.batches[S.batches.length - 1]);
+}
+function addTime(b, min) {
+  b.end = Math.max(b.end, Date.now()) + min * 60000; (b.events = b.events || []).push({ type: 'add', at: Date.now(), min });
+  saveBatches(); logBatch(b);
+}
+function snooze(b, min) {
+  b.end = Date.now() + min * 60000; b.state = 'run'; b.snoozes++; b.snoozeMin += min;
+  (b.events = b.events || []).push({ type: 'snooze', at: Date.now(), min });
+  saveBatches(); logBatch(b);
+  stopSound(); toast(T().snoozedTo(hm(b.end)));
+}
+function takeOut(b) {
+  b.early = Date.now() < b.end; b.state = 'out'; b.out = Date.now();
+  saveBatches(); logBatch(b); stopSound(); tidy();
+}
+
+// Started by mistake: drop the batch so its samples are waiting again, and mark it cancelled in the log
+function resetBatch(b, msg) {
+  b.cancelled = Date.now(); (b.events = b.events || []).push({ type: 'reset', at: b.cancelled, min: 0 });
+  S.batches = S.batches.filter(x => x !== b);
+  saveBatches(); logBatch(b); stopSound();
+  toast(msg || T().wasReset(secName(b.section)));
+}
+
+// Starting reads the shared timers once more first: another device may just have started this section, or taken some of these samples
+async function startChecked(sec, test, minutes, chosen) {
+  if (S.starting) return; S.starting = true;
+  try {
+    await pullShared();
+    if (sectionBatch(sec.id)) { S.sheet = null; toast(T().busyElsewhere(secName(sec.id))); render(); return; }
+    const taken = claimed(), list = chosen.filter(c => !taken.has(key(c, test)));
+    if (list.length < chosen.length) toast(T().already(chosen.filter(c => taken.has(key(c, test))).join(', ')));
+    startBatch(sec, test, minutes, list); S.sheet = null; render();
+  } finally { S.starting = false; }
+}
+
+/* ---------- alarm sound, vibration, screen awake ---------- */
+let AC = null, soundTimer = null;
+function unlockAudio() {
+  try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === 'suspended') AC.resume(); } catch (e) {}
+}
+function beep(f, at, d) {
+  const o = AC.createOscillator(), g = AC.createGain();
+  o.type = 'square'; o.frequency.value = f; o.connect(g); g.connect(AC.destination);
+  g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.35, at + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, at + d);
+  o.start(at); o.stop(at + d + 0.02);
+}
+function ring() {
+  if (soundTimer) return;
+  const play = () => {
+    if (AC && AC.state === 'running') { const t = AC.currentTime; [0, .25, .5].forEach(o => beep(1046, t + o, .18)); beep(1318, t + .8, .35); }
+    if (navigator.vibrate) navigator.vibrate([400, 150, 400, 150, 700]);
+  };
+  play(); soundTimer = setInterval(play, 2500);
+}
+function stopSound() { clearInterval(soundTimer); soundTimer = null; if (navigator.vibrate) navigator.vibrate(0); }
+let wake = null;
+async function keepAwake() {
+  if (!('wakeLock' in navigator) || wake) return;
+  try { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } catch (e) {}
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') { if (S.batches.some(b => b.state !== 'out')) keepAwake(); load(); pullShared(); }
+});
+
+/* ---------- screens ---------- */
+function renderKey() {
+  const t = T();
+  app.innerHTML = `<div class="card keybox"><h2>${esc(t.keyTitle)}</h2><p class="sub">${esc(t.keyText)}</p>
+    <input id="key" type="password" placeholder="github_pat_…" autocomplete="off"><button class="primary" data-act="savekey">${esc(t.connect)}</button></div>`;
+}
+
+function tileHTML(sec) {
+  const t = T(), b = sectionBatch(sec.id), now = Date.now();
+  const accepts = Object.keys(sec.tests).map(k => `${t.test[k]} (${sec.tests[k]})`).join(' / ');
+  if (!b) return `<button class="tile free" data-act="open" data-sec="${sec.id}">
+      <span class="name">${esc(secName(sec.id))}</span><span class="what">${esc(accepts)}</span>
+      <span class="state">${esc(t.free)}</span><span class="startcue">${esc(t.tapStart)}</span></button>`;
+  const left = b.end - now, ringing = left <= 0;
+  const pct = Math.min(100, Math.max(0, (now - b.start) / (b.end - b.start) * 100));
+  return `<button class="tile run ${ringing ? 'ring' : ''}" style="${cvar(b.test)}" data-act="open" data-sec="${sec.id}">
+      <span class="name">${esc(secName(sec.id))}</span>
+      <span class="tag">${esc(t.test[b.test])} · ${esc(t.samples(b.samples.length))}</span>
+      <span class="readout">${ringing ? '+' + countdown(-left) : countdown(left)}</span>
+      <span class="bar"><i style="width:${pct}%"></i></span>
+      <span class="meta">${esc(t.readyAt(hm(b.end)))}${b.snoozes ? ' · ' + esc(t.snoozed(b.snoozes, b.snoozeMin)) : ''}</span></button>`;
+}
+
+function nextFree(k) {
+  const s = SECTIONS.find(sec => sec.tests[k] && !sectionBatch(sec.id));
+  return s ? T().next(secName(s.id)) : T().allBusy;
+}
+function listsHTML() {
+  const t = T();
+  const tests = ['MC', 'VM', 'ASH'];
+  const wait = tests.map(k => ({ k, list: waiting(k) })).filter(x => x.list.length);
+  const outs = S.batches.filter(b => b.state === 'out');
+  return `<div class="lists">
+    <div class="card"><h2>${esc(t.waitingTitle)}</h2><p class="sub">${esc(t.waitingSub)}</p>
+      ${wait.length ? wait.map(x => `<div class="grp" style="${cvar(x.k)}"><i></i>${esc(t.test[x.k])} · ${x.list.length}
+          <span class="meta" style="font-weight:400">(${esc(nextFree(x.k))})</span></div>
+        ${prepHTML(x.list, x.k, c => `<span class="code">${esc(c)}</span>`)}`).join('')
+        : `<p class="none">${esc(t.nothingWaiting)}</p>`}</div>
+    <div class="card"><h2>${esc(t.outTitle)}</h2><p class="sub">${esc(t.outSub)}</p>
+      ${outs.length ? outs.map(b => `<div class="grp" style="${cvar(b.test)}"><i></i>${esc(secName(b.section))} · ${esc(t.test[b.test])}
+          <span class="meta" style="font-weight:400">${esc(hm(b.out))}</span></div>
+        ${prepHTML(b.samples, b.test, c => `<span class="code ${stateOf(c, b.test) !== 'w2' ? 'done' : ''}">${esc(c)}</span>`)}`).join('')
+        : `<p class="none">${esc(t.nothingOut)}</p>`}</div>
+  </div>`;
+}
+
+function sheetHTML() {
+  const sh = S.sheet; if (!sh) return '';
+  const t = T(), sec = SECTIONS.find(s => s.id === sh.sec), b = sectionBatch(sec.id);
+  if (b) {   // running batch details
+    return `<div class="modal" data-act="close-bg"><div class="sheet" style="${cvar(b.test)}" role="dialog" aria-modal="true">
+      <h3>${esc(secName(sec.id))} · ${esc(t.test[b.test])}</h3>
+      <p class="meta">${esc(t.started(hm(b.start)))} · ${esc(t.readyAt(hm(b.end)))}${b.snoozes ? ' · ' + esc(t.snoozed(b.snoozes, b.snoozeMin)) : ''}</p>
+      <div class="readout" id="sheet-cd" style="margin:10px 0">${countdown(b.end - Date.now())}</div>
+      <div class="goin"><b>${esc(t.inside)} (${b.samples.length} / ${sec.tests[b.test]})</b>
+        <p class="meta" style="margin:0 0 8px">${esc(t.editInside)}</p>
+        ${b.samples.length ? prepHTML(b.samples, b.test, c => `<button class="pick" aria-pressed="true" data-act="rm-inside" data-code="${esc(c)}">${esc(c)}<span class="x" aria-hidden="true">✕</span></button>`) : '–'}
+        ${waiting(b.test).length ? `<div class="codes" style="margin-top:8px">${waiting(b.test).slice(0, 24).map(c =>
+            `<button class="pick" aria-pressed="false" style="text-decoration:none" data-act="add-inside" data-code="${esc(c)}">+ ${esc(c)}</button>`).join('')}</div>` : ''}
+        <div class="addrow"><input id="newcode" placeholder="${esc(t.addPh)}" autocomplete="off" autocapitalize="characters"><button data-act="addcode">${esc(t.add)}</button></div>
+      </div>
+      <p style="font-weight:700;margin:14px 0 6px">${esc(t.addTime)}</p>
+      <div class="adj" style="grid-template-columns:repeat(3,1fr)">${SNOOZE.map(m => `<button data-act="add" data-min="${m}">+${m} ${esc(t.m)}</button>`).join('')}</div>
+      <div class="btnrow"><button class="secondary" data-act="close">${esc(t.close)}</button>
+        <button class="secondary danger" data-act="stop-early">${esc(S.armed === b.id ? t.confirmStop : t.stopEarly)}</button></div>
+      <button class="secondary" style="width:100%;margin-top:10px;${S.armed === 'reset' + b.id ? 'border-color:var(--err);color:var(--err)' : ''}" data-act="reset">${esc(S.armed === 'reset' + b.id ? t.confirmReset : t.reset)}</button>
+      <p class="meta" style="margin:6px 0 0">${esc(t.resetHelp)}</p>
+    </div></div>`;
+  }
+  // start a new batch
+  const tests = Object.keys(sec.tests), test = sh.test || tests[0];
+  const list = waiting(test), cap = sec.tests[test];
+  const shown = list.concat(sh.extra.filter(c => !list.includes(c)));          // waiting codes + ones typed in
+  return `<div class="modal" data-act="close-bg"><div class="sheet" style="${cvar(test)}" role="dialog" aria-modal="true">
+    <h3>${esc(t.startIn(secName(sec.id)))}</h3>
+    ${tests.length > 1 ? `<p class="meta">${esc(t.chooseTest)}</p><div class="seg">${tests.map(k =>
+        `<button style="${cvar(k)}" data-act="pick" data-test="${k}" aria-pressed="${k === test}">${esc(t.test[k])}</button>`).join('')}</div>` : ''}
+    <p style="font-weight:700;margin:12px 0 0">${esc(t.timeLbl)} · <span class="meta">${esc(t.suggested(DEFAULT_MIN[test]))}</span></p>
+    <div class="timeset">
+      <input id="hh" inputmode="numeric" maxlength="2" value="${Math.floor(sh.min / 60)}" aria-label="${esc(t.h)}"><span>${esc(t.h)}</span>
+      <input id="mm" inputmode="numeric" maxlength="2" value="${p2(sh.min % 60)}" aria-label="${esc(t.m)}"><span>${esc(t.m)}</span>
+    </div>
+    <div class="adj">${[-5, -1, 1, 5, 10, 30].map(d => `<button data-act="adj" data-d="${d}">${d > 0 ? '+' : '−'}${Math.abs(d)}</button>`).join('')}</div>
+    ${sh.min !== DEFAULT_MIN[test] ? `<button class="link" data-act="sugg">${esc(t.resetSugg)}</button>` : ''}
+    <div class="goin"><b>${esc(t.goesIn(sh.sel.length, cap))}</b>
+      ${shown.length ? `<p class="meta" style="margin:0 0 8px">${esc(t.pickHelp)}</p>
+        ${prepHTML(shown, test, c => `<button class="pick" data-act="toggle" data-code="${esc(c)}" aria-pressed="${sh.sel.includes(c)}">${esc(c)}</button>`,
+            g => `<button class="link" data-act="prep-only" data-who="${esc(g.id)}">${esc(t.onlyThese(Math.min(cap, g.codes.length)))}</button>`)}
+        <div class="quick"><button class="link" data-act="oldest">${esc(t.oldest(Math.min(cap, shown.length)))}</button><button class="link" data-act="clearsel">${esc(t.clear)}</button></div>`
+        : `<div class="warnbox" style="margin-top:0">${esc(t.noneWaiting)}</div>`}
+      <div class="addrow"><input id="newcode" placeholder="${esc(t.addPh)}" autocomplete="off" autocapitalize="characters"><button data-act="addcode">${esc(t.add)}</button></div>
+      ${shown.length - sh.sel.length > 0 ? `<p class="meta" style="margin:8px 0 0">${esc(t.extra(shown.length - sh.sel.length))}</p>` : ''}
+    </div>
+    <div class="btnrow"><button class="secondary" data-act="close">${esc(t.cancel)}</button>
+      <button class="primary" data-act="start" ${sh.min < 1 ? 'disabled' : ''}>${esc(t.start)}</button></div>
+  </div></div>`;
+}
+
+function alarmHTML() {
+  const b = S.batches.filter(x => x.state === 'run' && x.end <= Date.now()).sort((a, c) => a.end - c.end)[0];
+  if (!b) { stopSound(); return ''; }
+  ring();
+  const t = T(), sec = SECTIONS.find(s => s.id === b.section), over = Math.floor((Date.now() - b.end) / 60000);
+  return `<div class="alarm" role="alertdialog" aria-modal="true"><div class="box">
+    <div style="font-size:3rem" aria-hidden="true">🔔</div>
+    <div class="big">${esc(t.ready(secName(sec.id), t.test[b.test]))}</div>
+    ${over > 0 ? `<div class="over">${esc(t.overdue(over))}</div>` : ''}
+    ${b.samples.length ? `<div class="lbl">${esc(t.takeOut)}</div><div class="codes">${b.samples.map(c => `<span class="code">${esc(c)}</span>`).join('')}</div>` : ''}
+    <div class="lbl">${esc(t.snoozeLbl)}</div>
+    <div class="snz">${SNOOZE.map(m => `<button data-act="snooze" data-id="${b.id}" data-min="${m}">${m} ${esc(t.m)}</button>`).join('')}</div>
+    <button class="stop" data-act="takeout" data-id="${b.id}">${esc(t.stopOut)}</button>
+  </div></div>`;
+}
+
+function render() {
+  if (!KEY) { renderKey(); return; }
+  const t = T();
+  document.documentElement.lang = S.lang; document.title = t.title;
+  const active = S.batches.some(b => b.state === 'run');
+  const soundBlocked = active && (!AC || AC.state !== 'running');
+  // keep the half-typed time if the sheet is open
+  app.innerHTML = `<header><h1>${esc(t.title)}</h1>
+      <div class="hb"><span class="clock" id="clock">${hm(Date.now())}</span>
+      <button class="pill" data-act="lang">${esc(t.other)}</button></div></header>
+    ${soundBlocked ? `<div class="banner"><span>${esc(t.soundOff)}</span><button data-act="sound">${esc(t.soundOn)}</button></div>` : ''}
+    ${S.err ? `<div class="banner" style="background:#fde2e1;color:var(--err);border-color:var(--err)"><span>${esc(t.offline)}</span></div>` : ''}
+    ${S.sharedErr >= 3 ? `<div class="banner" style="background:#fde2e1;color:var(--err);border-color:var(--err)"><span>${esc(t.notShared)}</span></div>` : ''}
+    ${S.clockOff ? `<div class="banner"><span>${esc(t.clockOff(Math.abs(S.clockOff)))}</span></div>` : ''}
+    <div class="grid">${SECTIONS.map(tileHTML).join('')}</div>
+    ${listsHTML()}
+    <p class="meta" style="margin-top:14px">${esc(t.keepOpen)} ${S.loaded ? '· ' + esc(t.updated(hm(S.loaded))) : ''}</p>
+    ${sheetHTML()}${alarmHTML()}`;
+}
+
+// Once a second: update the numbers in place; redraw fully only when something changes state
+let lastSig = '';
+function tick() {
+  const now = Date.now();
+  // an end time, a snooze or the codes inside changing on another device redraws too; so do the two banners
+  const sig = S.batches.map(b => b.id + b.state + (b.end <= now) + b.end + b.snoozes + b.samples.length).join() + (S.sheet ? JSON.stringify(S.sheet) : '') + S.armed + (S.sharedErr >= 3) + S.clockOff;
+  if (sig !== lastSig || document.querySelector('.alarm')) {
+    if (!document.activeElement || !['hh', 'mm', 'key', 'newcode'].includes(document.activeElement.id)) { lastSig = sig; render(); return; }
+  }
+  document.getElementById('clock') && (document.getElementById('clock').textContent = hm(now));
+  document.querySelectorAll('.tile.run').forEach(el => {
+    const b = sectionBatch(el.dataset.sec); if (!b) return;
+    const left = b.end - now;
+    el.querySelector('.readout').textContent = left <= 0 ? '+' + countdown(-left) : countdown(left);
+    el.querySelector('.bar i').style.width = Math.min(100, Math.max(0, (now - b.start) / (b.end - b.start) * 100)) + '%';
+  });
+  const cd = document.getElementById('sheet-cd');
+  if (cd && S.sheet) { const b = sectionBatch(S.sheet.sec); if (b) cd.textContent = countdown(b.end - now); }
+}
+
+/* ---------- adding a code by hand ---------- */
+function addCode() {
+  const inp = document.getElementById('newcode'); if (!inp) return;
+  const c = inp.value.trim().toUpperCase().replace(/\s+/g, ''); if (!c) return;
+  const sh = S.sheet, running = sectionBatch(sh.sec), test = running ? running.test : sh.test;
+  const cap = SECTIONS.find(s => s.id === sh.sec).tests[test];
+  const other = S.batches.find(b => b !== running && b.test === test && b.samples.includes(c) && b.state !== 'out');
+  if (other) { toast(T().already(c)); return; }
+  if (running) {
+    if (running.samples.includes(c)) return;
+    if (running.samples.length >= cap) { toast(T().full(cap)); return; }
+    running.samples.push(c); (running.events = running.events || []).push({ type: 'edit', at: Date.now(), min: 0 });
+    saveBatches(); logBatch(running);
+  } else {
+    if (sh.sel.includes(c)) return;
+    if (sh.sel.length >= cap) { toast(T().full(cap)); return; }
+    if (!waiting(test).includes(c) && !sh.extra.includes(c)) sh.extra.push(c);
+    sh.sel.push(c);
+  }
+  if (stateOf(c, test) !== 'w2') toast(T().notWaiting(c));
+  render();
+  const again = document.getElementById('newcode'); if (again) again.focus();
+}
+
+/* ---------- taps ---------- */
+function readTime() {
+  const h = parseInt(document.getElementById('hh').value, 10) || 0, m = parseInt(document.getElementById('mm').value, 10) || 0;
+  return Math.max(0, Math.min(48 * 60, h * 60 + m));
+}
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]'); if (!el) return;
+  if (el.dataset.act === 'close-bg' && e.target !== el) return;   // only the dark background closes the sheet
+  unlockAudio();
+  const sh = S.sheet;
+  switch (el.dataset.act) {
+    case 'savekey': { const v = document.getElementById('key').value.trim(); if (v) { KEY = v; store.set('ghkey', v); load(); pullShared(); } break; }
+    case 'lang': S.lang = S.lang === 'en' ? 'gu' : 'en'; store.set('lang', S.lang); render(); break;
+    case 'sound': unlockAudio(); setTimeout(render, 200); break;
+    case 'open': {
+      const sec = SECTIONS.find(s => s.id === el.dataset.sec), first = Object.keys(sec.tests)[0];
+      S.sheet = { sec: sec.id, test: first, min: DEFAULT_MIN[first], sel: waiting(first).slice(0, sec.tests[first]), extra: [] };
+      S.armed = null; render(); break;
+    }
+    case 'close': case 'close-bg': S.sheet = null; S.armed = null; render(); break;
+    case 'pick': {
+      const sec = SECTIONS.find(s => s.id === sh.sec);
+      sh.test = el.dataset.test; sh.min = DEFAULT_MIN[sh.test]; sh.sel = waiting(sh.test).slice(0, sec.tests[sh.test]); sh.extra = []; render(); break;
+    }
+    case 'toggle': {             // tick / untick a code on the start screen
+      const c = el.dataset.code, cap = SECTIONS.find(s => s.id === sh.sec).tests[sh.test];
+      if (sh.sel.includes(c)) sh.sel = sh.sel.filter(x => x !== c);
+      else if (sh.sel.length >= cap) { toast(T().full(cap)); break; }
+      else sh.sel.push(c);
+      render(); break;
+    }
+    case 'oldest': { const cap = SECTIONS.find(s => s.id === sh.sec).tests[sh.test];
+      sh.sel = waiting(sh.test).concat(sh.extra).slice(0, cap); render(); break; }
+    case 'clearsel': sh.sel = []; render(); break;
+    case 'prep-only': {          // tick just the samples one person prepared
+      const cap = SECTIONS.find(s => s.id === sh.sec).tests[sh.test];
+      sh.sel = waiting(sh.test).concat(sh.extra).filter(c => prepKey(prepBy(c, sh.test)) === el.dataset.who).slice(0, cap); render(); break;
+    }
+    case 'addcode': addCode(); break;
+    case 'rm-inside': {          // remove a code from a running batch
+      const b = sectionBatch(sh.sec); if (!b) break;
+      b.samples = b.samples.filter(x => x !== el.dataset.code); (b.events = b.events || []).push({ type: 'edit', at: Date.now(), min: 0 });
+      saveBatches(); logBatch(b); toast(T().removed(el.dataset.code)); render(); break;
+    }
+    case 'add-inside': {         // add a waiting code to a running batch
+      const b = sectionBatch(sh.sec); if (!b) break;
+      const cap = SECTIONS.find(s => s.id === sh.sec).tests[b.test];
+      if (b.samples.length >= cap) { toast(T().full(cap)); break; }
+      b.samples.push(el.dataset.code); (b.events = b.events || []).push({ type: 'edit', at: Date.now(), min: 0 });
+      saveBatches(); logBatch(b); render(); break;
+    }
+    case 'adj': sh.min = Math.max(0, readTime() + +el.dataset.d); render(); break;
+    case 'sugg': sh.min = DEFAULT_MIN[sh.test]; render(); break;
+    case 'start': {
+      sh.min = readTime(); if (sh.min < 1) return;
+      startChecked(SECTIONS.find(s => s.id === sh.sec), sh.test, sh.min, sh.sel.slice()); break;
+    }
+    case 'add': { const b = sectionBatch(sh.sec); if (b) addTime(b, +el.dataset.min); render(); break; }
+    case 'stop-early': {
+      const b = sectionBatch(sh.sec); if (!b) break;
+      if (S.armed !== b.id) { S.armed = b.id; render(); setTimeout(() => { if (S.armed === b.id) { S.armed = null; render(); } }, 4000); break; }
+      takeOut(b); S.sheet = null; S.armed = null; render(); break;
+    }
+    case 'reset': {
+      const b = sectionBatch(sh.sec); if (!b) break;
+      const arm = 'reset' + b.id;
+      if (S.armed !== arm) { S.armed = arm; render(); setTimeout(() => { if (S.armed === arm) { S.armed = null; render(); } }, 4000); break; }
+      resetBatch(b); S.sheet = null; S.armed = null; render(); break;
+    }
+    case 'snooze': { const b = S.batches.find(x => x.id === el.dataset.id); if (b) snooze(b, +el.dataset.min); render(); break; }
+    case 'takeout': { const b = S.batches.find(x => x.id === el.dataset.id); if (b) takeOut(b); render(); break; }
+  }
+});
+document.addEventListener('change', e => { if ((e.target.id === 'hh' || e.target.id === 'mm') && S.sheet) { S.sheet.min = readTime(); render(); } });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && S.sheet) { S.sheet = null; render(); }
+  if (e.key === 'Enter' && e.target.id === 'newcode') addCode();
+});
+
+/* ---------- start ---------- */
+(function fromCache() {
+  try { const c = JSON.parse(store.get('timer-cache')); if (c) { S.file = c.f; S.ts = c.t; S.loaded = c.at; } } catch (e) {}
+})();
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});
+render(); load(); pullShared(); setTimeout(syncLog, 2000);
+if (S.batches.some(b => b.state !== 'out')) keepAwake();
+setInterval(tick, 1000);
+setInterval(() => { if (document.visibilityState === 'visible') load(); }, 60000);
+setInterval(() => { if (document.visibilityState === 'visible') pullShared(); }, SHARED_MS);
+</script>
+</body>
+</html>

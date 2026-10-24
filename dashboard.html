@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab timeline (Beta)</title>
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #eef2f4; --surface: #ffffff; --ink: #1f2a33; --ink2: #4a5964; --muted: #6b7a85; --line: #d3dbe0; --grid: #e9eef1;
+    --now: #c0392b; --weigh: #b9c4cc;
+    --MC: #a8426b; --VM: #3c7a2a; --ASH: #574a9c; --TM: #b0432d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12191e; --surface: #1b242b; --ink: #e6edf1; --ink2: #b6c3cc; --muted: #8a9aa5; --line: #2e3a43; --grid: #243038;
+      --now: #ff6b5b; --weigh: #4a5862;
+      --MC: #e07aa0; --VM: #79bb63; --ASH: #a497e6; --TM: #ee8466;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.45 'Atkinson Hyperlegible', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+  button, select, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 3px solid #2b6cb0; outline-offset: 2px; }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 16px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; margin-bottom: 14px; }
+  h1 { font-size: 1.45rem; margin: 0; }
+  .meta { color: var(--muted); font-size: .9rem; }
+
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+  .seg { display: inline-flex; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+  .seg button { border: 0; background: none; padding: 6px 12px; border-radius: 7px; cursor: pointer; color: var(--ink2); }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); font-weight: 700; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface);
+          border-radius: 999px; padding: 5px 12px; cursor: pointer; color: var(--ink2); }
+  .chip i { width: 10px; height: 10px; border-radius: 3px; background: var(--c); }
+  .chip[aria-pressed="false"] { opacity: .45; }
+  .chip[aria-pressed="false"] i { background: transparent; border: 2px solid var(--c); }
+  select, .btn { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 6px 10px; cursor: pointer; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .tile b { display: block; font-size: 1.7rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .tile span { color: var(--muted); font-size: .88rem; }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 0 8px; margin-bottom: 14px; }
+  .card h2 { font-size: 1rem; margin: 0 16px 2px; }
+  .card .sub { color: var(--muted); font-size: .86rem; margin: 0 16px 8px; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 16px 8px; font-size: .86rem; color: var(--ink2); }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .sw { display: inline-block; width: 22px; height: 10px; border-radius: 3px; }
+  .scroll { overflow-x: auto; }
+  svg { display: block; }
+  svg text { fill: var(--ink2); font-size: 12px; font-family: inherit; }
+  svg .axis text { fill: var(--muted); font-size: 11px; }
+  svg .grp { fill: var(--ink); font-weight: 700; font-size: 12px; }
+  .hit { cursor: pointer; }
+  .hit:hover rect.heat, .hit:focus rect.heat { filter: brightness(1.08); }
+  .hit:focus { outline: none; }
+  .hit:focus rect.hl { stroke: var(--ink); stroke-width: 2; }
+
+  #tip { position: fixed; z-index: 10; pointer-events: none; background: var(--surface); color: var(--ink);
+         border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.18);
+         padding: 10px 12px; font-size: .86rem; min-width: 230px; max-width: 300px; }
+  #tip h3 { margin: 0 0 6px; font-size: .95rem; display: flex; align-items: center; gap: 6px; }
+  #tip table { border-collapse: collapse; width: 100%; }
+  #tip td { padding: 2px 0; vertical-align: top; }
+  #tip td:first-child { color: var(--muted); padding-right: 10px; white-space: nowrap; }
+  #tip .dur { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); color: var(--ink2); }
+
+  table.list { width: 100%; border-collapse: collapse; font-size: .88rem; }
+  table.list th, table.list td { text-align: left; padding: 7px 16px; border-top: 1px solid var(--line); white-space: nowrap; }
+  table.list th { color: var(--muted); font-weight: 400; }
+  .empty { text-align: center; color: var(--muted); padding: 40px 16px; }
+  .keybox { max-width: 520px; margin: 40px auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  .keybox input { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; margin: 10px 0; background: var(--bg); }
+</style>
+</head>
+<body>
+<div class="betabar" role="note" style="position:sticky;top:0;z-index:1000;background:#d9480f;color:#fff;font:600 13px/1.3 system-ui,sans-serif;text-align:center;padding:6px 12px">BETA · test data only · not the real lab results</div>
+<div class="wrap" id="root"><div class="empty">Loading…</div></div>
+<div id="tip" hidden></div>
+
+<script>
+/* Same private data repository as the weighing app */
+const GH = { owner: 'girish-vastrakar', repo: 'weighing_data_QR', path: 'timestamps.json', branch: 'main' };
+// Moisture and Total Moisture dry in the oven; VM and Ash burn in the furnace
+const TESTS = [
+  { key: 'Moisture',       short: 'Moisture', color: 'var(--MC)',  eq: 'Oven' },
+  { key: 'Total Moisture', short: 'Total M.', color: 'var(--TM)',  eq: 'Oven' },
+  { key: 'VM',             short: 'VM',       color: 'var(--VM)',  eq: 'Furnace' },
+  { key: 'Ash',            short: 'Ash',      color: 'var(--ASH)', eq: 'Furnace' }
+];
+const EQUIP = ['Oven', 'Furnace'];
+
+const store = { get: k => { try { return localStorage.getItem('beta:' + k) || ''; } catch (e) { return ''; } },
+                set: (k, v) => { try { localStorage.setItem('beta:' + k, v); } catch (e) {} } };
+let KEY = store.get('ghkey');                      // shared with the app on the same phone / computer
+(function keyFromLink() {
+  const m = location.hash.match(/key=([^&]+)/);
+  if (m) { KEY = decodeURIComponent(m[1]).trim(); store.set('ghkey', KEY); history.replaceState(null, '', location.pathname); }
+})();
+
+const V = { range: store.get('dash-range') || 'today', group: store.get('dash-group') || 'equip', stage: store.get('dash-stage') || 'both', hidden: new Set(), view: 'chart' };
+let RAW = null, BLOG = null, LOADED = 0, ERR = null;
+/* weighing machine (W1–W4) of each sample, from names.json (the Machine column of the sheet).
+   Shared with the weighing app on the same site, and read again at most every 10 min (the sheet syncs every 15). */
+const MACHINES = ['W1', 'W2', 'W3', 'W4'];
+let NAMES = {}, namesAt = 0;
+try { NAMES = JSON.parse(store.get('names') || '{}').names || {}; } catch (e) { NAMES = {}; }
+const machinesOf = code => { const n = NAMES[code] || NAMES[String(code).toUpperCase()];
+  return String((n && n.machine) || '').toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean); };
+// machine groups a sample belongs to: each W1–W4 it names, else ALL, else not given to a machine
+const machineKeys = code => { const m = machinesOf(code), w = MACHINES.filter(x => m.includes(x));
+  return w.length ? w : [m.includes('ALL') ? 'ALL' : 'none']; };
+const MACH_NAME = { ALL: 'ALL (any machine)', none: 'No machine in the sheet' };
+const machLabel = k => MACH_NAME[k] || 'Machine ' + k;
+const root = document.getElementById('root'), tip = document.getElementById('tip');
+
+/* ---------- data ---------- */
+async function fetchLog(path = GH.path) {
+  const url = `https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${path}?ref=${GH.branch}`;
+  const res = await fetch(url, { cache: 'no-store', headers: { Authorization: 'Bearer ' + KEY, Accept: 'application/vnd.github.raw+json' } });
+  if (res.status === 404) return {};
+  if (res.status === 401 || res.status === 403) throw new Error('The storage key was not accepted.');
+  if (!res.ok) throw new Error('GitHub error ' + res.status);
+  return res.json();
+}
+async function load() {
+  if (!KEY) { renderKey(); return; }
+  const names = V.group === 'machine' && Date.now() - namesAt > 10 * 6e4;
+  try {
+    let nf; [RAW, BLOG, nf] = await Promise.all([fetchLog(), fetchLog('timerlog.json'), names ? fetchLog('names.json').catch(() => null) : null]);
+    if (nf && nf.names) { NAMES = nf.names; namesAt = Date.now(); store.set('names', JSON.stringify(nf)); }
+    ERR = null; LOADED = Date.now();
+  }
+  catch (e) { ERR = e.message === 'Failed to fetch' ? 'No internet connection.' : e.message; }
+  render();
+}
+// One job = one sample + one test. Weighing = W1→W2, heating = W2→W3 (still running if no W3).
+function jobs() {
+  const out = [];
+  Object.entries(RAW || {}).forEach(([code, tests]) => {
+    TESTS.forEach(t => {
+      const w = tests[t.key]; if (!w) return;
+      const p = n => w[n] ? { t: Date.parse(w[n].at), by: w[n].by } : null;
+      const j = { code, test: t, w1: p('W1'), w2: p('W2'), w3: p('W3') };
+      if (!j.w1 && !j.w2 && !j.w3) return;
+      j.start = (j.w1 || j.w2 || j.w3).t;
+      j.end = j.w3 ? j.w3.t : (j.w2 ? Date.now() : (j.w1 || j.w2).t);
+      j.running = !!j.w2 && !j.w3;
+      out.push(j);
+    });
+  });
+  return out;
+}
+function rangeBounds() {
+  const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+  const day = 864e5, now = Date.now();
+  if (V.range === 'today') return [d0.getTime(), d0.getTime() + day];
+  if (V.range === 'yesterday') return [d0.getTime() - day, d0.getTime()];
+  if (V.range === '7d') return [d0.getTime() - 6 * day, d0.getTime() + day];
+  return [-Infinity, Infinity];
+}
+
+/* ---------- helpers ---------- */
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const p2 = n => String(n).padStart(2, '0');
+const hm = t => { const d = new Date(t); return `${p2(d.getHours())}:${p2(d.getMinutes())}`; };
+const dayLabel = t => new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+const when = t => { const d = new Date(t), today = new Date(); return (d.toDateString() === today.toDateString() ? '' : dayLabel(t) + ' ') + hm(t); };
+const dur = ms => { if (!(ms >= 0)) return '–'; const m = Math.round(ms / 6e4); return m < 60 ? `${m} min` : `${Math.floor(m / 60)} h ${p2(m % 60)} min`; };
+const median = a => { if (!a.length) return null; const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+const codeNum = c => +((c.match(/\d+/) || [0])[0]);
+
+/* ---------- render ---------- */
+function renderKey(msg) {
+  root.innerHTML = `<div class="keybox"><h1>Lab timeline</h1>
+    <p>${esc(msg || 'This device is not connected to the lab data yet. Paste the same GitHub key used for the weighing app.')}</p>
+    <input id="key" type="password" placeholder="github_pat_…" autocomplete="off">
+    <button class="btn" id="savekey">Connect</button></div>`;
+  document.getElementById('savekey').onclick = () => {
+    const v = document.getElementById('key').value.trim(); if (!v) return;
+    KEY = v; store.set('ghkey', v); root.innerHTML = '<div class="empty">Loading…</div>'; load();
+  };
+}
+
+function render() {
+  if (ERR && !RAW) { if (/key/.test(ERR)) renderKey(ERR); else root.innerHTML = `<div class="empty">${esc(ERR)} <button class="btn" onclick="load()">Try again</button></div>`; return; }
+  const [a, b] = rangeBounds(), now = Date.now();
+  const all = jobs().filter(j => !V.hidden.has(j.test.key));
+  // a job belongs to the range if any part of it touches the range
+  const list = all.filter(j => j.end >= a && j.start < b);
+
+  const timer = hasTimer(), BL = timer ? batchList(a, b, now) : [];
+  const running = list.filter(j => j.running);
+  const done = list.filter(j => j.w2 && j.w3);
+  const inNow = eq => timer ? BL.filter(q => q.running && q.test.eq === eq).reduce((s, q) => s + q.count, 0)
+                            : running.filter(j => j.test.eq === eq).length;
+  const waitingIn = timer ? running.filter(j => !stagesOf(j, sampleBatches())).length : 0;
+  // typical time inside: real heating time from the timer batches; W2 → W3 only when there is no timer data
+  const heat = k => timer ? median(BL.filter(q => !q.running && q.test.key === k).map(q => q.actualMs))
+                          : median(done.filter(j => j.test.key === k).map(j => j.w3.t - j.w2.t));
+  const peak = eq => stepsFor(list, eq, -Infinity, Infinity, now).max;
+
+  const rangeBtn = (v, l) => `<button data-range="${v}" aria-pressed="${V.range === v}">${l}</button>`;
+  root.innerHTML = `
+    <header><h1>Lab timeline</h1>
+      <span class="meta">${ERR ? '⚠ ' + esc(ERR) + ' · showing last data · ' : ''}Updated ${LOADED ? hm(LOADED) : '–'} · refreshes every minute
+        <button class="btn" id="refresh" style="margin-left:6px">↻</button></span></header>
+    <div class="filters">
+      <div class="seg" role="group" aria-label="Time range">${rangeBtn('today', 'Today')}${rangeBtn('yesterday', 'Yesterday')}${rangeBtn('7d', 'Last 7 days')}${rangeBtn('all', 'All')}</div>
+      ${TESTS.map(t => `<button class="chip" data-test="${esc(t.key)}" aria-pressed="${!V.hidden.has(t.key)}" style="--c:${t.color}"><i></i>${esc(t.key)}</button>`).join('')}
+      <select id="group" aria-label="Group rows"><option value="equip"${V.group === 'equip' ? ' selected' : ''}>Group by oven / furnace</option>
+        <option value="sample"${V.group === 'sample' ? ' selected' : ''}>Group by sample</option>
+        <option value="machine"${V.group === 'machine' ? ' selected' : ''}>Group by weighing machine</option></select>
+      <div class="seg" role="group" aria-label="Stage"><button data-stage="both" aria-pressed="${V.stage === 'both'}">Both stages</button><button data-stage="weigh" aria-pressed="${V.stage === 'weigh'}">W1 → W2</button><button data-stage="heat" aria-pressed="${V.stage === 'heat'}">W2 → W3</button></div>
+      <div class="seg" role="group" aria-label="View"><button data-view="chart" aria-pressed="${V.view === 'chart'}">Chart</button><button data-view="table" aria-pressed="${V.view === 'table'}">Table</button></div>
+    </div>
+    <div class="tiles">
+      <div class="tile"><b>${inNow('Oven')}</b><span>in the oven now</span></div>
+      <div class="tile"><b>${inNow('Furnace')}</b><span>in the furnace now</span></div>
+      ${timer ? `<div class="tile"><b>${waitingIn}</b><span>weighed, waiting to go in</span></div>` : ''}
+      <div class="tile"><b>${done.length}</b><span>tests finished in this range</span></div>
+      <div class="tile"><b>${peak('Oven')} / ${peak('Furnace')}</b><span>most at once: oven / furnace</span></div>
+      ${TESTS.filter(t => !V.hidden.has(t.key) && heat(t.key) != null).map(t =>
+        `<div class="tile"><b>${dur(heat(t.key))}</b><span>typical ${esc(t.key)} time in ${t.eq.toLowerCase()} ${timer ? '(timer start → taken out)' : '(W2→W3)'}</span></div>`).join('')}
+    </div>
+    ${!list.length ? `<div class="card"><div class="empty">No weighing in this time range${RAW && !Object.keys(RAW).length ? ' yet. Timestamps start from the first weight saved after the app update' : ''}.</div></div>`
+      : (V.group === 'machine' ? machineHTML(list) : '') + (V.view === 'table' ? tableHTML(list) : chartHTML(list, a, b, now)) + weighHTML(list)}
+    ${batchesHTML(a, b, now)}`;
+  wire();
+}
+
+function chartHTML(list, a, b, now) {
+  const SB = sampleBatches();
+  // time window: the chosen range, trimmed to the data so the bars aren't squeezed
+  const sS = j => V.stage === 'heat' && j.w2 ? j.w2.t : j.start;
+  const sE = j => V.stage === 'weigh' && j.w2 ? j.w2.t : j.end;
+  const pick = V.stage === 'weigh' ? list.filter(j => j.w1 && j.w2) : V.stage === 'heat' ? list.filter(j => j.w2) : list;
+  let t0 = Math.min(...(pick.length ? pick : list).map(sS)), t1 = Math.max(...(pick.length ? pick : list).map(sE), V.stage !== 'weigh' && list.some(j => j.running) ? now : 0);
+  if (isFinite(a)) { t0 = Math.max(t0, a); t1 = Math.min(Math.max(t1, t0 + 36e5), b); }
+  const span = Math.max(t1 - t0, 36e5), pad = span * 0.03; t0 -= pad; t1 += pad;
+
+  // rows: with one stage chosen, keep only tests that have that stage
+  if (V.stage === 'weigh') list = list.filter(j => j.w1 && j.w2);
+  if (V.stage === 'heat') list = list.filter(j => j.w2);
+  if (!list.length) return `<div class="card"><div class="empty">No ${V.stage === 'weigh' ? 'W1 → W2' : 'W2 → W3'} stamps in this time range.</div></div>`;
+  const sorted = list.slice().sort((x, y) => (x.w2 ? x.w2.t : x.start) - (y.w2 ? y.w2.t : y.start));
+  const groups = V.group === 'equip'
+    ? EQUIP.map(e => ({ name: e === 'Oven' ? 'Oven: Moisture, Total Moisture' : 'Furnace: VM, Ash', eq: e, rows: sorted.filter(j => j.test.eq === e) }))
+    : V.group === 'machine'
+    ? [...MACHINES, 'ALL', 'none'].map(k => ({ name: machLabel(k), rows: sorted.filter(j => machineKeys(j.code).includes(k)) }))
+    : [...new Set(list.map(j => j.code))].sort((x, y) => codeNum(x) - codeNum(y) || x.localeCompare(y))
+        .map(c => ({ name: c, rows: TESTS.map(t => list.find(j => j.code === c && j.test.key === t.key)).filter(Boolean) }));
+
+  const LW = 128, RH = 26, GH_ = 28, AX = 30, LOAD = 46;
+  const W = Math.max(760, (document.querySelector('.wrap').clientWidth || 1000) - 2);
+  const RP = 128;                                   // room on the right for "running …" labels
+  const LP = V.stage !== 'heat' ? 110 : 0;        // room on the left for the "W1→W2 4 min" labels
+  const plotW = W - LW - RP - LP;
+  const x = t => LW + LP + (t - t0) / (t1 - t0) * plotW;
+  const nRows = groups.reduce((n, g) => n + (g.rows.length ? g.rows.length : 0), 0);
+  const nGroups = groups.filter(g => g.rows.length).length;
+  const strips = V.group === 'equip' && V.stage !== 'weigh';
+  const H = AX + (strips ? EQUIP.length * (LOAD + 8) + 10 : 0) + nGroups * GH_ + nRows * RH + 10;
+
+  // hour ticks
+  const stepH = [1, 2, 3, 6, 12, 24].find(h => span / (h * 36e5) <= 12) || 24;
+  const ticks = []; const s = new Date(t0); s.setMinutes(0, 0, 0);
+  for (let t = s.getTime(); t <= t1; t += 36e5) { const d = new Date(t); if (d.getHours() % stepH === 0 && t >= t0) ticks.push(t); }
+  const tickLbl = t => { const d = new Date(t); return d.getHours() === 0 || stepH >= 24 ? dayLabel(t) : hm(t); };
+
+  let y = AX, g = '';
+  // concurrency strips: how many tests are heating at the same time (one per equipment, same scale)
+  if (strips) {
+    const maxC = Math.max(1, ...EQUIP.map(e => stepsFor(list, e, t0, t1, now).max));
+    g += `<text x="${LW - 8}" y="${y - 10}" text-anchor="end" class="grp">Heating at once</text>`;
+    EQUIP.forEach(e => {
+      const st = stepsFor(list, e, t0, t1, now), h = LOAD - 14;
+      let d = `M${x(t0)},${y + h}`;
+      st.pts.forEach(([t, c], i) => { const nx = i + 1 < st.pts.length ? st.pts[i + 1][0] : t1; d += ` L${x(t)},${y + h - c / maxC * h} L${x(nx)},${y + h - c / maxC * h}`; });
+      d += ` L${x(t1)},${y + h} Z`;
+      g += `<text x="${LW - 8}" y="${y + h / 2 + 4}" text-anchor="end">${e} (max ${st.max})</text>
+            <rect x="${LW + LP}" y="${y}" width="${plotW}" height="${h}" fill="var(--grid)" opacity=".5" rx="3"/>
+            <path d="${d}" fill="var(--ink2)" opacity=".35"/>`;
+      y += LOAD + 8;
+    });
+    y += 10;
+  }
+  const gridTop = AX - 6;
+  groups.forEach(gr => {
+    if (!gr.rows.length) return;
+    g += `<text x="12" y="${y + 18}" class="grp">${esc(gr.name)}</text>`;
+    y += GH_;
+    gr.rows.forEach(j => {
+      const yc = y + RH / 2;
+      const lbl = V.group === 'sample' ? j.test.key : `${j.code} · ${j.test.short}`;
+      const xs = j.w1 ? x(j.w1.t) : null, x2 = j.w2 ? x(j.w2.t) : null, xe = x(j.end);
+      let marks = '';
+      const showW = V.stage !== 'heat', showH = V.stage !== 'weigh';
+      // stamp 1: W1 → W2 (weighing). Light bar with the test colour as outline, its time written to the left.
+      if (showW && j.w1 && j.w2) {
+        const bw = Math.max(6, x2 - xs), bx = Math.min(xs, x2 - 6);
+        marks += `<rect x="${bx}" y="${yc - 7}" width="${bw}" height="14" rx="4" fill="${j.test.color}" fill-opacity=".18" stroke="${j.test.color}" stroke-width="1.5"/>
+                  <text x="${bx - 6}" y="${yc + 4}" text-anchor="end" font-size="11">W1→W2 ${dur(j.w2.t - j.w1.t)}</text>`;
+      } else if (showW && j.w1 && !j.w2) {
+        marks += `<circle cx="${xs}" cy="${yc}" r="4" fill="var(--surface)" stroke="${j.test.color}" stroke-width="2"/>
+                  ${xs > LW + LP + plotW - 160
+                    ? `<text x="${xs - 9}" y="${yc + 4}" font-size="11" text-anchor="end">W1 at ${hm(j.w1.t)}, waiting for W2</text>`
+                    : `<text x="${xs + 9}" y="${yc + 4}" font-size="11">W1 at ${hm(j.w1.t)}, waiting for W2</text>`}`;
+      }
+      const st = showH && j.w2 ? stagesOf(j, SB) : null;
+      if (st) {
+        // stage A: W2 → start (waiting to go in), grey
+        const ax = x2 + (showW && j.w1 ? 3 : 0), as = x(st.start);
+        if (as - ax > 1) marks += `<rect x="${ax}" y="${yc - 5}" width="${as - ax}" height="10" rx="3" fill="var(--weigh)"/>`;
+        // stage B: start → taken out (heating), solid test colour
+        const be = st.out ? x(st.out) : x(now), bw = Math.max(4, be - as);
+        const lbl = `${st.q.section} ${dur(st.heat)}${st.running ? ' so far' : ''}`;
+        marks += `<rect class="heat" x="${as}" y="${yc - 7}" width="${bw}" height="14" rx="4" fill="${j.test.color}" ${st.running ? 'fill-opacity=".55"' : ''}/>`;
+        if (st.running) marks += `<rect x="${as}" y="${yc - 7}" width="${bw}" height="14" rx="4" fill="url(#hatch)"/>`;
+        if (bw > lbl.length * 6.4 + 12) marks += `<text x="${as + 8}" y="${yc + 4}" font-size="11" style="fill:#fff;font-weight:700">${esc(lbl)}</text>`;
+        // stage C: taken out → W3, light tint of the test colour
+        if (st.out) {
+          const ce = j.w3 ? x(j.w3.t) : x(now), cw = Math.max(3, ce - be - 2);
+          marks += `<rect x="${be + 2}" y="${yc - 5}" width="${cw}" height="10" rx="3" fill="${j.test.color}" fill-opacity=".35" ${j.w3 ? '' : 'stroke-dasharray="3 2" stroke="' + j.test.color + '"'}/>`;
+        }
+        const tail = st.out ? (j.w3 ? x(j.w3.t) : x(now)) : be;
+        if (bw <= lbl.length * 6.4 + 12) marks += `<text x="${tail + 6}" y="${yc + 4}" font-size="11">${esc(lbl)}</text>`;
+      } else if (showH && j.w2 && !j.w3 && hasTimer()) {
+        // weighed, but no timer batch has taken it yet: it is waiting to go in
+        const ax = x2 + (showW && j.w1 ? 3 : 0), aw = Math.max(4, x(now) - ax), lbl = `waiting to go in ${dur(now - j.w2.t)}`;
+        marks += `<rect x="${ax}" y="${yc - 5}" width="${aw}" height="10" rx="3" fill="var(--weigh)"/>
+                  <rect x="${ax}" y="${yc - 5}" width="${aw}" height="10" rx="3" fill="url(#hatch)"/>`;
+        marks += aw > lbl.length * 6.4 + 12 ? `<text x="${ax + 8}" y="${yc + 4}" font-size="11" style="fill:var(--ink);font-weight:700">${lbl}</text>`
+                                            : `<text x="${ax + aw + 6}" y="${yc + 4}" font-size="11">${lbl}</text>`;
+      } else if (showH && j.w2) {
+        // no timer batch for this sample (e.g. before the Lab Timer): one W2 → W3 bar as before
+        const hx = x2 + (showW && j.w1 ? 3 : 0), w = Math.max(4, xe - hx);
+        const label = j.running ? `W2→W3 running ${dur(now - j.w2.t)}` : `W2→W3 ${dur(j.w3.t - j.w2.t)}`;
+        marks += `<rect class="heat" x="${hx}" y="${yc - 7}" width="${w}" height="14" rx="4" fill="${j.test.color}" ${j.running ? 'fill-opacity=".55"' : ''}/>`;
+        if (j.running) marks += `<rect x="${hx}" y="${yc - 7}" width="${w}" height="14" rx="4" fill="url(#hatch)"/>`;
+        marks += w > label.length * 6.4 + 12
+          ? `<text x="${hx + 8}" y="${yc + 4}" font-size="11" style="fill:#fff;font-weight:700">${label}</text>`
+          : `<text x="${hx + w + 6}" y="${yc + 4}" font-size="11">${label}</text>`;
+      }
+      g += `<g class="hit" tabindex="0" data-j="${esc(j.code)}|${esc(j.test.key)}">
+              <rect class="hl" x="0" y="${y}" width="${W}" height="${RH}" fill="transparent"/>
+              <text x="${LW - 8}" y="${yc + 4}" text-anchor="end">${esc(lbl)}</text>${marks}</g>`;
+      y += RH;
+    });
+  });
+  const grid = ticks.map(t => `<line x1="${x(t)}" x2="${x(t)}" y1="${gridTop}" y2="${H - 6}" stroke="var(--grid)"/>
+      ${now > t0 && now < t1 && Math.abs(x(t) - x(now)) < 40 ? '' : `<text x="${x(t)}" y="${AX - 12}" text-anchor="middle">${tickLbl(t)}</text>`}`).join('');
+  const nowLine = now > t0 && now < t1 ? `<line x1="${x(now)}" x2="${x(now)}" y1="${gridTop}" y2="${H - 6}" stroke="var(--now)" stroke-width="1.5" stroke-dasharray="4 3"/>
+      <text x="${x(now)}" y="${AX - 12}" text-anchor="middle" style="fill:var(--now);font-weight:700">now</text>` : '';
+
+  return `<div class="card">
+    <h2>What ran when</h2>
+    <p class="sub">Each row is one test on one sample. Hover or tap a row for the times and who weighed it.</p>
+    <div class="legend">
+      ${V.stage !== 'heat' ? `<span><i class="sw" style="background:transparent;border:1.5px solid var(--ink2)"></i>W1 → W2: weighing (time on the left)</span>` : ''}
+      ${V.stage !== 'weigh' ? `<span><i class="sw" style="height:8px;background:var(--weigh)"></i>W2 → in: waiting to go in</span>
+        <span><i class="sw" style="background:var(--ink2)"></i>In oven / furnace (start → taken out, time on the bar)</span>
+        <span><i class="sw" style="height:8px;background:var(--ink2);opacity:.35"></i>Taken out → W3</span>
+        <span><i class="sw" style="height:8px;background:var(--weigh);background-image:repeating-linear-gradient(45deg,transparent 0 3px,var(--surface) 3px 5px)"></i>Weighed, still waiting to go in</span>` : ''}
+      ${V.stage !== 'weigh' ? `<span><i class="sw" style="background:var(--ink2);opacity:.5;background-image:repeating-linear-gradient(45deg,transparent 0 3px,var(--surface) 3px 5px)"></i>Still running (no W3 yet)</span>` : ''}
+      ${TESTS.filter(t => !V.hidden.has(t.key)).map(t => `<span><i class="sw" style="background:${t.color}"></i>${esc(t.key)}</span>`).join('')}
+    </div>
+    <div class="scroll"><svg width="${W}" height="${H}" role="img" aria-label="Timeline of weighing and heating for each sample and test">
+      <defs><pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <rect width="2" height="6" fill="var(--surface)" opacity=".7"/></pattern></defs>
+      <g class="axis">${grid}</g>${g}${nowLine}</svg></div></div>`;
+}
+
+/* ---------- per weighing machine (job-wise): what each machine weighed in this range ---------- */
+function machineHTML(list) {
+  const keys = [...MACHINES, 'ALL', 'none'];
+  const SB = sampleBatches();
+  const rows = keys.map(k => {
+    const js = list.filter(j => machineKeys(j.code).includes(k)); if (!js.length && !MACHINES.includes(k)) return '';
+    const n = f => js.filter(f).length;
+    const wt = js.filter(j => j.w1 && j.w2 && j.w2.t >= j.w1.t).map(j => j.w2.t - j.w1.t);
+    const by = [...new Set(js.map(j => (j.w2 || j.w1 || j.w3).by).filter(Boolean))].sort();
+    // W2 saved, no W3 yet: split by the Lab Timer batch (without timer data it all counts as inside)
+    const open = js.filter(j => j.w2 && !j.w3).map(j => stagesOf(j, SB)), timer = hasTimer();
+    const waiting = timer ? open.filter(st => !st).length : 0, inside = open.filter(st => timer ? st && st.running : true).length;
+    const outW3 = open.filter(st => st && !st.running).length;
+    return `<tr><td><b>${esc(machLabel(k))}</b></td><td>${new Set(js.map(j => j.code)).size}</td>
+      ${TESTS.filter(t => !V.hidden.has(t.key)).map(t => { const c = js.filter(j => j.test.key === t.key).length;
+        return `<td>${c || '<span style="color:var(--muted)">–</span>'}</td>`; }).join('')}
+      <td>${n(j => j.w1 && !j.w2) || '–'}</td><td>${waiting || '–'}</td><td>${inside || '–'}</td><td>${outW3 || '–'}</td><td><b>${n(j => j.w2 && j.w3)}</b></td>
+      <td>${wt.length ? fmtMin(median(wt)) : '–'}</td><td>${esc(by.join(', ')) || '–'}</td></tr>`;
+  }).join('');
+  const noNames = !Object.values(NAMES).some(x => x && x.machine);
+  return `<div class="card"><h2>By weighing machine</h2>
+    <p class="sub">Tests in this range for each machine, from the Machine column of the sample sheet. A sample given to two machines counts under both.${noNames ? ' <b>No machine is filled in the sheet yet</b>, so everything is under “No machine in the sheet”.' : ''}</p>
+    <div class="scroll"><table class="list"><thead><tr><th>Machine</th><th>Samples</th>
+      ${TESTS.filter(t => !V.hidden.has(t.key)).map(t => `<th><i class="sw" style="width:10px;background:${t.color};margin-right:6px"></i>${esc(t.short)}</th>`).join('')}
+      <th>W1 only</th><th>Waiting to go in</th><th>In oven / furnace</th><th>Out, W3 pending</th><th>Finished (W3)</th><th>Typical W1 → W2</th><th>Weighed by</th></tr></thead>
+      <tbody>${rows}</tbody></table></div></div>`;
+}
+
+/* ---------- weighing time: W1 (empty) → W2 (with sample) ----------
+   Credited to the person who saved W2, since they added and weighed the sample. */
+const fmtMin = ms => { const m = ms / 6e4; return m < 1 ? `${Math.round(ms / 1000)} s` : m < 60 ? `${m.toFixed(m < 10 ? 1 : 0)} min` : dur(ms); };
+function weighHTML(list) {
+  const w = list.filter(j => j.w1 && j.w2 && j.w2.t >= j.w1.t).map(j => ({ j, ms: j.w2.t - j.w1.t, by: j.w2.by }));
+  if (!w.length) return `<div class="card"><h2>Weighing time (W1 → W2)</h2><p class="sub">No sample has both W1 and W2 in this range yet.</p></div>`;
+  const tests = TESTS.filter(t => !V.hidden.has(t.key) && w.some(x => x.j.test.key === t.key));
+  // scale fits the usual times (90th percentile); unusually long waits sit at the right edge with their own label
+  const srt = w.map(q => q.ms).sort((a, b) => a - b), p90 = srt[Math.min(srt.length - 1, Math.floor(srt.length * 0.9))];
+  const CAP = Math.min(30 * 6e4, Math.max(2 * 6e4, p90 * 1.4));
+  const LW = 128, RP = 150, RH = 34, W = Math.max(760, (document.querySelector('.wrap').clientWidth || 1000) - 2), pw = W - LW - RP;
+  const maxMs = Math.min(CAP, Math.max(...w.map(x => x.ms)) * 1.05 || 6e4), slow = w.some(q => q.ms > maxMs);
+  const x = ms => LW + Math.min(ms, maxMs) / maxMs * pw;
+  const stepM = [0.5, 1, 2, 5, 10].find(m => maxMs / 6e4 / m <= 8) || 10;
+  let ticks = ''; for (let m = 0; m * 6e4 <= maxMs; m += stepM)
+    ticks += `<line x1="${x(m * 6e4)}" x2="${x(m * 6e4)}" y1="22" y2="${22 + tests.length * RH}" stroke="var(--grid)"/>
+              <text x="${x(m * 6e4)}" y="14" text-anchor="middle">${m} min</text>`;
+  let rows = '';
+  tests.forEach((t, i) => {
+    const pts = w.filter(q => q.j.test.key === t.key), med = median(pts.map(q => q.ms)), y = 22 + i * RH + RH / 2;
+    rows += `<text x="${LW - 8}" y="${y + 4}" text-anchor="end">${esc(t.key)}</text>`;
+    pts.forEach(q => {
+      const over = q.ms > maxMs;
+      rows += `<g class="hit" tabindex="0" data-j="${esc(q.j.code)}|${esc(t.key)}">
+        <circle cx="${x(q.ms)}" cy="${y}" r="9" fill="transparent"/>
+        <circle cx="${x(q.ms)}" cy="${y}" r="5" fill="${t.color}" fill-opacity=".75" stroke="var(--surface)" stroke-width="2"/>
+        ${over ? `<text x="${x(q.ms) - 8}" y="${y - 8}" font-size="10" text-anchor="end">${fmtMin(q.ms)} ›</text>` : ''}</g>`;
+    });
+    rows += `<line x1="${x(med)}" x2="${x(med)}" y1="${y - 12}" y2="${y + 12}" stroke="var(--ink)" stroke-width="2"/>
+             <text x="${LW + pw + 12}" y="${y + 4}">typical <tspan font-weight="700" style="fill:var(--ink)">${fmtMin(med)}</tspan> · ${pts.length}</text>`;
+  });
+  // per person
+  const people = [...new Set(w.map(q => q.by))].sort();
+  const cell = (p, t) => { const v = w.filter(q => q.by === p && q.j.test.key === t.key).map(q => q.ms);
+    return v.length ? `<b>${fmtMin(median(v))}</b> <span style="color:var(--muted)">(${v.length})</span>` : '<span style="color:var(--muted)">–</span>'; };
+  return `<div class="card">
+    <h2>Weighing time (W1 → W2)</h2>
+    <p class="sub">How long from weighing the empty dish or crucible to saving it with the sample. Each dot is one sample; the dark line is the typical (median) time.${slow ? ' Unusually long waits are pinned at the right edge with their time written next to them.' : ''}</p>
+    <div class="scroll"><svg width="${W}" height="${30 + tests.length * RH}" role="img" aria-label="Weighing time per sample for each test">
+      <g class="axis">${ticks}</g>${rows}</svg></div>
+    <div class="scroll" style="margin-top:6px"><table class="list">
+      <thead><tr><th>Weighed by (W2)</th>${tests.map(t => `<th><i class="sw" style="width:10px;background:${t.color};margin-right:6px"></i>${esc(t.key)}</th>`).join('')}<th>All tests</th></tr></thead>
+      <tbody>${people.map(p => `<tr><td><b>${esc(p)}</b></td>${tests.map(t => `<td>${cell(p, t)}</td>`).join('')}
+        <td>${fmtMin(median(w.filter(q => q.by === p).map(q => q.ms)))} <span style="color:var(--muted)">(${w.filter(q => q.by === p).length})</span></td></tr>`).join('')}</tbody>
+    </table></div>
+    <p class="sub" style="margin-top:8px">Typical time, with the number of samples in brackets.</p></div>`;
+}
+
+/* ---------- oven & furnace batches (from the Lab Timer's timerlog.json) ---------- */
+const TEST_OF = { MC: TESTS[0], VM: TESTS[2], ASH: TESTS[3] };
+const SECS = [['O1', 'Oven 1'], ['O2', 'Oven 2'], ['F1', 'Furnace 1'], ['F2', 'Furnace 2']];
+// Which samples were really in each batch is decided by the W3 log:
+// a sample belongs to the batch of its test that was taken out last before its W3 was weighed
+// (and that started after its W2). The timer's expected list only breaks ties between batches taken out within 15 min.
+function confirmBatches(all) {
+  const conf = {}; all.forEach(q => { conf[q.id] = []; });
+  const done = all.filter(q => !q.running);
+  Object.entries(RAW || {}).forEach(([code, tests]) => {
+    Object.entries(TEST_OF).forEach(([k, t]) => {
+      const r = tests[t.key]; if (!r || !r.W3) return;
+      const t3 = Date.parse(r.W3.at), t2 = r.W2 ? Date.parse(r.W2.at) : -Infinity;
+      const cand = done.filter(q => q.testKey === k && q.end <= t3 && q.start >= t2 - 60000);
+      if (!cand.length) return;
+      // the W3 timing decides: the batch taken out most recently before this W3.
+      // Only if another batch came out within 15 min of it does the timer's expected list break the tie.
+      const latest = cand.reduce((x, y) => (y.end > x.end ? y : x));
+      const close = cand.filter(q => latest.end - q.end <= 15 * 60000);
+      const pick = latest.expected.includes(code) ? latest : (close.find(q => q.expected.includes(code)) || latest);
+      conf[pick.id].push({ code, t3, by: r.W3.by });
+    });
+  });
+  return conf;
+}
+function batchList(a, b, now) {
+  const all = Object.values((BLOG && BLOG.batches) || {}).filter(e => !e.cancelled).map(e => {
+    const start = Date.parse(e.started), end = e.takenOut ? Date.parse(e.takenOut) : now;
+    const expected = e.expected || e.samples || [];
+    return Object.assign({}, e, { start, end, running: !e.takenOut, testKey: e.test, test: TEST_OF[e.test] || TESTS[0], expected,
+      actualMs: end - start, plannedMs: e.plannedMin * 6e4,
+      snoozeMin: (e.events || []).filter(x => x.type === 'snooze').reduce((s, x) => s + x.min, 0),
+      snoozes: (e.events || []).filter(x => x.type === 'snooze').length,
+      addMin: (e.events || []).filter(x => x.type === 'add').reduce((s, x) => s + x.min, 0) });
+  });
+  const conf = confirmBatches(all);
+  all.forEach(q => {
+    const c = conf[q.id].sort((x, y) => x.t3 - y.t3);
+    q.confirmed = c.map(z => z.code);
+    q.w3n = c.length; q.w3first = c.length ? c[0].t3 : null; q.w3last = c.length ? c[c.length - 1].t3 : null;
+    q.missing = q.expected.filter(code => !q.confirmed.includes(code));     // expected, but no W3 for this batch (yet)
+    q.extra = q.confirmed.filter(code => !q.expected.includes(code));       // not expected, but W3 says it was in
+    // samples in the batch: confirmed by W3 once weighing has started, otherwise the expected list
+    q.count = q.w3n ? q.w3n : q.expected.length; q.counted = q.w3n ? 'W3' : 'expected';
+    // weighing the whole batch: weigh-in = first W1 → last W2 of its samples, weigh-out = first W3 → last W3
+    const mem = q.w3n ? q.confirmed : q.expected, nm = q.test.key;
+    const tOf = (c, st) => { const r = RAW && RAW[c] && RAW[c][nm] && RAW[c][nm][st]; return r ? Date.parse(r.at) : null; };
+    const w1s = mem.map(c => tOf(c, 'W1')).filter(Boolean), w2s = mem.map(c => tOf(c, 'W2')).filter(Boolean);
+    q.inFirst = w1s.length ? Math.min(...w1s) : (w2s.length ? Math.min(...w2s) : null);
+    q.inLast = w2s.length ? Math.max(...w2s) : null;
+    q.inMs = q.inFirst != null && q.inLast != null && q.inLast >= q.inFirst ? q.inLast - q.inFirst : null;
+    q.inN = w2s.length;
+    q.idleMs = q.inLast != null && q.start >= q.inLast ? q.start - q.inLast : null;      // last W2 → into the oven
+    q.outMs = q.w3n > 1 ? q.w3last - q.w3first : (q.w3n === 1 ? 0 : null);
+    q.cycleMs = q.inFirst != null && q.w3last ? q.w3last - q.inFirst : null;            // whole job, first W1 → last W3
+    q.fill = q.capacity ? q.count / q.capacity : 0;
+  });
+  return all.filter(x => x.end >= a && x.start < b && !V.hidden.has(x.test.key)).sort((x, y) => x.start - y.start);
+}
+function batchesHTML(a, b, now) {
+  const L = batchList(a, b, now);
+  if (!L.length) return `<div class="card"><h2>Oven &amp; furnace batches</h2>
+    <p class="sub">No batches from the Lab Timer in this range yet. Each time a worker starts a timer, the batch appears here with its samples, planned and actual time.</p></div>`;
+  // lanes: one per section, bars = batches
+  let t0 = Math.min(...L.map(x => Math.min(x.start, x.inFirst || x.start))), t1 = Math.max(...L.map(x => Math.max(x.end, x.w3last || x.end)));
+  if (isFinite(a)) { t0 = Math.max(t0, a); t1 = Math.min(Math.max(t1, t0 + 36e5), b); }
+  const span = Math.max(t1 - t0, 36e5); t0 -= span * .02; t1 += span * .02;
+  const LW = 110, RP = 20, RH = 54, AX = 26, W = Math.max(760, (document.querySelector('.wrap').clientWidth || 1000) - 2), pw = W - LW - RP;
+  const x = t => LW + (Math.min(Math.max(t, t0), t1) - t0) / (t1 - t0) * pw;
+  const stepH = [1, 2, 3, 6, 12, 24].find(h => span / (h * 36e5) <= 12) || 24;
+  let grid = ''; const s0 = new Date(t0); s0.setMinutes(0, 0, 0);
+  for (let t = s0.getTime(); t <= t1; t += 36e5) { const d = new Date(t); if (d.getHours() % stepH || t < t0) continue;
+    grid += `<line x1="${x(t)}" x2="${x(t)}" y1="${AX - 6}" y2="${AX + SECS.length * RH}" stroke="var(--grid)"/>
+             <text x="${x(t)}" y="${AX - 12}" text-anchor="middle">${d.getHours() === 0 || stepH >= 24 ? dayLabel(t) : hm(t)}</text>`; }
+  let lanes = '';
+  SECS.forEach(([id, name], i) => {
+    const y = AX + i * RH, yc = y + RH / 2;
+    lanes += `<text x="${LW - 10}" y="${yc + 4}" text-anchor="end" class="grp">${name}</text>
+              <line x1="${LW}" x2="${LW + pw}" y1="${y + RH}" y2="${y + RH}" stroke="var(--grid)"/>`;
+    L.filter(q => q.sectionId === id).forEach(q => {
+      const bx = x(q.start), bw = Math.max(5, x(q.end) - bx), px = x(q.start + q.plannedMs);
+      const lbl = `${q.test.short} ${q.count}/${q.capacity} · ${dur(q.actualMs)}`;
+      const strip = (t0_, t1_) => t0_ != null && t1_ != null ? `<rect x="${x(t0_)}" y="${yc + 14}" width="${Math.max(3, x(t1_) - x(t0_))}" height="6" rx="3" fill="${q.test.color}" fill-opacity=".35" stroke="${q.test.color}" stroke-width="1"/>` : '';
+      lanes += `<g class="hit" tabindex="0" data-b="${esc(q.id)}">
+        ${strip(q.inFirst, q.inLast)}${q.w3n ? strip(q.w3first, q.w3last) : ''}
+        <rect x="${bx}" y="${yc - 12}" width="${bw}" height="24" rx="5" fill="${q.test.color}" ${q.running ? 'fill-opacity=".55"' : ''}/>
+        ${q.running ? `<rect x="${bx}" y="${yc - 12}" width="${bw}" height="24" rx="5" fill="url(#hatch2)"/>` : ''}
+        ${q.end > q.start + q.plannedMs + 60000 ? `<line x1="${px}" x2="${px}" y1="${yc - 16}" y2="${yc + 16}" stroke="var(--ink)" stroke-width="2" stroke-dasharray="3 2"/>` : ''}
+        ${bw > lbl.length * 6.6 + 10 ? `<text x="${bx + 7}" y="${yc + 4}" style="fill:#fff;font-weight:700">${esc(lbl)}</text>` : ''}</g>`;
+    });
+  });
+  // per-section summary for planning
+  const rows = SECS.map(([id, name]) => {
+    const q = L.filter(z => z.sectionId === id && !z.running); if (!q.length && !L.some(z => z.sectionId === id)) return '';
+    const byTest = {}; q.forEach(z => (byTest[z.test.key] = byTest[z.test.key] || []).push(z));
+    return Object.entries(byTest).map(([k, arr]) => `<tr><td><b>${name}</b></td><td><i class="sw" style="width:10px;background:${arr[0].test.color};margin-right:6px"></i>${esc(k)}</td>
+      <td>${arr.length}</td><td>${Math.round(median(arr.map(z => z.fill)) * 100)}% <span style="color:var(--muted)">(${median(arr.map(z => z.count))} of ${arr[0].capacity})</span></td>
+      <td>${dur(median(arr.map(z => z.plannedMs)))}</td><td><b>${dur(median(arr.map(z => z.actualMs)))}</b></td>
+      <td>${arr.filter(z => z.actualMs > z.plannedMs + 60000).length} of ${arr.length}</td>
+      <td>${batchTime(arr, 'inMs', 'inN')}</td><td>${batchTime(arr, 'outMs', 'w3n')}</td>
+      <td>${arr.some(z => z.cycleMs != null) ? dur(median(arr.filter(z => z.cycleMs != null).map(z => z.cycleMs))) : '–'}</td></tr>`).join('');
+  }).join('');
+  const recent = L.slice().reverse();
+  return `<div class="card">
+    <h2>Oven &amp; furnace batches</h2>
+    <p class="sub">From the Lab Timer: each bar is one batch, from Start to "taken out". Label: samples in / capacity · actual time. Which samples were in a batch is confirmed from the W3 times (a sample belongs to the batch taken out just before its W3); until W3s are weighed, the timer's oldest-first guess is shown as "expected". A dashed line marks the planned end when a batch ran longer. The thin strips under each bar show weighing the whole batch: before it goes in (first W1 → last W2) and after it comes out (first W3 → last W3).</p>
+    <div class="scroll"><svg width="${W}" height="${AX + SECS.length * RH + 6}" role="img" aria-label="Batches per oven and furnace over time">
+      <defs><pattern id="hatch2" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="2" height="6" fill="var(--surface)" opacity=".7"/></pattern></defs>
+      <g class="axis">${grid}</g>${lanes}</svg></div>
+    ${rows ? `<h2 style="margin-top:14px">For planning</h2><p class="sub">Finished batches in this range, typical values.</p>
+    <div class="scroll"><table class="list"><thead><tr><th>Section</th><th>Test</th><th>Batches</th><th>Typical fill</th><th>Planned</th><th>Actual in</th><th>Ran over plan</th><th>Weigh-in (W1→W2, whole batch)</th><th>Weigh-out (all W3)</th><th>Whole cycle</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>` : ''}
+    <h2 style="margin-top:14px">All batches</h2>
+    <div class="scroll"><table class="list"><thead><tr><th>Started</th><th>Section</th><th>Test</th><th>Samples</th><th>Planned</th><th>Actual</th><th>Weigh-in</th><th>Snoozed / added</th><th>W3 weighed (weigh-out)</th></tr></thead>
+      <tbody>${recent.map(q => `<tr><td>${when(q.start)}</td><td>${esc(q.section)}</td>
+        <td><i class="sw" style="width:10px;background:${q.test.color};margin-right:6px"></i>${esc(q.test.key)}</td>
+        <td title="${esc((q.w3n ? q.confirmed : q.expected).join(', '))}">${q.count}/${q.capacity} <span style="color:var(--muted)">${q.w3n ? 'by W3' : 'expected'} · ${esc((q.w3n ? q.confirmed : q.expected).slice(0, 3).join(', '))}${q.count > 3 ? '…' : ''}</span></td>
+        <td>${dur(q.plannedMs)}</td><td>${q.running ? 'running ' + dur(q.actualMs) : `<b>${dur(q.actualMs)}</b>${q.stoppedEarly ? ' <span style="color:var(--muted)">(stopped early)</span>' : ''}`}</td>
+        <td>${q.inMs != null ? `${hm(q.inFirst)}–${hm(q.inLast)} · <b>${dur(q.inMs)}</b>` : '–'}</td>
+        <td>${q.snoozes ? `${q.snoozes}× · +${q.snoozeMin} min` : '–'}${q.addMin ? ` · +${q.addMin} min added` : ''}</td>
+        <td>${q.w3n ? `${hm(q.w3first)}${q.w3last !== q.w3first ? '–' + hm(q.w3last) : ''} · <b>${dur(q.outMs)}</b>${q.missing.length ? ` · <span style="color:var(--warn)">${q.missing.length} expected not weighed</span>` : ''}${q.extra.length ? ` · ${q.extra.length} not expected` : ''}` : (q.running ? '–' : 'not yet')}</td></tr>`).join('')}</tbody></table></div>
+  </div>`;
+}
+// typical time for a whole batch, plus time per sample
+function batchTime(arr, msKey, nKey) {
+  const v = arr.filter(z => z[msKey] != null && z[nKey] > 0);
+  if (!v.length) return '–';
+  const ms = median(v.map(z => z[msKey])), per = median(v.filter(z => z[nKey] > 1).map(z => z[msKey] / (z[nKey] - 1)));
+  return `<b>${dur(ms)}</b>${per != null ? ` <span style="color:var(--muted)">(~${fmtMin(per)} per sample)</span>` : ''}`;
+}
+// sample test -> its batch, for splitting W2 → W3 into: waiting, heating, after taken out
+const hasTimer = () => !!(BLOG && BLOG.batches && Object.values(BLOG.batches).some(e => !e.cancelled));
+function sampleBatches() {
+  const m = {}, now = Date.now();
+  const all = batchList(-Infinity, Infinity, now);
+  all.forEach(q => { if (q.w3n || q.running) return; q.expected.forEach(c => { m[c + '|' + q.test.key] = m[c + '|' + q.test.key] || q; }); });
+  all.forEach(q => { if (q.running) q.expected.forEach(c => { m[c + '|' + q.test.key] = q; }); });
+  all.forEach(q => q.confirmed.forEach(c => { m[c + '|' + q.test.key] = q; }));   // W3 confirmation wins
+  return m;
+}
+function stagesOf(j, sb) {
+  const q = sb[j.code + '|' + j.test.key];
+  if (!q || !j.w2 || q.start < j.w2.t - 60000) return null;           // no timer batch for this sample
+  const out = q.running ? null : q.end, now = Date.now();
+  return { q, wait: q.start - j.w2.t, heat: (out || now) - q.start, after: out && j.w3 ? Math.max(0, j.w3.t - out) : (out ? now - out : null),
+           start: q.start, out, running: q.running, waitingW3: out && !j.w3 };
+}
+function showBatchTip(el, cx, cy) {
+  const q = batchList(-Infinity, Infinity, Date.now()).find(z => z.id === el.dataset.b); if (!q) return;
+  tip.innerHTML = `<h3><i class="sw" style="width:10px;background:${q.test.color}"></i>${esc(q.section)} · ${esc(q.test.key)}</h3>
+    <table><tr><td>Started</td><td><b>${when(q.start)}</b></td></tr>
+      <tr><td>Planned</td><td>${dur(q.plannedMs)} (ready ${hm(q.start + q.plannedMs)})</td></tr>
+      <tr><td>${q.running ? 'In so far' : 'Taken out'}</td><td><b>${q.running ? dur(q.actualMs) : when(q.end) + ' · ' + dur(q.actualMs)}</b></td></tr>
+      ${q.snoozes ? `<tr><td>Snoozed</td><td>${q.snoozes}× · +${q.snoozeMin} min</td></tr>` : ''}
+      <tr><td>In the batch</td><td><b>${q.count} of ${q.capacity}</b> (${q.w3n ? 'confirmed by W3' : 'expected, no W3 yet'})</td></tr>
+      ${q.inMs != null ? `<tr><td>Weigh-in</td><td>${hm(q.inFirst)}–${hm(q.inLast)} · <b>${dur(q.inMs)}</b> for ${q.inN}</td></tr>` : ''}
+      ${q.idleMs != null ? `<tr><td>Waited to go in</td><td>${dur(q.idleMs)} (last W2 → start)</td></tr>` : ''}
+      ${q.w3n ? `<tr><td>Weigh-out</td><td>${hm(q.w3first)}–${hm(q.w3last)} · <b>${dur(q.outMs)}</b> for ${q.w3n}</td></tr>` : ''}
+      ${q.cycleMs != null ? `<tr><td>Whole cycle</td><td><b>${dur(q.cycleMs)}</b> (first W1 → last W3)</td></tr>` : ''}</table>
+    <div class="dur">${q.w3n ? `<b>Confirmed by W3:</b> ${esc(q.confirmed.join(', '))}` : `<b>Expected:</b> ${esc(q.expected.join(', ')) || 'none were waiting'}`}
+      ${q.w3n && q.missing.length ? `<br><b>Expected but no W3 here:</b> ${esc(q.missing.join(', '))}` : ''}
+      ${q.extra.length ? `<br><b>Not expected but weighed after this batch:</b> ${esc(q.extra.join(', '))}` : ''}</div>`;
+  tip.hidden = false;
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  let left = cx + 14, top = cy + 14;
+  if (left + tw > innerWidth - 8) left = cx - tw - 14;
+  if (top + th > innerHeight - 8) top = cy - th - 14;
+  tip.style.left = Math.max(8, left) + 'px'; tip.style.top = Math.max(8, top) + 'px';
+}
+
+function stepsFor(list, eq, t0, t1, now) {
+  const ev = [];
+  if (hasTimer()) {        // samples actually inside, from the Lab Timer batches (start → taken out)
+    batchList(-Infinity, Infinity, now).filter(q => q.test.eq === eq && !V.hidden.has(q.test.key))
+      .forEach(q => { ev.push([q.start, q.count]); ev.push([q.running ? now : q.end, -q.count]); });
+  } else list.filter(j => j.w2 && j.test.eq === eq).forEach(j => { ev.push([j.w2.t, 1]); ev.push([j.w3 ? j.w3.t : now, -1]); });
+  ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  let c = 0, max = 0; const pts = [[t0, 0]];
+  ev.forEach(([t, d]) => { c += d; max = Math.max(max, c); pts.push([Math.max(t, t0), c]); });
+  return { pts, max };
+}
+
+function tableHTML(list) {
+  const SBT = sampleBatches();
+  const mOrd = c => { const k = machineKeys(c)[0], i = MACHINES.indexOf(k); return i >= 0 ? i : (k === 'ALL' ? 4 : 5); };
+  const rows = list.slice().sort((a, b) => (V.group === 'machine' ? mOrd(a.code) - mOrd(b.code) : 0) || b.start - a.start);
+  const cell = w => w ? `${when(w.t)} <span style="color:var(--muted)">${esc(w.by)}</span>` : '–';
+  return `<div class="card"><h2>All tests in this range</h2><p class="sub">${V.group === 'machine' ? 'By machine, then newest first.' : 'Newest first.'}</p><div class="scroll"><table class="list">
+    <thead><tr><th>Sample</th>${V.group === 'machine' ? '<th>Machine</th>' : ''}<th>Test</th><th>W1 (empty)</th><th>W2 (with sample)</th><th>W3 (after heating)</th><th>W1 → W2</th><th>W2 → in</th><th>In oven / furnace</th><th>Out → W3</th></tr></thead>
+    <tbody>${rows.map(j => `<tr><td><b>${esc(j.code)}</b></td>${V.group === 'machine' ? `<td>${esc(machinesOf(j.code).join(', ') || '–')}</td>` : ''}<td><i class="sw" style="width:10px;background:${j.test.color};margin-right:6px"></i>${esc(j.test.key)}</td>
+      <td>${cell(j.w1)}</td><td>${cell(j.w2)}</td><td>${cell(j.w3)}</td>
+      <td>${j.w1 && j.w2 ? dur(j.w2.t - j.w1.t) : '–'}</td>
+      ${(st => st ? `<td>${dur(st.wait)}</td><td><b>${dur(st.heat)}</b>${st.running ? ' so far' : ''} <span style="color:var(--muted)">${esc(st.q.section)}</span></td>
+        <td>${st.out ? (st.waitingW3 ? dur(st.after) + ' so far' : dur(st.after)) : '–'}</td>`
+        : `<td colspan="3" style="color:var(--muted)">${j.w2 ? (j.w3 ? 'W2 → W3 ' + dur(j.w3.t - j.w2.t) + ' (no timer batch)' : 'waiting to go in, ' + dur(Date.now() - j.w2.t)) : '–'}</td>`)(stagesOf(j, SBT))}</tr>`).join('')}</tbody></table></div></div>`;
+}
+
+/* ---------- tooltip ---------- */
+function showTip(el, cx, cy) {
+  const [code, key] = el.dataset.j.split('|');
+  const j = jobs().find(q => q.code === code && q.test.key === key); if (!j) return;
+  const st = stagesOf(j, sampleBatches());
+  const r = (l, w) => `<tr><td>${l}</td><td>${w ? `<b>${when(w.t)}</b> · ${esc(w.by)}` : '<span style="color:var(--muted)">not yet</span>'}</td></tr>`;
+  tip.innerHTML = `<h3><i class="sw" style="width:10px;background:${j.test.color}"></i>${esc(code)} · ${esc(key)}${machinesOf(code).length ? ` <span style="color:var(--muted);font-weight:400">· ${esc(machinesOf(code).join(', '))}</span>` : ''}</h3>
+    <table>${r('W1 empty', j.w1)}${r('W2 with sample', j.w2)}${r('W3 after heating', j.w3)}</table>
+    <div class="dur">${j.w1 && j.w2 ? `W1 → W2 (weighing): <b>${dur(j.w2.t - j.w1.t)}</b><br>` : ''}
+      ${st ? `W2 → into ${esc(st.q.section)}: <b>${dur(st.wait)}</b> (started ${hm(st.start)})<br>
+        In ${esc(st.q.section)}: <b>${dur(st.heat)}</b>${st.running ? ' so far' : ` (taken out ${hm(st.out)})`}<br>
+        ${st.out ? `Taken out → W3: <b>${st.waitingW3 ? dur(st.after) + ' so far, W3 not weighed' : dur(st.after)}</b>` : ''}`
+      : (j.w2 ? (j.w3 ? `W2 → W3: <b>${dur(j.w3.t - j.w2.t)}</b> <span style="color:var(--muted)">(no Lab Timer batch to split it)</span>` : `W2 → now: <b>${dur(Date.now() - j.w2.t)}</b>`) : '')}</div>`;
+  tip.hidden = false;
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  let left = cx + 14, top = cy + 14;
+  if (left + tw > innerWidth - 8) left = cx - tw - 14;
+  if (top + th > innerHeight - 8) top = cy - th - 14;
+  tip.style.left = Math.max(8, left) + 'px'; tip.style.top = Math.max(8, top) + 'px';
+}
+
+function wire() {
+  root.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { V.range = b.dataset.range; store.set('dash-range', V.range); render(); });
+  root.querySelectorAll('[data-view]').forEach(b => b.onclick = () => { V.view = b.dataset.view; render(); });
+  root.querySelectorAll('[data-stage]').forEach(b => b.onclick = () => { V.stage = b.dataset.stage; store.set('dash-stage', V.stage); render(); });
+  root.querySelectorAll('.chip[data-test]').forEach(b => b.onclick = () => {
+    const k = b.dataset.test; V.hidden.has(k) ? V.hidden.delete(k) : V.hidden.add(k); render(); });
+  const g = document.getElementById('group'); if (g) g.onchange = () => { V.group = g.value; store.set('dash-group', V.group);
+    if (V.group === 'machine' && Date.now() - namesAt > 10 * 6e4) load(); else render(); };
+  const r = document.getElementById('refresh'); if (r) r.onclick = load;
+  root.querySelectorAll('.hit[data-b]').forEach(el => {
+    el.addEventListener('mousemove', e => showBatchTip(el, e.clientX, e.clientY));
+    el.addEventListener('mouseleave', () => tip.hidden = true);
+    el.addEventListener('click', e => showBatchTip(el, e.clientX, e.clientY));
+    el.addEventListener('focus', () => { const r = el.getBoundingClientRect(); showBatchTip(el, r.left + 20, r.bottom); });
+    el.addEventListener('blur', () => tip.hidden = true);
+  });
+  root.querySelectorAll('.hit[data-j]').forEach(el => {
+    el.addEventListener('mousemove', e => showTip(el, e.clientX, e.clientY));
+    el.addEventListener('mouseleave', () => tip.hidden = true);
+    el.addEventListener('click', e => showTip(el, e.clientX, e.clientY));
+    el.addEventListener('focus', () => { const b = el.getBoundingClientRect(); showTip(el, b.left + 140, b.top + b.height); });
+    el.addEventListener('blur', () => tip.hidden = true);
+  });
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') tip.hidden = true; });
+document.addEventListener('scroll', () => tip.hidden = true, true);
+let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => RAW && render(), 150); });
+
+load();
+setInterval(() => { if (document.visibilityState === 'visible') load(); }, 60000);
+</script>
+</body>
+</html>
