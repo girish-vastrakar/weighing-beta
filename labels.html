@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QR labels (Beta)</title>
+<style>
+  :root { --ink: #1f2a33; --muted: #5a6872; --line: #d3dbe0; --base: #eef2f4; --surface: #fff; }
+  body { margin: 0; background: var(--base); color: var(--ink); font: 16px/1.4 system-ui, sans-serif; }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 16px; }
+  h1 { font-size: 1.4rem; margin: 8px 0; }
+  .sub { color: var(--muted); margin: 0 0 12px; }
+  textarea { width: 100%; box-sizing: border-box; min-height: 90px; font: inherit; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0 18px; }
+  button { font: inherit; font-weight: 700; padding: 12px 16px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); }
+  button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  h2 { font-size: 1.1rem; margin: 18px 0 8px; }
+  .grid { display: grid; gap: 8px; }
+  .places { grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
+  .samples { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); }
+  .lab { background: #fff; border: 1px dashed #999; border-radius: 8px; padding: 8px; text-align: center; break-inside: avoid; }
+  .lab svg { width: 100%; height: auto; display: block; }
+  .lab b { display: block; font-size: 1.1rem; margin-top: 4px; }
+  .places .lab b { font-size: 1.6rem; }
+  @media print {
+    body { background: #fff; }
+    .noprint, .betabar { display: none !important; }
+    .wrap { max-width: none; padding: 0; }
+    .places { grid-template-columns: repeat(2, 1fr); }
+    .samples { grid-template-columns: repeat(5, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="betabar noprint" role="note" style="position:sticky;top:0;z-index:1000;background:#d9480f;color:#fff;font:600 13px/1.3 system-ui,sans-serif;text-align:center;padding:6px 12px">BETA · test data only · not the real lab results</div>
+<div class="wrap">
+  <div class="noprint">
+    <h1>QR labels</h1>
+    <p class="sub">Stick an oven or furnace label next to each door. Sample labels hold just the sample code, which is what the app reads.</p>
+    <label for="codes"><b>Sample codes</b> (one per line or separated by commas)</label>
+    <textarea id="codes"></textarea>
+    <div class="row">
+      <button id="make">Make labels</button>
+      <button class="primary" onclick="window.print()">Print</button>
+    </div>
+  </div>
+  <h2>Ovens and furnaces</h2>
+  <div class="grid places" id="places"></div>
+  <h2>Samples</h2>
+  <div class="grid samples" id="samples"></div>
+</div>
+<script src="lib/qrcode.js"></script>
+<script>
+const PLACES = ['OVEN 1', 'OVEN 2', 'FURNACE 1', 'FURNACE 2'];
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+function svg(text) {
+  const q = qrcode(0, 'M'); q.addData(text); q.make();
+  return q.createSvgTag({ cellSize: 4, margin: 2, scalable: true });
+}
+const label = (text, title) => `<div class="lab">${svg(text)}<b>${esc(title || text)}</b></div>`;
+function make() {
+  const codes = document.getElementById('codes').value.split(/[\s,;]+/).map(c => c.trim().toUpperCase()).filter(Boolean);
+  document.getElementById('samples').innerHTML = codes.map(c => label(c)).join('');
+}
+document.getElementById('places').innerHTML = PLACES.map(p => label(p)).join('');
+document.getElementById('codes').value = Array.from({ length: 20 }, (x, i) => 'Q' + String(i + 1).padStart(2, '0')).join(', ');
+document.getElementById('make').addEventListener('click', make);
+make();
+</script>
+</body>
+</html>

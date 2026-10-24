@@ -180,6 +180,51 @@
   .viewer img { display: block; width: 100%; max-height: 70vh; object-fit: contain; border-radius: 12px; background: #000; }
   .install { background: var(--ok); color: #fff; border-color: var(--ok); font-weight: 700; }
   html[lang="gu"] body { line-height: 1.5; }
+
+  /* beta: scanning, batches, job card */
+  .scanbig { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 22px; font-size: 1.35rem; margin-bottom: 10px; }
+  .scanbig .qr { font-size: 2rem; line-height: 1; }
+  .scanbig small { font-weight: 400; font-size: .9rem; opacity: .85; }
+  .typerow { display: flex; gap: 8px; align-items: flex-start; }
+  .typerow .field { flex: 1; min-width: 0; }
+  .typerow .secondary { flex: 0 0 auto; padding: 14px 16px; }
+  .bhead { margin: 14px 2px 8px; font-size: 1.05rem; }
+  .batchrow.ph-cool, .batchrow.ph-weighing { background: var(--c-bg); border-color: var(--c); }
+  .batchrow.ph-done { opacity: .65; }
+  .wide { width: 100%; display: block; margin-top: 10px; }
+  .jobcard { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 14px; margin-top: 6px; }
+  .jk { margin: 0; font-size: .75rem; letter-spacing: .06em; text-transform: uppercase; color: var(--c); font-weight: 700; }
+  .jf { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; margin: 8px 0; font-size: .8rem; color: var(--muted); }
+  .jf span { display: flex; flex-direction: column; border-bottom: 1px solid var(--line); padding-bottom: 3px; }
+  .jf b { color: var(--ink); font-size: 1rem; }
+  .jobcard .state { font-weight: 700; color: var(--c); margin: 6px 0 2px; }
+  .legend { font-size: .75rem; color: var(--muted); margin: 0 0 8px; }
+  .slots { display: grid; grid-auto-flow: column; gap: 6px; }
+  .slot { position: relative; min-width: 0; border: 1px dashed var(--line); border-radius: 10px; padding: 6px 6px 4px; text-align: left; background: var(--surface); font: inherit; color: inherit; }
+  .slot.empty { opacity: .45; min-height: 52px; }
+  .slot .sn { position: absolute; top: 3px; left: 6px; font-size: .7rem; font-weight: 700; color: var(--muted); }
+  .slot .sc { display: block; text-align: center; font-weight: 700; font-size: 1.05rem; margin-top: 10px; overflow-wrap: anywhere; }
+  .slot .sg { display: block; text-align: center; font-size: .7rem; color: var(--err); }
+  .slot .ca { display: flex; justify-content: center; gap: 6px; margin-top: 4px; }
+  .slot .ca i { font-style: normal; font-size: .7rem; font-weight: 700; width: 20px; height: 18px; border: 1px solid var(--line); border-radius: 4px; display: grid; place-items: center; color: var(--muted); }
+  .slot .ca i.on { background: var(--c); border-color: var(--c); color: #fff; }
+  .slot.next { border: 3px solid var(--c); background: var(--c-bg); }
+  .slot.out .sc { text-decoration: line-through; color: var(--muted); }
+  .bact { margin-top: 12px; }
+  .bigtime { font-size: 2.2rem; font-weight: 700; text-align: center; color: var(--c); margin: 6px 0; }
+  .mins { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+  .mins input { width: 90px; padding: 10px; font: inherit; border: 1px solid var(--line); border-radius: 10px; }
+  .walk { margin: 6px 0; padding: 12px 14px; border-radius: 14px; background: var(--c); color: #fff; font-weight: 700; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+  .walk b { font-size: 1.8rem; }
+  .slotmsg { font-size: 1.15rem; font-weight: 700; color: var(--c); display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--c-bg); border-radius: 12px; padding: 10px 14px; }
+  .slotmsg b { font-size: 2.4rem; line-height: 1; }
+  .loadbtn { color: var(--ink); border-color: var(--line); background: var(--surface); font-weight: 700; }
+  #scanner { position: fixed; inset: 0; z-index: 2000; background: rgba(20, 30, 38, .92); display: flex; align-items: center; justify-content: center; padding: 16px; }
+  #scanner[hidden] { display: none; }
+  .scanbox { width: 100%; max-width: 480px; background: var(--surface); border-radius: 18px; padding: 16px; }
+  .scanbox .vid { position: relative; border-radius: 12px; overflow: hidden; background: #000; aspect-ratio: 1; margin-bottom: 10px; }
+  .scanbox video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .scanbox .aim { position: absolute; inset: 18%; border: 3px solid #fff; border-radius: 12px; box-shadow: 0 0 0 999px rgba(0, 0, 0, .25); }
 </style>
 </head>
 <body>
@@ -188,6 +233,7 @@
 <input type="file" id="photofile" accept="image/*" capture="environment" hidden>
 <div class="wrap" id="app"><div class="empty">Loading…</div></div>
 
+<script src="batch.js"></script>
 <script>
 /* ====== SETTINGS: where the results are stored (a PRIVATE GitHub repository) ====== */
 const GH = { owner: 'girish-vastrakar', repo: 'weighing_data_QR', path: 'data.json', tsPath: 'timestamps.json', namesPath: 'names.json', apprPath: 'approvals.json', logPath: 'corrections.json', branch: 'main' };
@@ -653,6 +699,7 @@ function fileSample(f, code) {
 }
 // Apply one change (from this phone's waiting list) to the data file
 function fileApply(f, j) {
+  if (batchApply(f, j)) return;
   if (j.action === 'saveWeight') {
     const s = fileSample(f, j.code);
     s.w[j.key][j.step - 1] = j.value; delete s.pct[j.key];
@@ -693,7 +740,7 @@ function toData(f) {
     recompute(s);
     return s;
   });
-  return { samples, tests: TESTS, order: ORDER };
+  return { samples, tests: TESTS, order: ORDER, batches: Object.values(f.batches || {}).sort((a, b) => a.made - b.made) };
 }
 // What the worker sees = last copy from GitHub + this phone's unsent changes
 function rebuild() {
@@ -1171,11 +1218,11 @@ function renderHome() {
     </div>` + body;
 }
 
-function stateText(k, st) {
+function stateText(k, st, code) {
   const t = T();
   if (st.done === 0) return t.notStarted;
   if (st.done === 1) return t.nextW2;
-  if (st.done === 2) return t.inHeat(heat(k));
+  if (st.done === 2) return (code && batchStateText(code, k)) || t.inHeat(heat(k));
   const p = pctLine(k, st);
   if (isFlag(k, st)) return flagText(k, st);
   return p ? t.doneP(p) : t.done;
@@ -1186,7 +1233,7 @@ function testBtn(s, k) {
   const st = s.tests[k];
   const card = `<button class="testbtn ${st.done === 3 ? 'done' : ''} ${isFlag(k, st) ? 'flag' : ''}" style="${cvar(k)}" data-act="open-test" data-test="${k}">
     <div class="name">${esc(lbl(k))}</div>
-    <div class="state">${esc(stateText(k, st))}</div></button>`;
+    <div class="state">${esc(stateText(k, st, s.code))}</div></button>`;
   if (!hasValues(st)) return card;
   return `<div class="testrow">${card}
     <button class="resetbtn" data-act="ask-reset" data-test="${k}" aria-label="${esc(T().reset)} ${esc(lbl(k))}"><span>↺</span>${esc(T().reset)}</button></div>`;
@@ -1205,7 +1252,7 @@ function renderSample() {
       ${s.tmRequired ? testBtn(s, tmK) : ''}</div>` : '';
   return `<div style="display:flex;justify-content:space-between;align-items:center">
       <button class="back" data-act="home">${esc(t.allSamples)}</button>${langBtn()}</div>
-    ${navHTML()}<h2 class="title">${esc(s.code)}</h2>${infoHTML(s.code)}${flagsOf(s).length ? `<div class="flagnote">${esc(t.flagNote(flagsOf(s).map(lbl).join(', ')))}</div>` : ''}${approvalHTML(s)}${photoBoxHTML(s)}
+    <h2 class="title">${esc(s.code)}</h2>${infoHTML(s.code)}${S.machine && S.machine !== 'ALL' && !forMachine(s.code) ? `<div class="flagnote">${esc(B().otherMachine(machinesOf(s.code).join(', ') || '—', S.machine))}</div>` : ''}${flagsOf(s).length ? `<div class="flagnote">${esc(t.flagNote(flagsOf(s).map(lbl).join(', ')))}</div>` : ''}${approvalHTML(s)}${photoBoxHTML(s)}
     <p class="sub" style="margin-top:8px">${esc(t.chooseTest)}</p>
     <div class="list">${main}</div>${tm}`;
 }
@@ -1226,6 +1273,7 @@ function navHTML() {
 }
 // Move to the previous/next sample without going back to the list
 function goCard(dir) {
+  return;                                    // Beta: no stepping between samples, a sample is opened only by scanning it
   if (S.view !== 'sample' || S.modal || S.busy) return;
   const code = neighbours()[dir];
   if (!code) { animate('bump-' + dir); return; }
@@ -1253,7 +1301,7 @@ function renderStep() {
   return `<div style="${cvar(k)}">
     <div style="display:flex;justify-content:space-between;align-items:center">
       <button class="back" data-act="back-sample">← ${esc(s.code)}</button>${langBtn()}</div>
-    <h2 class="title">${esc(lbl(k))}</h2>${infoHTML(s.code)}
+    ${walkBanner()}<h2 class="title">${esc(lbl(k))}</h2>${infoHTML(s.code)}
     <div class="steps">${[1, 2, 3].map(i => `<span class="${i <= step ? 'on' : ''}"></span>`).join('')}</div>
     <p class="stepno">${esc(S.editing ? t.correcting(step, wLabel(k, step - 1)) : t.stepOf(step))}</p>
     <p class="instr">${esc(instr[0])}</p>
@@ -1331,6 +1379,7 @@ function renderSetup() {
       <button class="back" data-act="setup-done">← Back</button>${langBtn()}</div>
     <h2 class="title">Setup</h2>
     <p class="sub">Workers: choose your weighing machine here. The rest is for the supervisor.</p>
+    <p><a class="link" href="labels.html" target="_blank" rel="noopener">▣ ${esc(B().labels)}</a></p>
 
     <div class="prev" style="margin-top:0">
       <div class="row" style="display:block"><b>Weighing machine on this phone</b>
@@ -1605,6 +1654,7 @@ function renderModal() {
   const m = S.modal;
   if (!m) return '';
   const t = T(), k = S.test;
+  if (m.type === 'addcode') return renderAddCode(m);
   if (m.type === 'reset') return `<div class="modal" style="${cvar(m.key)}"><div class="sheet" role="dialog" aria-modal="true">
       <p class="instr">${esc(t.resetQ(S.code, lbl(m.key)))}</p>
       <p class="sub">${esc(t.resetInfo)}</p>
@@ -1627,7 +1677,7 @@ function renderModal() {
       </div></div></div>`;
   return `<div class="modal" style="${cvar(k)}"><div class="sheet" role="dialog" aria-modal="true">
       <div class="tick" aria-hidden="true">✓</div>
-      <p class="instr">${esc(savedMsg(m))}</p>${flagMsg(m)}
+      <p class="instr">${esc(savedMsg(m))}</p>${m.slot ? `<p class="slotmsg">${esc(B().putSlot(lbl(k), m.slot.no, m.slot.i + 1))}<b>${m.slot.i + 1}</b></p>` : ''}${flagMsg(m)}
       ${askPhoto(m) ? `<div class="photoask"><p>${esc(t.phAsk(lbl(k)))}</p><p class="sub" style="margin:0">${esc(t.phAskSub)}</p></div>
       <div class="btnrow"><button class="secondary" data-act="photo-skip" ${S.busy ? 'disabled' : ''}>${esc(t.phSkip)}</button>
         <button class="primary" data-act="photo-take" data-test="${k}" ${S.busy ? 'disabled' : ''}>${esc(S.busy ? t.phBusy : t.phTake)}</button></div>`
@@ -1653,6 +1703,7 @@ function savedMsg(m) {
 
 function afterSaved() {
   const next = S.modal && S.modal.next; S.modal = null;
+  if (S.walk && next === 'sample') { walkNext(S.walk.bid); return; }   // W3 of a batch: on to the next slot
   if (next === 'step2') { S.step = 2; S.draft = ''; S.editing = false; S.view = 'step'; }
   else S.view = 'sample';
 }
@@ -1686,8 +1737,11 @@ function render() {
   document.title = T().title;
   if (!S.worker && S.view !== 'setup') S.view = 'name';
   if (!S.data && S.view !== 'name' && S.view !== 'setup') { app.innerHTML = `<div class="empty">${esc(T().loading)}</div>`; return; }
-  const v = { home: renderHome, sample: renderSample, step: renderStep, review: renderReview, name: renderName, setup: renderSetup }[S.view];
+  const v = { home: renderHomeBeta, batch: renderBatch, place: renderPlace, sample: renderSample, step: renderStep, review: renderReview, name: renderName, setup: renderSetup }[S.view];
+  const tc = document.getElementById('typecode'), typed = tc && tc.value, typing = tc && document.activeElement === tc;
   app.innerHTML = v() + renderModal();
+  const tc2 = document.getElementById('typecode');      // a refresh must not wipe a half-typed code
+  if (tc2 && typed) { tc2.value = typed; if (typing) tc2.focus(); }
   if (S.view === 'home') {
     if (prevView !== 'home' || S.restoreOnce) { S.restoreOnce = false; restorePos(); }
     else window.scrollTo(0, keepY);          // same screen redrawn: stay put
@@ -1733,6 +1787,8 @@ function renderNotReady(err) {
 
 function openTest(k) {
   const st = sample(S.code).tests[k];
+  const blocked = st.done === 2 ? w3Blocked(S.code, k) : '';
+  if (blocked) { toast(blocked); return; }
   S.test = k; S.editing = false; S.draft = ''; S.modal = null;
   if (st.done === 3) S.view = 'review';
   else { S.step = st.done + 1; S.view = 'step'; }
@@ -1784,6 +1840,8 @@ function doSave() {
   enqueue({ action: 'saveWeight', code: S.code, key: S.test, step: S.step, value: S.modal.value, worker: S.worker });
   const st = sample(S.code).tests[S.test];
   const m = { type: 'saved', next: 'sample', step: S.step, pct: st.pct };
+  const at = S.step === 2 ? batchAfterW2(S.code, S.test) : null;     // W2 puts the sample in its batch slot
+  if (at) m.slot = { no: at.b.no, i: at.i };
   if (S.editing) m.kind = 'corrected';
   else if (S.step === 1) { m.kind = 's1'; m.next = 'step2'; }
   else if (S.step === 2) m.kind = 's2';
@@ -1813,6 +1871,7 @@ function saveName() {
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]');
   if (!el || S.busy) return;
+  if (batchAct(el)) return;
   switch (el.dataset.act) {
     case 'lang': {
       const nm = document.getElementById('nm');
@@ -1840,7 +1899,9 @@ document.addEventListener('click', e => {
     case 'open-test': openTest(el.dataset.test); break;
     case 'card': goCard(el.dataset.dir); break;
     case 'home': S.view = 'home'; render(); S.restoreOnce = true; load(false); break;
-    case 'back-sample': S.view = 'sample'; S.modal = null; render(); break;
+    case 'back-sample':
+      if (S.walk) { S.bid = S.walk.bid; S.walk = null; S.view = 'batch'; S.modal = null; render(); break; }
+      S.view = 'sample'; S.modal = null; render(); break;
     case 'tm': setTm(el.dataset.val === '1'); break;
     case 'approve': {
       if (!el.dataset.armed) { el.dataset.armed = '1'; el.textContent = T().apprTap; setTimeout(() => { delete el.dataset.armed; el.textContent = T().apprBtn; }, 4000); break; }
@@ -1858,6 +1919,7 @@ document.addEventListener('click', e => {
     case 'do-reset': {
       const key = S.modal.key; S.modal = null;
       enqueue({ action: 'resetTest', code: S.code, key, worker: S.worker });
+      if (CAP[key]) enqueue({ action: 'batchRemove', code: S.code, key, worker: S.worker });
       S.view = 'sample'; render();
       toast(T().resetDone(S.code, lbl(key)), true);
       break;
@@ -1932,6 +1994,8 @@ document.addEventListener('keydown', e => {
   if (e.key !== 'Enter' || S.busy) return;
   if (e.target.id === 'w') askConfirm();
   else if (e.target.id === 'nm') saveName();
+  else if (e.target.id === 'typecode') { if (e.target.value.trim()) onScan(e.target.value.trim(), 'any'); }
+  else if (e.target.id === 'scantype') scanTyped();
   else if (e.target.id === 'newcodes') addCodes();
   else if (e.target.id === 'key') saveKey();
 });
@@ -1955,6 +2019,12 @@ window.addEventListener('online', () => { if (S.view === 'home' && !S.busy && S.
 setInterval(() => {
   if (document.visibilityState === 'visible' && S.view === 'home' && !S.modal && !S.busy) load(false);
 }, 60000);
+
+// Batch countdowns: redraw the batch screens while nobody is typing
+setInterval(() => {
+  const typing = document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
+  if (document.visibilityState === 'visible' && (S.view === 'home' || S.view === 'batch') && !S.modal && !S.busy && !SCAN && !typing) render();
+}, 20000);
 
 // One-time setup link: #key=...  (saved on this phone, then removed from the address bar)
 (function takeKeyFromLink() {
