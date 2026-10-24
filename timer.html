@@ -355,7 +355,7 @@ function appBatches() {
     .map(b => {
       const samples = b.slots.filter((c, i) => slotLive(b, i));
       return { id: 'app-' + b.bid, app: true, no: b.no, section: b.place, test: b.test, samples, start: b.start, end: b.start + b.mins * 60000,
-               planned: b.mins, snoozes: 0, snoozeMin: 0, state: 'run', events: [],
+               planned: b.mins, snoozes: 0, snoozeMin: 0, state: b.outAt ? 'out' : 'run', events: [],
                left: samples.filter(c => stateOf(c, b.test) === 'w2') };
     })
     .filter(b => b.left.length && Date.now() - b.end < ABANDONED_MS);
@@ -627,7 +627,7 @@ function listsHTML() {
   const wait = tests.map(k => ({ k, list: waiting(k) })).filter(x => x.list.length);
   const outs = S.batches.filter(b => b.state === 'out');
   const filling = appAll().filter(b => !b.place && b.slots.length).sort((a, b) => a.made - b.made);
-  const w3 = appBatches().filter(b => b.end <= Date.now());
+  const w3 = appBatches().filter(b => b.end <= Date.now() || b.state === 'out');
   return `<div class="lists">
     ${filling.length ? `<div class="card"><h2>${esc(t.batchesTitle)}</h2><p class="sub">${esc(t.batchesSub)}</p>
       ${filling.map(b => `<div class="grp" style="${cvar(b.test)}"><i></i>${esc(t.test[b.test])} · ${esc(b.no)}

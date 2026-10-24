@@ -32,6 +32,9 @@ const BL = {
     tapC: n => `Place slot ${n}, then tap it`, cOrder: n => `Place slot ${n} first`,
     start: m => `Door closed: start ${m} min timer`, minutes: 'minutes',
     unload: 'Take the batch out (loaded by mistake)',
+    takeOut: p => `Taken out of ${p} to cool (frees it)`, isOut: p => `Out of ${p}, cooling`,
+    freeAsk: (p, no) => `${p} still has batch ${no} in it (time is up). Did you take it out?`,
+    freeYes: no => `Yes, taken out. Load ${no}`,
     scanW3: p => `Scan ${p} QR for W3`, early: 'Time is not up. Weigh now anyway',
     left: m => `${m} min left`,
     wrongPlace: (got, want) => `This is ${got}. This batch is in ${want}.`,
@@ -67,6 +70,9 @@ const BL = {
     tapC: n => `ખાનું ${n} મૂકો, પછી તેને ટેપ કરો`, cOrder: n => `પહેલા ખાનું ${n} મૂકો`,
     start: m => `દરવાજો બંધ: ${m} મિનિટ ટાઈમર શરૂ કરો`, minutes: 'મિનિટ',
     unload: 'બેચ પાછી કાઢો (ભૂલથી મૂકી)',
+    takeOut: p => `${p} માંથી ઠંડી કરવા કાઢી (ખાલી કરે)`, isOut: p => `${p} માંથી બહાર, ઠંડી થાય છે`,
+    freeAsk: (p, no) => `${p} માં હજુ બેચ ${no} છે (સમય પૂરો). શું તમે તેને બહાર કાઢી?`,
+    freeYes: no => `હા, કાઢી લીધી. ${no} લોડ કરો`,
     scanW3: p => `W3 માટે ${p} નો QR સ્કેન કરો`, early: 'સમય પૂરો નથી. તો પણ હમણાં વજન કરો',
     left: m => `${m} મિનિટ બાકી`,
     wrongPlace: (got, want) => `આ ${got} છે. આ બેચ ${want} માં છે.`,
@@ -140,8 +146,10 @@ function batchApply(f, j) {
     b.c = b.c || []; b.c[j.slot] = true;
   } else if (j.action === 'batchStart') {
     if (!b.start) { b.start = j.at; b.mins = j.mins; }
+  } else if (j.action === 'batchOut') {           // taken out to cool: the oven / furnace is free, W3 still to do
+    if (b.place && !b.outAt) b.outAt = j.at;
   } else if (j.action === 'batchUnload') {
-    b.place = null; b.c = []; b.start = null; b.mins = null; b.loadedAt = null; b.loadedBy = '';
+    b.place = null; b.outAt = null; b.c = []; b.start = null; b.mins = null; b.loadedAt = null; b.loadedBy = '';
   }
   return true;
 }
@@ -158,10 +166,12 @@ function phase(b) {
   if (live.every(i => slotA(b, i))) return 'done';
   if (!b.start) return 'loading';
   if (live.some(i => slotA(b, i))) return 'weighing';
-  return Date.now() < b.start + b.mins * 60000 ? 'heating' : 'cool';
+  return !b.outAt && Date.now() < b.start + b.mins * 60000 ? 'heating' : 'cool';
 }
 const minsLeft = b => Math.max(0, Math.ceil((b.start + b.mins * 60000 - Date.now()) / 60000));
-const placeBusy = p => batches().find(b => b.place === p && phase(b) !== 'done');
+// a batch taken out to cool no longer holds its oven / furnace
+const placeBusy = p => batches().find(b => b.place === p && !b.outAt && phase(b) !== 'done');
+const placeCooling = p => batches().find(b => b.place === p && b.outAt && ['cool', 'weighing'].includes(phase(b)));
 // The batch a sample's test is waiting in (not finished), with its slot
 function slotOf(code, k) {
   for (const b of batches().slice().reverse()) {
@@ -174,7 +184,7 @@ function slotOf(code, k) {
 function phaseText(b) {
   const t = B(), p = placeName(b.place), ph = phase(b);
   return ph === 'filling' ? t.filling(b.slots.length, CAP[b.test]) : ph === 'ready' ? t.ready : ph === 'loading' ? t.loading(p)
-    : ph === 'heating' ? t.heating(p, minsLeft(b)) : ph === 'cool' ? t.cool(p) : ph === 'weighing' ? t.weighing(p) : t.done;
+    : ph === 'heating' ? t.heating(p, minsLeft(b)) : ph === 'cool' ? (b.outAt ? t.isOut(p) + ' · ' : '') + t.cool(p) : ph === 'weighing' ? t.weighing(p) : t.done;
 }
 
 // After a W2 is saved: give the sample its slot. Returns the slot to show in the "saved" message.
@@ -227,7 +237,8 @@ function renderBatch() {
          <button class="primary wide" data-act="b-start">${esc(t.start(MINS[b.test]))}</button>`;
   else if (ph === 'heating') act = `<div class="bigtime">${esc(t.left(minsLeft(b)))}</div>
       <button class="secondary wide" data-act="b-early">${esc(t.early)}</button>`;
-  else if (ph === 'cool' || ph === 'weighing') act = `<button class="primary wide" data-act="b-scanw3">▣ ${esc(t.scanW3(placeName(b.place)))}</button>`;
+  else if (ph === 'cool' || ph === 'weighing') act = `<button class="primary wide" data-act="b-scanw3">▣ ${esc(t.scanW3(placeName(b.place)))}</button>`
+    + (b.outAt ? `<p class="sub center">${esc(t.isOut(placeName(b.place)))}</p>` : `<button class="secondary wide" data-act="b-out">${esc(t.takeOut(placeName(b.place)))}</button>`);
   if (ph === 'loading' || ph === 'heating') act += `<button class="link center" data-act="b-unload">${esc(t.unload)}</button>`;
   const pk = PLACES[b.place] || PLACES[b.test === 'MC' ? 'O1' : 'F1'];
   return `<div style="${cvar(b.test)}">
@@ -393,7 +404,10 @@ function onScan(txt, purpose, bid) {
   }
   if (p) {                                            // home: an oven / furnace
     const b = placeBusy(p);
-    if (b && ['heating', 'cool', 'weighing'].includes(phase(b))) return startW3(b, false);
+    if (b && ['cool', 'weighing'].includes(phase(b))) return startW3(b, false);
+    const c = placeCooling(p);                        // its last batch is out cooling and waits for W3
+    if (c) return startW3(c, false);
+    if (b && phase(b) === 'heating') return startW3(b, false);
     if (b) { S.bid = b.bid; S.view = 'batch'; render(); return; }
     S.place = p; S.view = 'place'; render(); return;
   }
@@ -407,7 +421,11 @@ function loadInto(b, p) {
   const t = B();
   if (!PLACES[p].tests.includes(b.test)) { toast(t.notFor(placeName(p), lbl(b.test))); return; }
   const other = placeBusy(p);
-  if (other && other.bid !== b.bid) { toast(t.busy(placeName(p))); return; }
+  if (other && other.bid !== b.bid) {
+    // time is up there: the crucibles may already be out on the cooling tray
+    if (['cool', 'weighing'].includes(phase(other)) && phase(b) === 'ready') { S.modal = { type: 'freeplace', bid: b.bid, other: other.bid, place: p }; render(); return; }
+    toast(t.busy(placeName(p))); return;
+  }
   if (phase(b) !== 'ready') { S.bid = b.bid; S.view = 'batch'; render(); return; }
   enqueue({ action: 'batchLoad', bid: b.bid, place: p, worker: S.worker });
   S.bid = b.bid; S.view = 'batch'; render();
@@ -435,6 +453,14 @@ function batchAct(el) {
       const m = Math.max(1, Math.round(Number((document.getElementById('bmins') || {}).value) || MINS[b.test]));
       enqueue({ action: 'batchStart', bid: b.bid, mins: m, worker: S.worker }); render(); return true;
     }
+    case 'b-out': if (b && confirmTap(el)) { enqueue({ action: 'batchOut', bid: b.bid, worker: S.worker }); render(); } return true;
+    case 'free-yes': {
+      const m = S.modal; S.modal = null;
+      const x = m && batchBy(m.bid);
+      if (x) { enqueue({ action: 'batchOut', bid: m.other, worker: S.worker }); enqueue({ action: 'batchLoad', bid: x.bid, place: m.place, worker: S.worker });
+               S.bid = x.bid; S.view = 'batch'; toast(t.loaded(placeName(m.place)), true); }
+      render(); return true;
+    }
     case 'b-unload': if (b && confirmTap(el)) { enqueue({ action: 'batchUnload', bid: b.bid, worker: S.worker }); render(); } return true;
     case 'b-scanw3': if (b) openScanner('w3', b.bid); return true;
     case 'b-early': if (b && confirmTap(el)) openScanner('w3early', b.bid); return true;
@@ -450,6 +476,13 @@ function renderMoved(m) {
   return `<div class="modal" style="${cvar(m.test)}"><div class="sheet" role="dialog" aria-modal="true">
     <p class="instr" style="color:var(--err)">⚠ ${esc(m.msg)}</p>
     <div class="btnrow"><button class="primary" data-act="cancel">OK</button></div></div></div>`;
+}
+function renderFreePlace(m) {
+  const t = B(), o = batchBy(m.other), b = batchBy(m.bid);
+  return `<div class="modal"><div class="sheet" role="dialog" aria-modal="true">
+    <p class="instr">${esc(t.freeAsk(placeName(m.place), o ? o.no : ''))}</p>
+    <div class="btnrow"><button class="secondary" data-act="cancel">${esc(t.close)}</button>
+      <button class="primary" data-act="free-yes">${esc(t.freeYes(b ? b.no : ''))}</button></div></div></div>`;
 }
 function renderAddCode(m) {
   const t = B();

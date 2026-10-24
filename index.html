@@ -1655,6 +1655,7 @@ function renderModal() {
   const t = T(), k = S.test;
   if (m.type === 'addcode') return renderAddCode(m);
   if (m.type === 'moved') return renderMoved(m);
+  if (m.type === 'freeplace') return renderFreePlace(m);
   if (m.type === 'reset') return `<div class="modal" style="${cvar(m.key)}"><div class="sheet" role="dialog" aria-modal="true">
       <p class="instr">${esc(t.resetQ(S.code, lbl(m.key)))}</p>
       <p class="sub">${esc(t.resetInfo)}</p>
