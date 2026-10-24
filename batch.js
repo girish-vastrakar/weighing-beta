@@ -1,6 +1,6 @@
 /* ====== BETA: QR scanning, automatic batches and the job card ======
    Flow: scan the sample's QR → choose the test → W1, W2 as before.
-   Saving W2 puts the sample in the next free slot of this machine's open batch for that test.
+   Saving W2 puts the sample in the next free slot of the open batch for that test (one batch per test, shared by all phones).
    A full batch (or one started early) is loaded by scanning the oven / furnace QR, ticking C for each slot in order.
    When the time is up, scanning the same oven / furnace QR walks through the slots in order for W3 (A ticks).
 
@@ -49,7 +49,8 @@ const BL = {
     otherMachine: (m, me) => `This sample is for ${m}. This phone is ${me}.`,
     placeFree: p => `${p} is empty. Load which batch?`, noneReady: p => `No batch is ready for ${p}.`,
     loadHere: 'Load here', gone: 'reset', wantPlace: 'Scan the oven or furnace QR, not a sample.',
-    labels: 'Print QR labels'
+    labels: 'Print QR labels',
+    moved: (c, a, no, b) => `${c} moved from slot ${a} to batch ${no}, slot ${b}. Another phone saved first: move the dish.`
   },
   gu: {
     scan: 'QR સ્કેન કરો', scanSub: 'સેમ્પલ, ઓવન કે ફર્નેસ',
@@ -83,7 +84,8 @@ const BL = {
     otherMachine: (m, me) => `આ સેમ્પલ ${m} માટે છે. આ ફોન ${me} છે.`,
     placeFree: p => `${p} ખાલી છે. કઈ બેચ લોડ કરવી?`, noneReady: p => `${p} માટે કોઈ બેચ તૈયાર નથી.`,
     loadHere: 'અહીં લોડ કરો', gone: 'રીસેટ', wantPlace: 'સેમ્પલ નહીં, ઓવન કે ફર્નેસ નો QR સ્કેન કરો.',
-    labels: 'QR લેબલ છાપો'
+    labels: 'QR લેબલ છાપો',
+    moved: (c, a, no, b) => `${c} ખાનું ${a} થી બેચ ${no}, ખાનું ${b} માં ગયું. બીજા ફોને પહેલા સેવ કર્યું: ડિશ ખસેડો.`
   }
 };
 const B = () => BL[S.lang] || BL.en;
@@ -108,13 +110,13 @@ function batchApply(f, j) {
     const busy = Object.values(all).some(x => x.test === j.key &&
       x.slots.some((c, i) => c === j.code && (!x.place || !fileSlotOver(f, x, i))));
     if (busy) return true;
-    let open = Object.values(all).filter(x => x.test === j.key && x.machine === j.machine && !x.place && !x.ready && x.slots.length < CAP[j.key])
+    let open = Object.values(all).filter(x => x.test === j.key && !x.place && !x.ready && x.slots.length < CAP[j.key])
       .sort((a, c) => a.made - c.made)[0];
     if (!open) {
       const day = dayOf(j.at);
-      const no = Object.values(all).filter(x => x.day === day && x.machine === j.machine && x.test === j.key).length + 1;
-      const bid = `${day}-${j.machine}-${j.key}-${no}`;
-      open = all[bid] = { bid, test: j.key, machine: j.machine, day, no: `${j.machine}-${no}`, made: j.at, madeBy: j.worker || '',
+      const no = Object.values(all).filter(x => x.day === day && x.test === j.key).length + 1;
+      const bid = `${day}-${j.key}-${no}`;
+      open = all[bid] = { bid, test: j.key, day, no: String(no), made: j.at, madeBy: j.worker || '',
                           slots: [], out: [], c: [], ready: false, place: null, loadedAt: null, loadedBy: '', start: null, mins: null };
     }
     open.slots.push(j.code);
@@ -178,7 +180,7 @@ function batchAfterW2(code, k) {
   if (!CAP[k]) return null;
   const st = sample(code).tests[k];
   if (st.done !== 2) return null;
-  if (!slotOf(code, k)) enqueue({ action: 'batchAdd', code, key: k, machine: S.machine || 'ALL', worker: S.worker });
+  if (!slotOf(code, k)) enqueue({ action: 'batchAdd', code, key: k, worker: S.worker });
   return slotOf(code, k);
 }
 
@@ -186,7 +188,7 @@ function batchAfterW2(code, k) {
 function batchRow(b) {
   const t = B(), ph = phase(b);
   return `<button class="testbtn batchrow ph-${ph}" style="${cvar(b.test)}" data-act="b-open" data-bid="${esc(b.bid)}">
-    <div class="name">${esc(lbl(b.test))} · ${esc(t.batchNo)} ${esc(b.no)}${b.machine === (S.machine || 'ALL') ? ` <span class="mtag">${esc(t.mine)}</span>` : ''}</div>
+    <div class="name">${esc(lbl(b.test))} · ${esc(t.batchNo)} ${esc(b.no)}</div>
     <div class="state">${esc(phaseText(b))}</div></button>`;
 }
 function renderHomeBeta() {
@@ -199,7 +201,6 @@ function renderHomeBeta() {
     <button class="primary scanbig" data-act="scan"><span class="qr" aria-hidden="true">▣</span>${esc(t.scan)}<small>${esc(t.scanSub)}</small></button>
     <div class="typerow"><input class="field" id="typecode" type="text" autocomplete="off" autocapitalize="characters" placeholder="${esc(t.typePh)}">
       <button class="secondary" data-act="type-open">${esc(t.open)}</button></div>
-    <button class="machline" data-act="setup">⚖ <b>${esc(S.machine || 'ALL')}</b></button>
     <h3 class="bhead">${esc(t.batches)}</h3>
     <div class="list">${live.length ? live.map(batchRow).join('') : `<div class="empty">${esc(t.noBatches)}</div>`}</div>
     ${recent.length ? `<h3 class="bhead">${esc(t.finished)}</h3><div class="list">${recent.map(batchRow).join('')}</div>` : ''}`;
@@ -240,7 +241,7 @@ function renderBatch() {
       <div class="jf">
         <span>${esc(t.date)}<b>${esc(fmtDate(b.day))}</b></span><span>${esc(t.batchNo)}<b>${esc(b.no)}</b></span>
         <span>${esc(pk.kind === 'oven' ? t.oven : t.furnace)}<b>${esc(b.place ? placeName(b.place) : '—')}</b></span>
-        <span>${esc(t.machine)}<b>${esc(b.machine)}</b></span><span>${esc(t.name)}<b>${esc(b.loadedBy || b.madeBy || '—')}</b></span>
+<span>${esc(t.name)}<b>${esc(b.loadedBy || b.madeBy || '—')}</b></span>
       </div>
       <p class="state ph-${ph}">${esc(phaseText(b))}</p>
       <p class="legend">${esc(t.legend)}</p>
@@ -254,7 +255,7 @@ function renderBatch() {
 function renderPlace() {
   const t = B(), p = S.place;
   const fit = batches().filter(b => phase(b) === 'ready' && PLACES[p].tests.includes(b.test))
-    .sort((a, b) => (b.machine === (S.machine || 'ALL')) - (a.machine === (S.machine || 'ALL')) || a.made - b.made);
+    .sort((a, b) => a.made - b.made);
   return `<div style="display:flex;justify-content:space-between;align-items:center">
       <button class="back" data-act="home">${esc(T().allSamples)}</button>${langBtn()}</div>
     <h2 class="title">${esc(placeName(p))}</h2>
@@ -275,6 +276,23 @@ function w3Blocked(code, k) {
   const at = slotOf(code, k);
   if (!at) return '';
   return at.b.place ? B().w3Locked(placeName(at.b.place)) : B().w3NotLoaded(at.b.no);
+}
+
+/* ---------- two phones saving W2 at the same moment ----------
+   The slot shown after W2 comes from this phone's copy. If another phone's W2 reached the batch first,
+   the slot moves when the data syncs: say so loudly, so the dish is moved before loading. */
+const SHOWN = {};
+function checkSlots() {
+  Object.keys(SHOWN).forEach(key => {
+    const [code, k] = key.split('|'), at = slotOf(code, k);
+    if (!at) { delete SHOWN[key]; return; }
+    if (at.i !== SHOWN[key]) {
+      const msg = B().moved(code, SHOWN[key] + 1, at.b.no, at.i + 1);
+      if (S.modal) toast(msg); else { S.modal = { type: 'moved', msg, test: k }; render(); }
+    }
+    if (!Q.some(j => j.action === 'batchAdd' && j.code === code && j.key === k)) delete SHOWN[key];   // settled
+    else SHOWN[key] = at.i;
+  });
 }
 
 /* ---------- W3, slot by slot ---------- */
@@ -434,6 +452,11 @@ function batchAct(el) {
     }
   }
   return false;
+}
+function renderMoved(m) {
+  return `<div class="modal" style="${cvar(m.test)}"><div class="sheet" role="dialog" aria-modal="true">
+    <p class="instr" style="color:var(--err)">⚠ ${esc(m.msg)}</p>
+    <div class="btnrow"><button class="primary" data-act="cancel">OK</button></div></div></div>`;
 }
 function renderAddCode(m) {
   const t = B();

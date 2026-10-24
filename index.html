@@ -259,7 +259,8 @@ const store = {
 // Remembers where the worker was on the list, per tab (also kept after the app is closed)
 const POS = (() => { try { return JSON.parse(store.get('pos') || '{}'); } catch (e) { return {}; } })();
 const S = {
-  data: null, tests: null, order: [], worker: store.get('worker'), machine: store.get('machine'), lang: store.get('lang') || 'en',
+  data: null, tests: null, order: [], worker: store.get('worker'), machine: '',     // Beta: no weighing machine choice, every phone sees every sample
+  lang: store.get('lang') || 'en',
   view: 'home', tab: 'samples', query: '', showDone: false,
   code: null, test: null, step: 1, editing: false, draft: '', modal: null, busy: false
 };
@@ -1051,6 +1052,7 @@ async function sync() {
     toLog(batch.filter(j => !TS_ACTIONS.includes(j.action)));     // the rest go to the log after timestamps.json
     syncFails = 0; lastSyncOk = Date.now();
     rebuild();
+    checkSlots();
     if (!S.modal && S.view !== 'step' && S.view !== 'setup') render();
   } catch (err) {
     syncFails++;
@@ -1378,23 +1380,16 @@ function renderSetup() {
   return `<div style="display:flex;justify-content:space-between;align-items:center">
       <button class="back" data-act="setup-done">← Back</button>${langBtn()}</div>
     <h2 class="title">Setup</h2>
-    <p class="sub">Workers: choose your weighing machine here. The rest is for the supervisor.</p>
+    <p class="sub">For the supervisor. Workers don't need anything here.</p>
     <p><a class="link" href="labels.html" target="_blank" rel="noopener">▣ ${esc(B().labels)}</a></p>
 
-    <div class="prev" style="margin-top:0">
-      <div class="row" style="display:block"><b>Weighing machine on this phone</b>
-        <p class="sub" style="margin:4px 0 8px">The sample list then shows only the samples given to this machine in the Machine column of the sheet. ALL shows the samples marked ALL or not given to any machine.</p>
-        <div class="toggle mpick">${[...MACHINES, 'ALL'].map(m => `<button aria-pressed="${S.machine === m}" data-act="machine" data-val="${m}">${m}</button>`).join('')}</div>
-        ${S.machine ? '<button class="link" data-act="machine" data-val="">Show every sample (no machine)</button>' : '<p class="sub" style="margin:0">No machine chosen: every sample is shown.</p>'}</div>
-    </div>
 
     <div class="prev">
       <div class="row"><span><b>Storage</b><br>github.com/${esc(GH.owner)}/${esc(GH.repo)} → ${esc(GH.path)}</span>
         <span style="font-weight:700;color:${linked && !bad ? 'var(--ok)' : 'var(--err)'}">${linked ? (bad ? 'Key refused' : 'Connected') : 'Not set up'}</span></div>
       <div class="row" style="display:block">
-        <input class="field" id="key" type="password" autocomplete="off" placeholder="${linked ? 'Paste a new key to replace it' : 'Paste the GitHub key (github_pat_…)'}" style="margin:0 0 8px">
-        <div class="btnrow"><button class="secondary" data-act="save-key">Save key</button>
-        ${linked ? '<button class="secondary" data-act="forget-key">Remove key from this phone</button>' : ''}</div>
+        <p class="sub" style="margin:0 0 8px">${linked ? 'This phone is connected by its setup link.' : 'Open the setup link (…/weighing-beta/#key=…) once on this phone to connect it.'}</p>
+        ${linked ? '<div class="btnrow"><button class="secondary" data-act="forget-key">Remove key from this phone</button></div>' : ''}
       </div>
     </div>
 
@@ -1655,6 +1650,7 @@ function renderModal() {
   if (!m) return '';
   const t = T(), k = S.test;
   if (m.type === 'addcode') return renderAddCode(m);
+  if (m.type === 'moved') return renderMoved(m);
   if (m.type === 'reset') return `<div class="modal" style="${cvar(m.key)}"><div class="sheet" role="dialog" aria-modal="true">
       <p class="instr">${esc(t.resetQ(S.code, lbl(m.key)))}</p>
       <p class="sub">${esc(t.resetInfo)}</p>
@@ -1841,7 +1837,7 @@ function doSave() {
   const st = sample(S.code).tests[S.test];
   const m = { type: 'saved', next: 'sample', step: S.step, pct: st.pct };
   const at = S.step === 2 ? batchAfterW2(S.code, S.test) : null;     // W2 puts the sample in its batch slot
-  if (at) m.slot = { no: at.b.no, i: at.i };
+  if (at) { m.slot = { no: at.b.no, i: at.i }; SHOWN[S.code + '|' + S.test] = at.i; }
   if (S.editing) m.kind = 'corrected';
   else if (S.step === 1) { m.kind = 's1'; m.next = 'step2'; }
   else if (S.step === 2) m.kind = 's2';
