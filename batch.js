@@ -106,6 +106,8 @@ function batchApply(f, j) {
   if (!/^batch/.test(j.action)) return false;
   const all = f.batches = f.batches || {}, b = j.bid ? all[j.bid] : null;
   if (j.action === 'batchAdd') {
+    // keep data.json small: finished batches older than 3 days are dropped
+    Object.values(all).forEach(x => { if (fileBatchOver(f, x) && j.at - (x.start || x.made) > 3 * 86400000) delete all[x.bid]; });
     // already waiting in a batch: one not loaded yet, or a loaded one whose slot is not finished
     const busy = Object.values(all).some(x => x.test === j.key &&
       x.slots.some((c, i) => c === j.code && (!x.place || !fileSlotOver(f, x, i))));
