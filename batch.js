@@ -1,6 +1,6 @@
 /* ====== BETA: QR scanning, automatic batches and the job card ======
    Flow: scan the sample's QR → choose the test → W1, W2 as before.
-   Saving W2 puts the sample in the next free slot of the open batch for that test (one batch per test, shared by all phones).
+   Saving W2 puts the sample in the next free slot of this machine's open batch for that test.
    A full batch (or one started early) is loaded by scanning the oven / furnace QR, ticking C for each slot in order.
    When the time is up, scanning the same oven / furnace QR walks through the slots in order for W3 (A ticks).
 
@@ -110,13 +110,13 @@ function batchApply(f, j) {
     const busy = Object.values(all).some(x => x.test === j.key &&
       x.slots.some((c, i) => c === j.code && (!x.place || !fileSlotOver(f, x, i))));
     if (busy) return true;
-    let open = Object.values(all).filter(x => x.test === j.key && !x.place && !x.ready && x.slots.length < CAP[j.key])
+    let open = Object.values(all).filter(x => x.test === j.key && x.machine === j.machine && !x.place && !x.ready && x.slots.length < CAP[j.key])
       .sort((a, c) => a.made - c.made)[0];
     if (!open) {
       const day = dayOf(j.at);
-      const no = Object.values(all).filter(x => x.day === day && x.test === j.key).length + 1;
-      const bid = `${day}-${j.key}-${no}`;
-      open = all[bid] = { bid, test: j.key, day, no: String(no), made: j.at, madeBy: j.worker || '',
+      const no = Object.values(all).filter(x => x.day === day && x.machine === j.machine && x.test === j.key).length + 1;
+      const bid = `${day}-${j.machine}-${j.key}-${no}`;
+      open = all[bid] = { bid, test: j.key, machine: j.machine, day, no: `${j.machine}-${no}`, made: j.at, madeBy: j.worker || '',
                           slots: [], out: [], c: [], ready: false, place: null, loadedAt: null, loadedBy: '', start: null, mins: null };
     }
     open.slots.push(j.code);
@@ -180,7 +180,7 @@ function batchAfterW2(code, k) {
   if (!CAP[k]) return null;
   const st = sample(code).tests[k];
   if (st.done !== 2) return null;
-  if (!slotOf(code, k)) enqueue({ action: 'batchAdd', code, key: k, worker: S.worker });
+  if (!slotOf(code, k)) enqueue({ action: 'batchAdd', code, key: k, machine: S.machine || 'ALL', worker: S.worker });
   return slotOf(code, k);
 }
 
@@ -188,7 +188,7 @@ function batchAfterW2(code, k) {
 function batchRow(b) {
   const t = B(), ph = phase(b);
   return `<button class="testbtn batchrow ph-${ph}" style="${cvar(b.test)}" data-act="b-open" data-bid="${esc(b.bid)}">
-    <div class="name">${esc(lbl(b.test))} · ${esc(t.batchNo)} ${esc(b.no)}</div>
+    <div class="name">${esc(lbl(b.test))} · ${esc(t.batchNo)} ${esc(b.no)}${b.machine === (S.machine || 'ALL') ? ` <span class="mtag">${esc(t.mine)}</span>` : ''}</div>
     <div class="state">${esc(phaseText(b))}</div></button>`;
 }
 function renderHomeBeta() {
@@ -201,6 +201,7 @@ function renderHomeBeta() {
     <button class="primary scanbig" data-act="scan"><span class="qr" aria-hidden="true">▣</span>${esc(t.scan)}<small>${esc(t.scanSub)}</small></button>
     <div class="typerow"><input class="field" id="typecode" type="text" autocomplete="off" autocapitalize="characters" placeholder="${esc(t.typePh)}">
       <button class="secondary" data-act="type-open">${esc(t.open)}</button></div>
+    <button class="machline" data-act="setup">⚖ <b>${esc(S.machine || 'ALL')}</b></button>
     <h3 class="bhead">${esc(t.batches)}</h3>
     <div class="list">${live.length ? live.map(batchRow).join('') : `<div class="empty">${esc(t.noBatches)}</div>`}</div>
     ${recent.length ? `<h3 class="bhead">${esc(t.finished)}</h3><div class="list">${recent.map(batchRow).join('')}</div>` : ''}`;
@@ -241,7 +242,7 @@ function renderBatch() {
       <div class="jf">
         <span>${esc(t.date)}<b>${esc(fmtDate(b.day))}</b></span><span>${esc(t.batchNo)}<b>${esc(b.no)}</b></span>
         <span>${esc(pk.kind === 'oven' ? t.oven : t.furnace)}<b>${esc(b.place ? placeName(b.place) : '—')}</b></span>
-<span>${esc(t.name)}<b>${esc(b.loadedBy || b.madeBy || '—')}</b></span>
+<span>${esc(t.machine)}<b>${esc(b.machine)}</b></span><span>${esc(t.name)}<b>${esc(b.loadedBy || b.madeBy || '—')}</b></span>
       </div>
       <p class="state ph-${ph}">${esc(phaseText(b))}</p>
       <p class="legend">${esc(t.legend)}</p>
@@ -255,7 +256,7 @@ function renderBatch() {
 function renderPlace() {
   const t = B(), p = S.place;
   const fit = batches().filter(b => phase(b) === 'ready' && PLACES[p].tests.includes(b.test))
-    .sort((a, b) => a.made - b.made);
+    .sort((a, b) => (b.machine === (S.machine || 'ALL')) - (a.machine === (S.machine || 'ALL')) || a.made - b.made);
   return `<div style="display:flex;justify-content:space-between;align-items:center">
       <button class="back" data-act="home">${esc(T().allSamples)}</button>${langBtn()}</div>
     <h2 class="title">${esc(placeName(p))}</h2>
