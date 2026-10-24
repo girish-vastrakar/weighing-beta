@@ -2024,7 +2024,7 @@ setInterval(() => {
 // Batch countdowns: redraw the batch screens while nobody is typing
 setInterval(() => {
   const typing = document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
-  if (document.visibilityState === 'visible' && (S.view === 'home' || S.view === 'batch') && !S.modal && !S.busy && !SCAN && !typing) render();
+  if (document.visibilityState === 'visible' && S.data && (S.view === 'home' || S.view === 'batch') && !S.modal && !S.busy && !SCAN && !typing) render();
 }, 20000);
 
 // One-time setup link: #key=...  (saved on this phone, then removed from the address bar)
