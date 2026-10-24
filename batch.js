@@ -22,13 +22,13 @@ const BL = {
     typePh: 'No camera? Type the full code', open: 'Open',
     batches: 'Batches', noBatches: 'No batches yet. A batch starts by itself when W2 is saved.',
     finished: 'Finished in the last 12 hours', mine: 'this phone',
-    filling: (n, c) => `Filling: ${n} of ${c}`, ready: 'Full. Scan the oven or furnace to load',
-    loading: p => `Loading into ${p}: tick each slot`, heating: (p, m) => `In ${p} · ${m} min left`,
+    filling: (n, c) => `Filling: ${n} of ${c}`, ready: 'Ready. Scan the oven or furnace to load',
+    loading: p => `Loading into ${p}`, heating: (p, m) => `In ${p} · ${m} min left`,
     cool: p => `Time is up. Scan ${p} for W3`, weighing: p => `W3 going on · ${p}`, done: 'Done',
     card: 'Proximate analysis · job card', date: 'Date', batchNo: 'Batch No.', oven: 'Oven No.', furnace: 'Furnace No.',
     machine: 'Weighing Machine No.', name: 'Name', legend: 'C = charged in this order · A = afterweighed in this order',
     fewer: n => `Start with ${n} (don't wait for a full batch)`, fewerSub: 'Only if no more samples are coming soon.',
-    scanLoad: 'Scan oven / furnace QR to load', putIn: 'Put the crucibles in this order:',
+    scanLoad: 'Scan oven / furnace QR to load', putIn: 'Put the crucibles in the slot order shown above, close the door, then start the timer.',
     tapC: n => `Place slot ${n}, then tap it`, cOrder: n => `Place slot ${n} first`,
     start: m => `Door closed: start ${m} min timer`, minutes: 'minutes',
     unload: 'Take the batch out (loaded by mistake)',
@@ -36,7 +36,7 @@ const BL = {
     left: m => `${m} min left`,
     wrongPlace: (got, want) => `This is ${got}. This batch is in ${want}.`,
     notFor: (p, t) => `${p} is not used for ${t}.`, busy: p => `${p} already has a batch in it.`,
-    loaded: p => `Loaded into ${p}. Tick C for each slot as you place it.`,
+    loaded: p => `Loaded into ${p}. Put the crucibles in the slot order shown.`,
     slotOf: (i, n, p) => `Slot ${i} of ${n} · ${p}`, batchDone: 'Batch finished. All W3 saved.',
     inBatch: (no, i) => `Waiting in batch ${no}, slot ${i}`,
     inPlace: (p, no, i) => `In ${p} (batch ${no}, slot ${i}). Scan ${p} for W3`,
@@ -57,13 +57,13 @@ const BL = {
     typePh: 'કેમેરા નથી? પૂરો કોડ લખો', open: 'ખોલો',
     batches: 'બેચ', noBatches: 'હજુ કોઈ બેચ નથી. W2 સેવ થાય ત્યારે બેચ આપોઆપ બને છે.',
     finished: 'છેલ્લા 12 કલાકમાં પૂરી થયેલ', mine: 'આ ફોન',
-    filling: (n, c) => `ભરાય છે: ${n} / ${c}`, ready: 'ભરાઈ ગઈ. લોડ કરવા ઓવન / ફર્નેસ સ્કેન કરો',
-    loading: p => `${p} માં મૂકાય છે: દરેક ખાનું ટિક કરો`, heating: (p, m) => `${p} માં · ${m} મિનિટ બાકી`,
+    filling: (n, c) => `ભરાય છે: ${n} / ${c}`, ready: 'તૈયાર. લોડ કરવા ઓવન / ફર્નેસ સ્કેન કરો',
+    loading: p => `${p} માં મૂકાય છે`, heating: (p, m) => `${p} માં · ${m} મિનિટ બાકી`,
     cool: p => `સમય પૂરો. W3 માટે ${p} સ્કેન કરો`, weighing: p => `W3 ચાલુ છે · ${p}`, done: 'પૂરું',
     card: 'પ્રોક્સિમેટ એનાલિસિસ · જોબ કાર્ડ', date: 'તારીખ', batchNo: 'બેચ નં.', oven: 'ઓવન નં.', furnace: 'ફર્નેસ નં.',
     machine: 'વજન કાંટા નં.', name: 'નામ', legend: 'C = આ ક્રમમાં મૂક્યું · A = આ ક્રમમાં વજન કર્યું',
     fewer: n => `${n} સાથે શરૂ કરો (પૂરી બેચની રાહ ન જુઓ)`, fewerSub: 'ફક્ત જો હમણાં વધુ સેમ્પલ આવવાના ન હોય.',
-    scanLoad: 'લોડ કરવા ઓવન / ફર્નેસ નો QR સ્કેન કરો', putIn: 'ક્રુસિબલ આ ક્રમમાં મૂકો:',
+    scanLoad: 'લોડ કરવા ઓવન / ફર્નેસ નો QR સ્કેન કરો', putIn: 'ઉપર બતાવેલ ખાના ના ક્રમમાં ક્રુસિબલ મૂકો, દરવાજો બંધ કરો, પછી ટાઈમર શરૂ કરો.',
     tapC: n => `ખાનું ${n} મૂકો, પછી તેને ટેપ કરો`, cOrder: n => `પહેલા ખાનું ${n} મૂકો`,
     start: m => `દરવાજો બંધ: ${m} મિનિટ ટાઈમર શરૂ કરો`, minutes: 'મિનિટ',
     unload: 'બેચ પાછી કાઢો (ભૂલથી મૂકી)',
@@ -71,7 +71,7 @@ const BL = {
     left: m => `${m} મિનિટ બાકી`,
     wrongPlace: (got, want) => `આ ${got} છે. આ બેચ ${want} માં છે.`,
     notFor: (p, t) => `${p} ${t} માટે નથી.`, busy: p => `${p} માં પહેલેથી બેચ છે.`,
-    loaded: p => `${p} માં લોડ થઈ. દરેક ખાનું મૂકો તેમ C ટિક કરો.`,
+    loaded: p => `${p} માં લોડ થઈ. બતાવેલ ખાના ના ક્રમમાં ક્રુસિબલ મૂકો.`,
     slotOf: (i, n, p) => `ખાનું ${i} / ${n} · ${p}`, batchDone: 'બેચ પૂરી. બધા W3 સેવ થયા.',
     inBatch: (no, i) => `બેચ ${no}, ખાનું ${i} માં રાહ જુએ છે`,
     inPlace: (p, no, i) => `${p} માં (બેચ ${no}, ખાનું ${i}). W3 માટે ${p} સ્કેન કરો`,
@@ -211,22 +211,17 @@ function renderBatch() {
   const t = B(), b = batchBy(S.bid);
   if (!b) { S.view = 'home'; return renderHomeBeta(); }
   const ph = phase(b), n = b.slots.length, cap = CAP[b.test], cols = COLS[b.test], rows = Math.ceil(cap / cols);
-  const nextC = ph === 'loading' ? b.slots.findIndex((c, i) => !slotOut(b, i) && !(b.c && b.c[i])) : -1;
   const slot = i => {
     const code = b.slots[i];
     if (!code) return `<div class="slot empty"><span class="sn">${i + 1}</span></div>`;
-    const out = slotOut(b, i), c = b.c && b.c[i], a = slotA(b, i);
-    const tag = ph === 'loading' && !out ? 'button' : 'div';
-    return `<${tag} class="slot${out ? ' out' : ''}${i === nextC ? ' next' : ''}${S.walk && S.walk.bid === b.bid && S.code === code ? ' next' : ''}"${tag === 'button' ? ` data-act="b-c" data-i="${i}"` : ''}>
-      <span class="sn">${i + 1}</span><span class="sc">${esc(code)}</span>${out ? `<span class="sg">${esc(t.gone)}</span>` : ''}
-      <span class="ca"><i class="${c ? 'on' : ''}">C</i><i class="${a ? 'on' : ''}">A</i></span></${tag}>`;
+    const out = slotOut(b, i), a = slotA(b, i);
+    return `<div class="slot${out ? ' out' : ''}${a ? ' w3' : ''}${S.walk && S.walk.bid === b.bid && S.code === code ? ' next' : ''}">
+      <span class="sn">${i + 1}</span>${a ? '<span class="tk" aria-hidden="true">✓</span>' : ''}<span class="sc">${esc(code)}</span>${out ? `<span class="sg">${esc(t.gone)}</span>` : ''}</div>`;
   };
   let act = '';
   if (ph === 'filling') act = `<p class="sub">${esc(t.fewerSub)}</p><button class="secondary wide" data-act="b-ready">${esc(t.fewer(n))}</button>`;
   else if (ph === 'ready') act = `<button class="primary wide" data-act="b-scanload">▣ ${esc(t.scanLoad)}</button>`;
-  else if (ph === 'loading') act = nextC >= 0
-      ? `<p class="instr">${esc(t.tapC(nextC + 1))}</p>`
-      : `<label class="mins">${esc(t.minutes)} <input id="bmins" type="number" inputmode="numeric" min="1" value="${MINS[b.test]}"></label>
+  else if (ph === 'loading') act = `<p class="instr">${esc(t.putIn)}</p><label class="mins">${esc(t.minutes)} <input id="bmins" type="number" inputmode="numeric" min="1" value="${MINS[b.test]}"></label>
          <button class="primary wide" data-act="b-start">${esc(t.start(MINS[b.test]))}</button>`;
   else if (ph === 'heating') act = `<div class="bigtime">${esc(t.left(minsLeft(b)))}</div>
       <button class="secondary wide" data-act="b-early">${esc(t.early)}</button>`;
@@ -245,7 +240,6 @@ function renderBatch() {
 <span>${esc(t.machine)}<b>${esc(b.machine)}</b></span><span>${esc(t.name)}<b>${esc(b.loadedBy || b.madeBy || '—')}</b></span>
       </div>
       <p class="state ph-${ph}">${esc(phaseText(b))}</p>
-      <p class="legend">${esc(t.legend)}</p>
       <div class="slots" style="grid-template-columns:repeat(${cols},1fr);grid-template-rows:repeat(${rows},auto)">
         ${Array.from({ length: cap }, (x, i) => slot(i)).join('')}</div>
     </div>
@@ -432,12 +426,6 @@ function batchAct(el) {
     case 'b-ready': if (b && confirmTap(el)) { enqueue({ action: 'batchReady', bid: b.bid, worker: S.worker }); render(); } return true;
     case 'b-scanload': if (b) openScanner('load', b.bid); return true;
     case 'b-loadhere': { const x = batchBy(el.dataset.bid); if (x) loadInto(x, S.place); return true; }
-    case 'b-c': {
-      if (!b || phase(b) !== 'loading') return true;
-      const i = Number(el.dataset.i), next = b.slots.findIndex((c, x) => !slotOut(b, x) && !(b.c && b.c[x]));
-      if (i !== next) { toast(t.cOrder(next + 1)); return true; }
-      enqueue({ action: 'batchC', bid: b.bid, slot: i, worker: S.worker }); render(); return true;
-    }
     case 'b-start': {
       if (!b) return true;
       const m = Math.max(1, Math.round(Number((document.getElementById('bmins') || {}).value) || MINS[b.test]));
