@@ -210,7 +210,7 @@ function render() {
   root.innerHTML = `
     <header><h1>Lab timeline</h1>
       <span class="meta">${ERR ? '⚠ ' + esc(ERR) + ' · showing last data · ' : ''}Updated ${LOADED ? hm(LOADED) : '–'} · refreshes every minute
-        <button class="btn" id="refresh" style="margin-left:6px">↻</button></span></header>
+        <button class="btn" id="refresh" style="margin-left:6px">↻</button> <a href="results.html" style="margin-left:6px">Results</a></span></header>
     <div class="filters">
       <div class="seg" role="group" aria-label="Time range">${rangeBtn('today', 'Today')}${rangeBtn('yesterday', 'Yesterday')}${rangeBtn('7d', 'Last 7 days')}${rangeBtn('all', 'All')}</div>
       ${TESTS.map(t => `<button class="chip" data-test="${esc(t.key)}" aria-pressed="${!V.hidden.has(t.key)}" style="--c:${t.color}"><i></i>${esc(t.key)}</button>`).join('')}
