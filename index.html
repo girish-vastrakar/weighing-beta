@@ -232,7 +232,7 @@
 <input type="file" id="photofile" accept="image/*" capture="environment" hidden>
 <div class="wrap" id="app"><div class="empty">Loading…</div></div>
 
-<script src="batch.js"></script>
+<script src="hold.js"></script>
 <script>
 /* ====== SETTINGS: where the results are stored (a PRIVATE GitHub repository) ====== */
 const GH = { owner: 'girish-vastrakar', repo: 'weighing_data_QR', path: 'data.json', tsPath: 'timestamps.json', namesPath: 'names.json', apprPath: 'approvals.json', logPath: 'corrections.json', branch: 'main' };
@@ -734,12 +734,12 @@ function fileApply(f, j) {
 function toData(f) {
   const samples = f.codes.filter(c => f.samples[c]).map(code => {
     const fs = f.samples[code];
-    const s = { code, tmRequired: !!fs.tm, last: fs.last || '', photos: fs.photos || [], tests: {} };
+    const s = { code, tmRequired: !!fs.tm, last: fs.last || '', photos: fs.photos || [], hold: fs.h || {}, holdAt: fs.ha || {}, tests: {} };
     ORDER.forEach(k => { s.tests[k] = { w: fs.w[k].slice(), pct: isNum(fs.pct[k]) ? fs.pct[k] : null, done: 0, required: true }; });
     recompute(s);
     return s;
   });
-  return { samples, tests: TESTS, order: ORDER, batches: Object.values(f.batches || {}).sort((a, b) => a.made - b.made) };
+  return { samples, tests: TESTS, order: ORDER, runs: Object.values(f.runs || {}).sort((a, b) => a.start - b.start) };
 }
 // What the worker sees = last copy from GitHub + this phone's unsent changes
 function rebuild() {
@@ -1220,9 +1220,11 @@ function renderHome() {
 
 function stateText(k, st, code) {
   const t = T();
+  const hs = code && st.done < 3 ? holdStateText(code, k, st.done) : '';
+  if (hs) return hs;
   if (st.done === 0) return t.notStarted;
   if (st.done === 1) return t.nextW2;
-  if (st.done === 2) return (code && batchStateText(code, k)) || t.inHeat(heat(k));
+  if (st.done === 2) return t.inHeat(heat(k));
   const p = pctLine(k, st);
   if (isFlag(k, st)) return flagText(k, st);
   return p ? t.doneP(p) : t.done;
@@ -1253,6 +1255,7 @@ function renderSample() {
   return `<div style="display:flex;justify-content:space-between;align-items:center">
       <button class="back" data-act="home">${esc(t.allSamples)}</button>${langBtn()}</div>
     <h2 class="title">${esc(s.code)}</h2>${infoHTML(s.code)}${S.machine && S.machine !== 'ALL' && !forMachine(s.code) ? `<div class="flagnote">${esc(B().otherMachine(machinesOf(s.code).join(', ') || '—', S.machine))}</div>` : ''}${flagsOf(s).length ? `<div class="flagnote">${esc(t.flagNote(flagsOf(s).map(lbl).join(', ')))}</div>` : ''}${approvalHTML(s)}${photoBoxHTML(s)}
+    ${HELD.some(k => s.tests[k].done === 0) ? `<button class="primary scanbig" style="margin-top:10px" data-act="scan"><span class="qr" aria-hidden="true">▣</span>${esc(B().scan)}<small>${esc(B().startHint)}</small></button>` : ''}
     <p class="sub" style="margin-top:8px">${esc(t.chooseTest)}</p>
     <div class="list">${main}</div>${tm}`;
 }
@@ -1656,6 +1659,7 @@ function renderModal() {
   if (m.type === 'addcode') return renderAddCode(m);
   if (m.type === 'moved') return renderMoved(m);
   if (m.type === 'freeplace') return renderFreePlace(m);
+  if (m.type === 'early') return renderEarly(m);
   if (m.type === 'reset') return `<div class="modal" style="${cvar(m.key)}"><div class="sheet" role="dialog" aria-modal="true">
       <p class="instr">${esc(t.resetQ(S.code, lbl(m.key)))}</p>
       <p class="sub">${esc(t.resetInfo)}</p>
@@ -1671,14 +1675,14 @@ function renderModal() {
   if (m.type === 'confirm') return `<div class="modal" style="${cvar(k)}"><div class="sheet" role="dialog" aria-modal="true">
       <p class="sub" style="margin:0">${esc(S.code)}, ${esc(lbl(k))}, W${S.step}: ${esc(wLabel(k, S.step - 1))}</p>
       <div class="big">${esc(m.raw)} g</div>
-      <p style="margin-top:0">${esc(t.isThis)}</p>
+      <p style="margin-top:0">${esc(t.isThis)}</p>${unheatedNote()}
       <div class="btnrow">
         <button class="secondary" data-act="cancel" ${S.busy ? 'disabled' : ''}>${esc(t.change)}</button>
         <button class="primary" data-act="confirm" ${S.busy ? 'disabled' : ''}>${esc(S.busy ? t.saving : t.yesSave)}</button>
       </div></div></div>`;
   return `<div class="modal" style="${cvar(k)}"><div class="sheet" role="dialog" aria-modal="true">
       <div class="tick" aria-hidden="true">✓</div>
-      <p class="instr">${esc(savedMsg(m))}</p>${m.slot ? `<p class="slotmsg">${esc(B().putSlot(lbl(k), m.slot.no, m.slot.i + 1))}<b>${m.slot.i + 1}</b></p>` : ''}${flagMsg(m)}
+      <p class="instr">${esc(savedMsg(m))}</p>${m.slot ? `<p class="slotmsg">${esc(m.slot.text)}<b>${esc(m.slot.big)}</b></p>` : ''}${flagMsg(m)}
       ${askPhoto(m) ? `<div class="photoask"><p>${esc(t.phAsk(lbl(k)))}</p><p class="sub" style="margin:0">${esc(t.phAskSub)}</p></div>
       <div class="btnrow"><button class="secondary" data-act="photo-skip" ${S.busy ? 'disabled' : ''}>${esc(t.phSkip)}</button>
         <button class="primary" data-act="photo-take" data-test="${k}" ${S.busy ? 'disabled' : ''}>${esc(S.busy ? t.phBusy : t.phTake)}</button></div>`
@@ -1704,7 +1708,7 @@ function savedMsg(m) {
 
 function afterSaved() {
   const next = S.modal && S.modal.next; S.modal = null;
-  if (S.walk && next === 'sample') { walkNext(S.walk.bid); return; }   // W3 of a batch: on to the next slot
+  if (holdAfter(next)) return;          // weighed from a dish / spot scan: back to the load, or home for the next scan
   if (next === 'step2') { S.step = 2; S.draft = ''; S.editing = false; S.view = 'step'; }
   else S.view = 'sample';
 }
@@ -1738,7 +1742,7 @@ function render() {
   document.title = T().title;
   if (!S.worker && S.view !== 'setup') S.view = 'name';
   if (!S.data && S.view !== 'name' && S.view !== 'setup') { app.innerHTML = `<div class="empty">${esc(T().loading)}</div>`; return; }
-  const v = { home: renderHomeBeta, batch: renderBatch, place: renderPlace, sample: renderSample, step: renderStep, review: renderReview, name: renderName, setup: renderSetup }[S.view];
+  const v = { home: renderHomeBeta, run: renderRun, load: renderLoad, sample: renderSample, step: renderStep, review: renderReview, name: renderName, setup: renderSetup }[S.view];
   const tc = document.getElementById('typecode'), typed = tc && tc.value, typing = tc && document.activeElement === tc;
   app.innerHTML = v() + renderModal();
   const tc2 = document.getElementById('typecode');      // a refresh must not wipe a half-typed code
@@ -1792,7 +1796,7 @@ function renderNotReady(err) {
 
 function openTest(k) {
   const st = sample(S.code).tests[k];
-  const blocked = st.done === 2 ? w3Blocked(S.code, k) : '';
+  const blocked = startBlocked(S.code, k, st.done);
   if (blocked) { toast(blocked); return; }
   S.test = k; S.editing = false; S.draft = ''; S.modal = null;
   if (st.done === 3) S.view = 'review';
@@ -1845,8 +1849,8 @@ function doSave() {
   enqueue({ action: 'saveWeight', code: S.code, key: S.test, step: S.step, value: S.modal.value, worker: S.worker });
   const st = sample(S.code).tests[S.test];
   const m = { type: 'saved', next: 'sample', step: S.step, pct: st.pct };
-  const at = S.step === 2 ? batchAfterW2(S.code, S.test) : null;     // W2 puts the sample in its batch slot
-  if (at) { m.slot = { no: at.b.no, i: at.i }; SHOWN[S.code + '|' + S.test] = at.i; }
+  const at = S.step === 2 && !S.editing ? batchAfterW2(S.code, S.test) : null;     // W2: where the dish / crucible goes
+  if (at) m.slot = at;
   if (S.editing) m.kind = 'corrected';
   else if (S.step === 1) { m.kind = 's1'; m.next = 'step2'; }
   else if (S.step === 2) m.kind = 's2';
@@ -1905,7 +1909,7 @@ document.addEventListener('click', e => {
     case 'card': goCard(el.dataset.dir); break;
     case 'home': S.view = 'home'; render(); S.restoreOnce = true; load(false); break;
     case 'back-sample':
-      if (S.walk) { S.bid = S.walk.bid; S.walk = null; S.view = 'batch'; S.modal = null; render(); break; }
+      S.via = null;
       S.view = 'sample'; S.modal = null; render(); break;
     case 'tm': setTm(el.dataset.val === '1'); break;
     case 'approve': {
@@ -1962,6 +1966,7 @@ document.addEventListener('click', e => {
 });
 
 document.addEventListener('input', e => {
+  if (loadInput(e.target)) return;
   if (e.target.id === 'w') {
     S.draft = e.target.value;
     document.getElementById('live').innerHTML = liveText();
@@ -2028,7 +2033,7 @@ setInterval(() => {
 // Batch countdowns: redraw the batch screens while nobody is typing
 setInterval(() => {
   const typing = document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
-  if (document.visibilityState === 'visible' && S.data && (S.view === 'home' || S.view === 'batch') && !S.modal && !S.busy && !SCAN && !typing) render();
+  if (document.visibilityState === 'visible' && S.data && (S.view === 'home' || S.view === 'run') && !S.modal && !S.busy && !SCAN && !typing) render();
 }, 20000);
 
 // One-time setup link: #key=...  (saved on this phone, then removed from the address bar)

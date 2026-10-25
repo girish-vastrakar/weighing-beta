@@ -431,7 +431,7 @@ async function openScanner(purpose) {
     if (SCAN !== run) { run.stream.getTracks().forEach(x => x.stop()); return; }
     video.srcObject = run.stream; await video.play();
     if ('BarcodeDetector' in window) { try { run.det = new BarcodeDetector({ formats: ['qr_code'] }); } catch (e) { run.det = null; } }
-    if (!run.det && !window.jsQR) await new Promise((ok, bad) => { const s = document.createElement('script'); s.src = '../lib/jsQR.js'; s.onload = ok; s.onerror = bad; document.head.appendChild(s); });
+    if (!run.det && !window.jsQR) await new Promise((ok, bad) => { const s = document.createElement('script'); s.src = 'lib/jsQR.js'; s.onload = ok; s.onerror = bad; document.head.appendChild(s); });
     const msg = document.getElementById('scanmsg'); if (msg) msg.textContent = '';
     const cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently: true });
     const tick = async () => {
