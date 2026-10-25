@@ -22,12 +22,34 @@
   .lab svg { width: 100%; height: auto; display: block; }
   .lab b { display: block; font-size: 1.1rem; margin-top: 4px; }
   .places .lab b { font-size: 1.6rem; }
+  .opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; margin: 6px 0 10px; }
+  .opts label { display: block; font-weight: 700; }
+  .opts input { width: 100%; box-sizing: border-box; font: inherit; padding: 10px; border: 1px solid var(--line); border-radius: 10px; margin-top: 4px; }
+  .dishes { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
+  .dishes .lab b { font-size: .95rem; }
+  .tmpl { background: #fff; border: 1px solid #999; border-radius: 8px; padding: 10mm; margin: 0 0 12px; break-before: page; break-inside: avoid; }
+  .tmpl .th { display: flex; align-items: center; gap: 12px; margin-bottom: 6mm; }
+  .tmpl .th svg { width: 26mm; height: 26mm; }
+  .tmpl .th h3 { margin: 0; font-size: 1.6rem; }
+  .tmpl .th p { margin: 2px 0 0; color: var(--muted); font-size: .85rem; }
+  .tmpl, .tmpl * { box-sizing: border-box; }
+  .spots { display: grid; grid-auto-flow: column; gap: 4mm; width: 100%; }
+  .spot { display: flex; align-items: center; gap: 3mm; border: 1px dashed #bbb; border-radius: 6px; padding: 2mm; }
+  .spot .ring { flex: 0 0 auto; width: 28mm; height: 28mm; border: 2px solid #333; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.8rem; font-weight: 700; color: #555; }
+  .spot .q { text-align: center; }
+  .spot .q svg { width: 20mm; height: 20mm; display: block; }
+  .spot .q b { font-size: .8rem; }
+  .vm .spot .ring { width: 22mm; height: 22mm; font-size: 1.4rem; }
+  .vm .spot .q svg { width: 16mm; height: 16mm; }
   @media print {
     body { background: #fff; }
     .noprint, .betabar { display: none !important; }
     .wrap { max-width: none; padding: 0; }
     .places { grid-template-columns: repeat(2, 1fr); }
     .samples { grid-template-columns: repeat(5, 1fr); }
+    .dishes { grid-template-columns: repeat(8, 1fr); }
+    .tmpl { border: 0; padding: 0 1mm; margin: 0; }
+    .hideprint { display: none; }
   }
 </style>
 </head>
@@ -39,6 +61,12 @@
     <label for="codes"><b>Sample codes</b></label>
     <p class="sub" style="margin:2px 0 6px">One code (T45), a range (T45-T60), or several separated by commas.</p>
     <textarea id="codes" placeholder="T01"></textarea>
+    <div class="opts">
+      <div><label for="dishes">Petri dish numbers</label><input id="dishes" placeholder="1-60" value="1-24"></div>
+      <div><label for="ash">Ash templates (10 spots)</label><input id="ash" placeholder="A-D" value="A-B"></div>
+      <div><label for="vm">VM templates (18 spots)</label><input id="vm" placeholder="A-C" value="A"></div>
+    </div>
+    <p class="sub" style="margin:0 0 6px">Dish stickers go on the side of each petri dish (polyester labels hold up at 105 °C). Each template is one page: the tray sits on it and each crucible goes on its numbered ring, with that spot's QR next to it. Load the furnace in the same order as the rings.</p>
     <div class="row">
       <button id="make">Make labels</button>
       <button class="primary" onclick="window.print()">Print</button>
@@ -48,6 +76,10 @@
   <div class="grid places" id="places"></div>
   <h2>Samples</h2>
   <div class="grid samples" id="samples"></div>
+  <h2>Petri dishes</h2>
+  <div class="grid dishes" id="dishlabs"></div>
+  <h2 class="hideprint">Ash and VM templates</h2>
+  <div id="tmpls"></div>
 </div>
 <script src="lib/qrcode.js"></script>
 <script>
@@ -71,9 +103,34 @@ function parseCodes(txt) {
   });
   return [...new Set(out)];
 }
+// "1-60", "1,2,5" → numbers; "A-D", "A,C" → letters
+function parseList(txt, letters) {
+  const out = [];
+  String(txt).toUpperCase().split(/[,;\s]+/).filter(Boolean).forEach(part => {
+    const m = part.match(letters ? /^([A-Z])-([A-Z])$/ : /^(\d+)-(\d+)$/);
+    if (m) {
+      const a = letters ? m[1].charCodeAt(0) : +m[1], b = letters ? m[2].charCodeAt(0) : +m[2];
+      if (b < a || b - a > 300) return;
+      for (let i = a; i <= b; i++) out.push(letters ? String.fromCharCode(i) : String(i));
+    } else if (letters ? /^[A-Z]$/.test(part) : /^\d+$/.test(part)) out.push(letters ? part : String(+part));
+  });
+  return [...new Set(out)];
+}
+const CAP = { ASH: 10, VM: 18 }, COLS = { ASH: 2, VM: 3 }, TNAME = { ASH: 'Ash', VM: 'VM' };
+function template(k, letter) {
+  const id = `${k} ${letter}`, rows = Math.ceil(CAP[k] / COLS[k]);
+  const spots = Array.from({ length: CAP[k] }, (x, i) => `<div class="spot"><div class="ring">${i + 1}</div>
+    <div class="q">${svg(`${id}-${i + 1}`)}<b>${esc(id)}-${i + 1}</b></div></div>`).join('');
+  return `<div class="tmpl ${k.toLowerCase()}"><div class="th">${svg(id)}<div><h3>${esc(TNAME[k])} template ${esc(letter)}</h3>
+    <p>${CAP[k]} spots, numbered down each column. Load the furnace in the same order.</p></div></div>
+    <div class="spots" style="grid-template-columns:repeat(${COLS[k]},minmax(0,1fr));grid-template-rows:repeat(${rows},auto)">${spots}</div></div>`;
+}
 function make() {
   const codes = parseCodes(document.getElementById('codes').value);
   document.getElementById('samples').innerHTML = codes.map(c => label(c)).join('');
+  document.getElementById('dishlabs').innerHTML = parseList(document.getElementById('dishes').value).map(n => label(`DISH ${n}`, `Dish ${n}`)).join('');
+  document.getElementById('tmpls').innerHTML = parseList(document.getElementById('ash').value, true).map(l => template('ASH', l)).join('')
+    + parseList(document.getElementById('vm').value, true).map(l => template('VM', l)).join('');
 }
 document.getElementById('places').innerHTML = PLACES.map(p => label(p)).join('');
 document.getElementById('codes').value = '';
