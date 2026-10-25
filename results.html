@@ -61,6 +61,7 @@
   svg .base { stroke: var(--line); }
   svg circle { fill: var(--dot); stroke: var(--surface); stroke-width: 2; cursor: pointer; }
   svg circle.bad { fill: var(--bad); }
+  svg circle.sus { fill: var(--warn); }
   svg circle:hover, svg circle:focus { stroke: var(--ink); outline: none; }
 
   table.list { width: 100%; border-collapse: collapse; font-size: .88rem; font-variant-numeric: tabular-nums; }
@@ -74,6 +75,7 @@
   table.list th:first-child { z-index: 2; }
   table.list tbody tr:hover, table.list tbody tr:hover td:first-child { background: var(--grid); }
   td.hi { color: var(--bad); font-weight: 700; }
+  td.sus { color: var(--warn); font-weight: 700; }
   td .sm { color: var(--muted); font-size: .8rem; }
   .wrapcell { white-space: normal !important; min-width: 180px; max-width: 320px; }
   .pill { display: inline-block; border-radius: 999px; padding: 1px 9px; font-size: .8rem; font-weight: 700; white-space: nowrap; }
@@ -128,6 +130,7 @@ const LIMITS = { MC: 17.5, VM: 17.5, ASH: 12, TM: 60 };
 const DB_LIMITS = { VM: true, ASH: true };  // these upper limits are on dry basis
 const LOWER = { MC: 1.5, VM: 5, ASH: 1.5, TM: 1.5 };
 const TESTS = ['MC', 'VM', 'ASH', 'TM'];
+const MINS = { MC: 60, VM: 7, ASH: 60 };  // heating times, as in hold.js
 const TNAME = { MC: 'Moisture', VM: 'VM', ASH: 'Ash', TM: 'Total moisture' };
 const TSKEY = { MC: 'Moisture', VM: 'VM', ASH: 'Ash', TM: 'Total Moisture' };  // test names in timestamps.json
 
@@ -161,6 +164,7 @@ async function load() {
     Object.entries((n && n.names) || {}).forEach(([k, v]) => { NAMES[normCode(k)] = v; });
     APPR = (a && a.approvals) || {};
     ROWS = Object.entries(DATA.samples || {}).map(([c, s]) => compute(c, s));
+    markOutliers(ROWS);
     ERR = null; LOADED = Date.now();
   } catch (e) { ERR = e.message === 'Failed to fetch' ? 'No internet connection.' : e.message; }
   render();
@@ -190,11 +194,25 @@ function compute(code, s) {
   const anyW = TESTS.some(k => (w[k] || []).some(isNum));
   const status = Object.values(done).every(Boolean) ? 'complete' : anyW ? 'incomplete' : 'not started';
 
-  const checks = [];
-  ['MC', 'VM', 'ASH'].forEach(k => { const m = massOf(w[k]); if (m != null && !(m >= 0.95 && m <= 1.10)) checks.push(`${TNAME[k]} sample mass ${m.toFixed(3)} g`); });
-  if (vmAr != null && vmAr < 0) checks.push('VM negative');
-  if (mc != null && mc > 50) checks.push('moisture > 50 %');
-  if (ashAr != null && ashAr < 0) checks.push('ash negative');
+  // Possible errors: weights or times that point to a slip (wrong code, typo, not heated), each with the test to redo
+  const checks = [], suspect = new Set(), chk = (k, msg) => { checks.push(msg); suspect.add(k); };
+  ['MC', 'VM', 'ASH'].forEach(k => { const m = massOf(w[k]); if (m != null && !(m >= 0.95 && m <= 1.10)) chk(k, `${TNAME[k]} sample mass ${m.toFixed(3)} g`); });
+  if (mc != null && mc > 50) chk('MC', 'moisture > 50 %');
+  TESTS.forEach(k => {
+    const x = w[k]; if (!complete(x)) return;
+    if (x[1] === x[0]) chk(k, `${TNAME[k]} W2 same as W1`);
+    else if (k !== 'ASH' && x[2] > x[1]) chk(k, `${TNAME[k]} W3 heavier than W2`);
+    else if (k === 'VM' && lossPct(x) != null && lossPct(x) < 3) chk(k, `VM lost only ${lossPct(x).toFixed(2)} %, furnace step missed?`);
+    else if (k === 'ASH' && x[2] >= x[1] - 0.0005) chk(k, 'Ash W3 same as W2, not burnt?');
+    else if (k === 'ASH' && residuePct(x) > 60) chk(k, `Ash residue ${residuePct(x).toFixed(1)} %, not fully burnt?`);
+  });
+  // W3 saved sooner after W2 than the heating takes (wrong sample weighed, or taken out early)
+  const tsS = TS[code] || {};
+  Object.entries(MINS).forEach(([k, mins]) => {
+    const t = tsS[TSKEY[k]] || {}; if (!complete(w[k]) || !t.W2 || !t.W3) return;
+    const gap = (Date.parse(t.W3.at) - Date.parse(t.W2.at)) / 6e4;
+    if (gap >= 0 && gap < mins * 0.9) chk(k, `${TNAME[k]} W3 only ${Math.round(gap)} min after W2 (heating is ${mins} min)`);
+  });
 
   // flag numbers exactly as the app shows them (rounded moisture first)
   const app = { MC: r2(mc), VM: vml != null && mc != null ? r2(vml - r2(mc)) : null, ASH: r2(ashAr), TM: r2(tm) };
@@ -225,7 +243,30 @@ function compute(code, s) {
   return { code, name: info.name || '', supplier: info.supplier || '', date: info.date || '', machine,
     status, state, pending: Object.keys(done).filter(k => !done[k]),
     mc: r2(mc), tm: r2(tm), vml: r2(vml), vmAr: r2(vmAr), vmDb: r2(vmDb), ashAr: r2(ashAr), ashDb: r2(ashDb), fcAr: r2(fcAr), fcDb: r2(fcDb),
-    flags, flagTests, checks, appr, stale, w, ts, first, last, doneAt, who, hasTm: !!s.tm, lastText: s.last || '' };
+    flags, flagTests, checks, suspect, appr, stale, w, ts, first, last, doneAt, who, hasTm: !!s.tm, lastText: s.last || '' };
+}
+
+/* A result far from the usual for its supplier (or for all samples when the supplier has few) is a possible error,
+   even inside the limits: robust z-score = 0.6745 (x - median) / MAD above 3.5, and at least MIN_GAP points away. */
+const OUT = [{ k: 'MC', v: r => r.mc, gap: 3 }, { k: 'VM', v: r => r.vmDb, gap: 3 }, { k: 'ASH', v: r => r.ashDb, gap: 2 }];
+function markOutliers(rows) {
+  const med = a => { const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  OUT.forEach(o => {
+    const all = rows.filter(r => isNum(o.v(r)));
+    all.forEach(r => {
+      if (r.flagTests.has(o.k)) return;  // already out of limit
+      const same = r.supplier ? all.filter(x => x.supplier === r.supplier) : [];
+      const pool = same.length >= 6 ? same : all.length >= 8 ? all : null;
+      if (!pool) return;
+      const vals = pool.map(o.v), m = med(vals), mad = med(vals.map(v => Math.abs(v - m))) || 0.5;
+      const v = o.v(r), z = 0.6745 * (v - m) / mad;
+      if (Math.abs(z) > 3.5 && Math.abs(v - m) >= o.gap) {
+        r.checks.push(`${TNAME[o.k]} ${v.toFixed(2)} %${o.k === 'MC' ? '' : ' db'} unusual (usual ${m.toFixed(1)} %${pool === same ? ' for ' + r.supplier : ''})`);
+        r.suspect.add(o.k);
+      }
+    });
+  });
+  rows.forEach(r => { if (r.checks.length && (r.state === 'complete' || r.state === 'running')) r.state = 'check'; });
 }
 
 /* ---------- helpers ---------- */
@@ -256,6 +297,7 @@ const STATE = {
   complete: { cls: 'p-complete', label: '✓ Complete' },
   approved: { cls: 'p-appr', label: '✓ Out of limit, approved' },
   flag: { cls: 'p-flag', label: '⚠ Out of limit' },
+  check: { cls: 'p-appr', label: '? Possible error' },
   running: { cls: 'p-run', label: '◔ In progress' },
   none: { cls: 'p-none', label: '○ Not started' },
 };
@@ -278,7 +320,7 @@ function filtered() {
 function sorted(list) {
   const col = COLS.find(c => c.k === V.sort), d = V.dir;
   const key = col ? col.val : { code: null, name: r => r.name, supplier: r => r.supplier, machine: r => r.machine,
-    state: r => ['flag', 'running', 'none', 'approved', 'complete'].indexOf(r.state), done: r => r.last, tm: r => r.tm }[V.sort];
+    state: r => ['flag', 'check', 'running', 'none', 'approved', 'complete'].indexOf(r.state), done: r => r.last, tm: r => r.tm }[V.sort];
   return list.slice().sort((x, y) => {
     if (!key) return d * cmpCode(x.code, y.code);
     const a = key(x), b = key(y);
@@ -310,7 +352,7 @@ function render() {
         <button class="btn" id="refresh" aria-label="Refresh now">↻</button><a href="dashboard.html">Lab timeline</a><a href="./">Weighing app</a></span></header>
     <div class="filters">
       <div class="seg" role="group" aria-label="Time range">${seg('range', 'today', 'Today')}${seg('range', 'yesterday', 'Yesterday')}${seg('range', '7d', '7 days')}${seg('range', '30d', '30 days')}${seg('range', 'all', 'All')}</div>
-      <div class="seg" role="group" aria-label="Status">${seg('status', 'all', 'All')}${seg('status', 'complete', 'Complete')}${seg('status', 'running', 'In progress')}${seg('status', 'flag', 'Needs approval')}${seg('status', 'checks', 'Data checks')}</div>
+      <div class="seg" role="group" aria-label="Status">${seg('status', 'all', 'All')}${seg('status', 'complete', 'Complete')}${seg('status', 'running', 'In progress')}${seg('status', 'flag', 'Needs approval')}${seg('status', 'checks', 'Possible errors')}</div>
       <div class="seg" role="group" aria-label="Basis">${seg('basis', 'db', 'Dry basis')}${seg('basis', 'ar', 'As received')}</div>
       <select id="machine" aria-label="Weighing machine"><option value="">All machines</option>
         ${machines.map(m => `<option value="${esc(m)}"${V.machine === m ? ' selected' : ''}>${esc(m === 'ALL' ? 'ALL (any machine)' : 'Machine ' + m)}</option>`).join('')}
@@ -324,7 +366,7 @@ function render() {
       <div class="tile"><b>${done.length}</b><span>all tests done</span></div>
       <div class="tile"><b>${running.length}</b><span>in progress</span></div>
       <button class="tile${flagged.length ? ' alert' : ''}" data-status="flag"><b>${flagged.length}</b><span>out of limit, need approval</span></button>
-      <button class="tile${checks.length ? ' alert' : ''}" data-status="checks"><b>${checks.length}</b><span>data checks (mass, negative)</span></button>
+      <button class="tile${checks.length ? ' alert' : ''}" data-status="checks"><b>${checks.length}</b><span>possible errors, retest</span></button>
       ${COLS.map(c => avgTile(c, c.basisFree ? 'moisture (as received)' : `${c.label} (${b})`)).join('')}
     </div>
     ${attentionHTML(list)}
@@ -341,10 +383,10 @@ function attentionHTML(list) {
   const items = list.filter(r => r.state === 'flag' || r.checks.length).sort((x, y) => (y.last || 0) - (x.last || 0));
   if (!items.length) return '';
   return `<div class="card"><h2>Needs attention</h2>
-    <p class="sub">Out-of-limit results stay off the final results until someone approves them in the weighing app, or the test is redone.</p>
+    <p class="sub">Red = outside limits: kept off the final results until approved in the weighing app or retested. Possible errors = weights or times that look like a slip (sample mass off, W3 heavier than W2, not heated long enough, value far from that supplier's usual).</p>
     <ul class="attn">${items.map(r => `<li data-code="${esc(r.code)}"><b>${esc(r.code)}</b>
-      <span class="why">${esc([...r.flags, ...r.checks].join(' · '))}</span>
-      <span class="what">${r.state === 'flag' ? 'Retest ' + [...r.flagTests].map(k => TNAME[k]).join(', ') + ' or approve' : 'check the weights'}${r.stale ? ' · approval outdated, weights changed' : ''}${r.name ? ' · ' + esc(r.name) : ''} · ${when(r.last)}</span></li>`).join('')}</ul></div>`;
+      ${r.flags.length ? `<span class="why">⚠ ${esc(r.flags.join(' · '))}</span>` : ''}${r.checks.length ? `<span class="why" style="color:var(--warn)">? ${esc(r.checks.join(' · '))}</span>` : ''}
+      <span class="what">Retest ${[...new Set([...(r.state === 'flag' ? r.flagTests : []), ...r.suspect])].map(k => TNAME[k]).join(', ')}${r.state === 'flag' ? ' or approve' : ''}${r.stale ? ' · approval outdated, weights changed' : ''}${r.name ? ' · ' + esc(r.name) : ''} · ${when(r.last)}</span></li>`).join('')}</ul></div>`;
 }
 
 // One dot per sample on a 0–max line, with the limit marked: shows spread and outliers at a glance
@@ -370,8 +412,8 @@ function stripsHTML(list) {
     const dots = pts.sort((a, b) => d.val(a) - d.val(b)).map(r => {
       const v = d.val(r), px = x(v), slot = Math.round(px / 9); used[slot] = (used[slot] || 0) + 1;
       const y = 30 - ((used[slot] - 1) % 3) * 10;
-      const bad = d.k !== 'FC' && isHi(r, d.k);
-      return `<circle r="5" cx="${px.toFixed(1)}" cy="${y}" class="${bad ? 'bad' : ''}" tabindex="0" data-code="${esc(r.code)}" data-tip="${esc(r.code)}${r.name ? ' · ' + esc(r.name) : ''}: ${v.toFixed(2)} %"></circle>`;
+      const bad = d.k !== 'FC' && isHi(r, d.k), sus = !bad && r.suspect.has(d.k);
+      return `<circle r="5" cx="${px.toFixed(1)}" cy="${y}" class="${bad ? 'bad' : sus ? 'sus' : ''}" tabindex="0" data-code="${esc(r.code)}" data-tip="${esc(r.code)}${r.name ? ' · ' + esc(r.name) : ''}: ${v.toFixed(2)} %"></circle>`;
     }).join('');
     const ticks = [lo, (lo + hi) / 2, hi].map(v => `<text x="${x(v)}" y="${H - 2}" text-anchor="${v === lo ? 'start' : v === hi ? 'end' : 'middle'}">${Math.round(v)}</text>`).join('');
     const lim = d.lim != null ? `<line class="lim" x1="${x(d.lim)}" x2="${x(d.lim)}" y1="4" y2="${H - 16}"></line><text x="${x(d.lim) > W - 60 ? x(d.lim) - 3 : x(d.lim) + 3}" y="11" text-anchor="${x(d.lim) > W - 60 ? 'end' : 'start'}" style="fill:var(--bad)">limit ${d.lim}</text>` : '';
@@ -380,14 +422,14 @@ function stripsHTML(list) {
       <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${d.label} spread, ${pts.length} samples, average ${m.toFixed(2)} %">
         <line class="base" x1="${L}" x2="${W - R}" y1="${H - 16}" y2="${H - 16}"></line>${ticks}${lim}${dots}</svg></div>`;
   };
-  return `<div class="card"><h2>Spread of results</h2><p class="sub">Each dot is a sample; red = outside limits. Hover or tap for the code.</p>
+  return `<div class="card"><h2>Spread of results</h2><p class="sub">Each dot is a sample; red = outside limits, amber = possible error. Hover or tap for the code.</p>
     <div class="strips">${defs.map(strip).join('')}</div></div>`;
 }
 
 function tableHTML(list, anyTm) {
   const th = (k, l, num) => `<th data-sort="${k}"${num ? ' class="num"' : ''}${V.sort === k ? ` aria-sort="${V.dir > 0 ? 'ascending' : 'descending'}"` : ''}>${l}${V.sort === k ? (V.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
-  const cell = (r, c) => { const v = c.val(r), hi = c.k !== 'FC' && isHi(r, c.k);
-    return `<td class="num${hi ? ' hi' : ''}">${hi ? '⚠ ' : ''}${f2(v)}</td>`; };
+  const cell = (r, c) => { const v = c.val(r), hi = c.k !== 'FC' && isHi(r, c.k), sus = !hi && r.suspect.has(c.k);
+    return `<td class="num${hi ? ' hi' : sus ? ' sus' : ''}">${hi ? '⚠ ' : sus ? '? ' : ''}${f2(v)}</td>`; };
   return `<div class="scroll"><table class="list"><thead><tr>
       ${th('code', 'Code')}${th('name', 'Sample')}${th('supplier', 'Supplier')}${th('machine', 'Machine')}${th('state', 'Status')}
       ${COLS.map(c => th(c.k, c.label + ' %', true)).join('')}${anyTm ? th('tm', 'Total moist. %', true) : ''}
@@ -411,8 +453,8 @@ function detail(code) {
     <h2>${esc(r.code)} ${pill(r)}</h2>
     <p class="sub">${[r.name, r.supplier, r.date && 'sample date ' + r.date, r.machine && 'machine ' + r.machine].filter(Boolean).map(esc).join(' · ') || 'No name in the Name Tags sheet yet'}</p>
     ${r.flags.length ? `<div class="note ${r.appr ? 'warn' : 'bad'}">⚠ ${esc(r.flags.join(' · '))}${r.appr ? ` — approved by ${esc(r.appr.by || '?')} ${esc(r.appr.at || '')}` : ` — retest ${[...r.flagTests].map(k => TNAME[k]).join(', ')} or approve in the weighing app`}${r.stale ? ' (earlier approval is outdated: weights changed)' : ''}</div>` : ''}
-    ${r.checks.length ? `<div class="note warn">Check: ${esc(r.checks.join(' · '))}</div>` : ''}
-    ${!r.flags.length && r.status === 'complete' ? '<div class="note ok">✓ All tests done and within limits</div>' : ''}
+    ${r.checks.length ? `<div class="note warn">Possible error, retest ${[...r.suspect].map(k => TNAME[k]).join(', ')}: ${esc(r.checks.join(' · '))}</div>` : ''}
+    ${!r.flags.length && !r.checks.length && r.status === 'complete' ? '<div class="note ok">✓ All tests done and within limits</div>' : ''}
     <div class="res">
       ${res('Moisture (ar)', r.mc, isHi(r, 'MC'))}
       ${res('VM (db)', r.vmDb, isHi(r, 'VM'), 'ar ' + f2(r.vmAr))}
@@ -434,9 +476,9 @@ dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
 
 function csv(list) {
   const head = ['Code', 'Sample name', 'Supplier', 'Sample date', 'Machine', 'Status', 'Waiting for', 'Moisture % (ar)', 'Total moisture %',
-    'VM loss %', 'VM % (ar)', 'VM % (db)', 'Ash % (ar)', 'Ash % (db)', 'FC % (ar)', 'FC % (db)', 'Flags', 'Checks', 'Approved by', 'Approved at', 'Last weighed', 'Weighed by'];
+    'VM loss %', 'VM % (ar)', 'VM % (db)', 'Ash % (ar)', 'Ash % (db)', 'FC % (ar)', 'FC % (db)', 'Flags', 'Possible errors', 'Retest', 'Approved by', 'Approved at', 'Last weighed', 'Weighed by'];
   const rows = list.map(r => [r.code, r.name, r.supplier, r.date, r.machine, STATE[r.state].label.replace(/^\S+ /, ''), r.pending.map(k => TNAME[k]).join(' '),
-    r.mc, r.tm, r.vml, r.vmAr, r.vmDb, r.ashAr, r.ashDb, r.fcAr, r.fcDb, r.flags.join('; '), r.checks.join('; '),
+    r.mc, r.tm, r.vml, r.vmAr, r.vmDb, r.ashAr, r.ashDb, r.fcAr, r.fcDb, r.flags.join('; '), r.checks.join('; '), [...new Set([...(r.state === 'flag' ? r.flagTests : []), ...r.suspect])].map(k => TNAME[k]).join(' '),
     r.appr ? r.appr.by : '', r.appr ? r.appr.at : '', r.last ? new Date(r.last).toLocaleString('en-GB') : '', r.who.join(' ')]);
   const q = v => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   const blob = new Blob(['﻿' + [head, ...rows].map(x => x.map(q).join(',')).join('\r\n')], { type: 'text/csv' });
