@@ -123,9 +123,11 @@
 
 <script>
 /* Supervisor results page. Reads the lab data straight from girish-vastrakar/weighing_data_QR
-   (public, so no key is needed) and works the results out live, with the same formulas and
+   (public, so no key is needed), plus the old app's girish-vastrakar/weighing-data (private: only with a key
+   that can open it), and works the results out live, with the same formulas and
    limits as scripts/compute_results.py and the weighing app. Keep LIMITS/LOWER in step with FLAG in index.html. */
-const GH = { owner: 'girish-vastrakar', repo: 'weighing_data_QR', branch: 'main' };
+const GH = { owner: 'girish-vastrakar', branch: 'main' };
+const SRC = { qr: { repo: 'weighing_data_QR', label: 'QR app', open: true }, old: { repo: 'weighing-data', label: 'Old app' } };
 const LIMITS = { MC: 17.5, VM: 17.5, ASH: 12, TM: 60 };
 const DB_LIMITS = { VM: true, ASH: true };  // these upper limits are on dry basis
 const LOWER = { MC: 1.5, VM: 5, ASH: 1.5, TM: 1.5 };
@@ -137,37 +139,66 @@ const TSKEY = { MC: 'Moisture', VM: 'VM', ASH: 'Ash', TM: 'Total Moisture' };  /
 const store = { get: k => { try { return localStorage.getItem('lab:' + k) || ''; } catch (e) { return ''; } },
                 set: (k, v) => { try { localStorage.setItem('lab:' + k, v); } catch (e) {} } };
 const KEY = store.get('ghkey');  // used when this device already has the app's key (fresher reads); otherwise public reads
+// key for the old app's private repo: its own (set here or by a #oldkey= link), else the app's key
+let OLDKEY = store.get('oldkey') || KEY;
+(function keyFromLink() {
+  const m = location.hash.match(/oldkey=([^&]+)/);
+  if (m) { OLDKEY = decodeURIComponent(m[1]).trim(); store.set('oldkey', OLDKEY); history.replaceState(null, '', location.pathname); }
+})();
 
-const V = { range: store.get('res-range') || '7d', status: 'all', machine: '', supplier: '', q: '',
+const V = { range: store.get('res-range') || '7d', status: 'all', machine: '', supplier: '', src: '', q: '',
             basis: store.get('res-basis') || 'db', sort: 'done', dir: -1 };
-let DATA = null, TS = {}, NAMES = {}, APPR = {}, LOADED = 0, ERR = null, ROWS = [];
+let DATA = null, LOADED = 0, ERR = null, OLDERR = null, ROWS = [];
+const SD = {};  // per source: { samples, ts, names, appr }
 
 /* ---------- data ---------- */
-async function fetchFile(path) {
+const ETAG = {};  // url -> { etag, json }: unchanged files come back as 304, which GitHub doesn't count against the key's limit
+async function fetchFile(src, path) {
+  const open = SRC[src].open, key = open ? KEY : OLDKEY;
   let res;
-  if (KEY) {
-    res = await fetch(`https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${path}?ref=${GH.branch}`,
-      { cache: 'no-store', headers: { Authorization: 'Bearer ' + KEY, Accept: 'application/vnd.github.raw+json' } }).catch(() => null);
+  if (key) {
+    const url = `https://api.github.com/repos/${GH.owner}/${SRC[src].repo}/contents/${path}?ref=${GH.branch}`, c = ETAG[url];
+    res = await fetch(url, { cache: 'no-store', headers: { Authorization: 'Bearer ' + key, Accept: 'application/vnd.github.raw+json',
+      ...(c ? { 'If-None-Match': c.etag } : {}) } }).catch(() => null);
+    if (res && res.status === 304 && c) return c.json;
+    if (res && res.ok) { const json = await res.json(), etag = res.headers.get('ETag'); if (etag) ETAG[url] = { etag, json }; return json; }
+    if (!open) {
+      if (!res) throw new Error('No internet connection.');
+      if (res.status === 404 && path !== 'data.json') return null;
+      throw new Error(res.status === 401 ? 'the key was not accepted' : 'this key cannot open weighing-data');
+    }
     if (res && res.status === 404) return null;
-    if (res && res.ok) return res.json();
   }
-  res = await fetch(`https://raw.githubusercontent.com/${GH.owner}/${GH.repo}/${GH.branch}/${path}?t=${Date.now()}`, { cache: 'no-store' });
+  if (!open) throw new Error('no key');
+  res = await fetch(`https://raw.githubusercontent.com/${GH.owner}/${SRC[src].repo}/${GH.branch}/${path}?t=${Date.now()}`, { cache: 'no-store' });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error('GitHub error ' + res.status);
   return res.json();
 }
+async function loadSrc(src) {
+  const [d, t, n, a] = await Promise.all(['data.json', 'timestamps.json', 'names.json', 'approvals.json']
+    .map(p => fetchFile(src, p).catch(e => p === 'data.json' ? Promise.reject(e) : null)));
+  const names = {};
+  Object.entries((n && n.names) || {}).forEach(([k, v]) => { names[normCode(k)] = v; });
+  return { samples: (d && d.samples) || {}, ts: t || {}, names, appr: (a && a.approvals) || {} };
+}
 async function load() {
-  try {
-    const [d, t, n, a] = await Promise.all(['data.json', 'timestamps.json', 'names.json', 'approvals.json']
-      .map(p => fetchFile(p).catch(e => p === 'data.json' ? Promise.reject(e) : null)));
-    DATA = d || { samples: {} }; TS = t || {}; NAMES = {};
-    Object.entries((n && n.names) || {}).forEach(([k, v]) => { NAMES[normCode(k)] = v; });
-    APPR = (a && a.approvals) || {};
-    ROWS = Object.entries(DATA.samples || {}).map(([c, s]) => compute(c, s));
+  const [q, o] = await Promise.allSettled([loadSrc('qr'), OLDKEY ? loadSrc('old') : Promise.reject(new Error('no key'))]);
+  if (q.status === 'fulfilled') { SD.qr = q.value; ERR = null; }
+  else ERR = q.reason.message === 'Failed to fetch' ? 'No internet connection.' : q.reason.message;
+  if (o.status === 'fulfilled') { SD.old = o.value; OLDERR = null; }
+  else { OLDERR = o.reason.message === 'Failed to fetch' ? 'No internet connection.' : o.reason.message; if (OLDERR !== 'No internet connection.') delete SD.old; }
+  if (SD.qr || SD.old) {
+    ROWS = Object.keys(SD).flatMap(src => Object.entries(SD[src].samples).map(([c, s]) => compute(c, s, src)));
     markOutliers(ROWS);
-    ERR = null; LOADED = Date.now();
-  } catch (e) { ERR = e.message === 'Failed to fetch' ? 'No internet connection.' : e.message; }
+    DATA = true; LOADED = Date.now();
+  }
   render();
+}
+function addOldKey() {
+  const k = (prompt('Paste a GitHub key that can read girish-vastrakar/weighing-data (Contents: Read). It is saved on this device only.') || '').trim();
+  if (!k) return;
+  OLDKEY = k; store.set('oldkey', k); load();
 }
 
 /* ---------- results (port of compute_results.py) ---------- */
@@ -180,7 +211,8 @@ const residuePct = w => { if (!complete(w)) return null; const m = w[1] - w[0]; 
 const r2 = v => v == null ? null : Math.round(v * 100) / 100;
 const wSnap = w => Object.fromEntries(TESTS.map(k => [k, [0, 1, 2].map(i => { const v = ((w || {})[k] || [])[i]; return isNum(v) ? v : null; })]));
 
-function compute(code, s) {
+function compute(code, s, src) {
+  const D = SD[src];
   const w = s.w || {};
   const mc = lossPct(w.MC), vml = lossPct(w.VM), ashAr = residuePct(w.ASH), tm = s.tm ? lossPct(w.TM) : null;
   let vmAr = null, vmDb = null, ashDb = null, fcAr = null, fcDb = null;
@@ -207,7 +239,7 @@ function compute(code, s) {
     else if (k === 'ASH' && residuePct(x) > 60) chk(k, `Ash residue ${residuePct(x).toFixed(1)} %, not fully burnt?`);
   });
   // W3 saved sooner after W2 than the heating takes (wrong sample weighed, or taken out early)
-  const tsS = TS[code] || {};
+  const tsS = D.ts[code] || {};
   Object.entries(MINS).forEach(([k, mins]) => {
     const t = tsS[TSKEY[k]] || {}; if (!complete(w[k]) || !t.W2 || !t.W3) return;
     const gap = (Date.parse(t.W3.at) - Date.parse(t.W2.at)) / 6e4;
@@ -225,22 +257,22 @@ function compute(code, s) {
     else if (v != null && v < LOWER[k]) { flags.push(`${TNAME[k]} ${v.toFixed(2)} % below ${LOWER[k]} %`); flagTests.add(k); }
   });
 
-  let appr = APPR[code] || null, stale = false;
+  let appr = D.appr[code] || null, stale = false;
   if (appr && appr.w && JSON.stringify(wSnap(appr.w)) !== JSON.stringify(wSnap(w))) { appr = null; stale = true; }
 
   // times from timestamps.json
-  const ts = TS[code] || {}, stamps = [];
+  const ts = D.ts[code] || {}, stamps = [];
   TESTS.forEach(k => { const t = ts[TSKEY[k]] || {}; ['W1', 'W2', 'W3'].forEach(n => { if (t[n] && t[n].at) stamps.push({ k, n, t: Date.parse(t[n].at), by: t[n].by || '' }); }); });
   const last = stamps.length ? Math.max(...stamps.map(x => x.t)) : null;
   const first = stamps.length ? Math.min(...stamps.map(x => x.t)) : null;
   const doneAt = status === 'complete' ? last : null;
   const who = [...new Set(stamps.map(x => x.by).filter(Boolean))];
 
-  const info = NAMES[normCode(code)] || {};
+  const info = (SD.qr && SD.qr.names[normCode(code)]) || D.names[normCode(code)] || {};
   const machine = String(info.machine || '').toUpperCase();
   let state = status === 'complete' ? 'complete' : status === 'incomplete' ? 'running' : 'none';
   if (flags.length) state = appr ? 'approved' : 'flag';
-  return { code, name: info.name || '', supplier: info.supplier || '', date: info.date || '', machine,
+  return { id: src + ':' + code, src, code, name: info.name || '', supplier: info.supplier || '', date: info.date || '', machine,
     status, state, pending: Object.keys(done).filter(k => !done[k]),
     mc: r2(mc), tm: r2(tm), vml: r2(vml), vmAr: r2(vmAr), vmDb: r2(vmDb), ashAr: r2(ashAr), ashDb: r2(ashDb), fcAr: r2(fcAr), fcDb: r2(fcDb),
     flags, flagTests, checks, suspect, appr, stale, w, ts, first, last, doneAt, who, hasTm: !!s.tm, lastText: s.last || '' };
@@ -313,6 +345,7 @@ function filtered() {
     if (V.status === 'checks' && !r.checks.length) return false;
     if (V.machine && !(V.machine === '-' ? !r.machine : r.machine.split(/[^A-Z0-9]+/).includes(V.machine))) return false;
     if (V.supplier && r.supplier !== V.supplier) return false;
+    if (V.src && r.src !== V.src) return false;
     if (q && ![r.code, r.name, r.supplier].some(x => String(x).toLowerCase().includes(q))) return false;
     return true;
   });
@@ -349,7 +382,8 @@ function render() {
   root.innerHTML = `
     <header><h1>Lab results</h1>
       <span class="meta">${ERR ? '⚠ ' + esc(ERR) + ' · showing last data · ' : ''}Updated ${LOADED ? hm(LOADED) : '–'} · refreshes every minute
-        <button class="btn" id="refresh" aria-label="Refresh now">↻</button><a href="dashboard.html">Lab timeline</a><a href="./">Weighing app</a></span></header>
+        <button class="btn" id="refresh" aria-label="Refresh now">↻</button><a href="dashboard.html">Lab timeline</a><a href="./">Weighing app</a><br>
+        ${SD.old ? `Old app data included (${Object.keys(SD.old.samples).length} samples)` : `Old app data not shown${OLDERR && OLDERR !== 'no key' ? ': ' + esc(OLDERR) : ''} · <button class="btn" id="oldkey">Add old app data</button>`}</span></header>
     <div class="filters">
       <div class="seg" role="group" aria-label="Time range">${seg('range', 'today', 'Today')}${seg('range', 'yesterday', 'Yesterday')}${seg('range', '7d', '7 days')}${seg('range', '30d', '30 days')}${seg('range', 'all', 'All')}</div>
       <div class="seg" role="group" aria-label="Status">${seg('status', 'all', 'All')}${seg('status', 'complete', 'Complete')}${seg('status', 'running', 'In progress')}${seg('status', 'flag', 'Needs approval')}${seg('status', 'checks', 'Possible errors')}</div>
@@ -358,6 +392,7 @@ function render() {
         ${machines.map(m => `<option value="${esc(m)}"${V.machine === m ? ' selected' : ''}>${esc(m === 'ALL' ? 'ALL (any machine)' : 'Machine ' + m)}</option>`).join('')}
         <option value="-"${V.machine === '-' ? ' selected' : ''}>No machine in sheet</option></select>
       ${suppliers.length ? `<select id="supplier" aria-label="Supplier"><option value="">All suppliers</option>${suppliers.map(s => `<option${V.supplier === s ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select>` : ''}
+      ${SD.old ? `<select id="src" aria-label="App"><option value="">Both apps</option>${Object.keys(SRC).map(k => `<option value="${k}"${V.src === k ? ' selected' : ''}>${SRC[k].label}</option>`).join('')}</select>` : ''}
       <input type="search" id="q" placeholder="Search code, name, supplier" value="${esc(V.q)}" aria-label="Search">
       <button class="btn" id="csv">Download CSV</button>
     </div>
@@ -384,7 +419,7 @@ function attentionHTML(list) {
   if (!items.length) return '';
   return `<div class="card"><h2>Needs attention</h2>
     <p class="sub">Red = outside limits: kept off the final results until approved in the weighing app or retested. Possible errors = weights or times that look like a slip (sample mass off, W3 heavier than W2, not heated long enough, value far from that supplier's usual).</p>
-    <ul class="attn">${items.map(r => `<li data-code="${esc(r.code)}"><b>${esc(r.code)}</b>
+    <ul class="attn">${items.map(r => `<li data-id="${esc(r.id)}"><b>${esc(r.code)}</b>${SD.old ? ` <span class="sm">${SRC[r.src].label}</span>` : ''}
       ${r.flags.length ? `<span class="why">⚠ ${esc(r.flags.join(' · '))}</span>` : ''}${r.checks.length ? `<span class="why" style="color:var(--warn)">? ${esc(r.checks.join(' · '))}</span>` : ''}
       <span class="what">Retest ${[...new Set([...(r.state === 'flag' ? r.flagTests : []), ...r.suspect])].map(k => TNAME[k]).join(', ')}${r.state === 'flag' ? ' or approve' : ''}${r.stale ? ' · approval outdated, weights changed' : ''}${r.name ? ' · ' + esc(r.name) : ''} · ${when(r.last)}</span></li>`).join('')}</ul></div>`;
 }
@@ -413,7 +448,7 @@ function stripsHTML(list) {
       const v = d.val(r), px = x(v), slot = Math.round(px / 9); used[slot] = (used[slot] || 0) + 1;
       const y = 30 - ((used[slot] - 1) % 3) * 10;
       const bad = d.k !== 'FC' && isHi(r, d.k), sus = !bad && r.suspect.has(d.k);
-      return `<circle r="5" cx="${px.toFixed(1)}" cy="${y}" class="${bad ? 'bad' : sus ? 'sus' : ''}" tabindex="0" data-code="${esc(r.code)}" data-tip="${esc(r.code)}${r.name ? ' · ' + esc(r.name) : ''}: ${v.toFixed(2)} %"></circle>`;
+      return `<circle r="5" cx="${px.toFixed(1)}" cy="${y}" class="${bad ? 'bad' : sus ? 'sus' : ''}" tabindex="0" data-id="${esc(r.id)}" data-tip="${esc(r.code)}${r.name ? ' · ' + esc(r.name) : ''}: ${v.toFixed(2)} %"></circle>`;
     }).join('');
     const ticks = [lo, (lo + hi) / 2, hi].map(v => `<text x="${x(v)}" y="${H - 2}" text-anchor="${v === lo ? 'start' : v === hi ? 'end' : 'middle'}">${Math.round(v)}</text>`).join('');
     const lim = d.lim != null ? `<line class="lim" x1="${x(d.lim)}" x2="${x(d.lim)}" y1="4" y2="${H - 16}"></line><text x="${x(d.lim) > W - 60 ? x(d.lim) - 3 : x(d.lim) + 3}" y="11" text-anchor="${x(d.lim) > W - 60 ? 'end' : 'start'}" style="fill:var(--bad)">limit ${d.lim}</text>` : '';
@@ -434,8 +469,8 @@ function tableHTML(list, anyTm) {
       ${th('code', 'Code')}${th('name', 'Sample')}${th('supplier', 'Supplier')}${th('machine', 'Machine')}${th('state', 'Status')}
       ${COLS.map(c => th(c.k, c.label + ' %', true)).join('')}${anyTm ? th('tm', 'Total moist. %', true) : ''}
       <th>Notes</th>${th('done', 'Last weighed')}</tr></thead>
-    <tbody>${list.map(r => `<tr data-code="${esc(r.code)}">
-      <td><b>${esc(r.code)}</b></td><td>${esc(r.name) || '<span class="sm">–</span>'}</td><td>${esc(r.supplier) || '<span class="sm">–</span>'}</td>
+    <tbody>${list.map(r => `<tr data-id="${esc(r.id)}">
+      <td><b>${esc(r.code)}</b>${SD.old ? `<span class="sm"> ${r.src === 'old' ? 'old' : 'QR'}</span>` : ''}</td><td>${esc(r.name) || '<span class="sm">–</span>'}</td><td>${esc(r.supplier) || '<span class="sm">–</span>'}</td>
       <td>${esc(r.machine) || '<span class="sm">–</span>'}</td><td>${pill(r)}</td>
       ${COLS.map(c => cell(r, c)).join('')}${anyTm ? `<td class="num${isHi(r, 'TM') ? ' hi' : ''}">${r.hasTm ? f2(r.tm) : '<span class="sm">–</span>'}</td>` : ''}
       <td class="wrapcell"><span class="sm">${esc([...(r.pending.length && r.status !== 'not started' ? ['waiting: ' + r.pending.map(k => TNAME[k]).join(', ')] : []),
@@ -443,15 +478,15 @@ function tableHTML(list, anyTm) {
       <td>${when(r.last)}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
-function detail(code) {
-  const r = ROWS.find(x => x.code === code); if (!r) return;
+function detail(id) {
+  const r = ROWS.find(x => x.id === id); if (!r) return;
   const tests = TESTS.filter(k => k !== 'TM' || r.hasTm);
   const res = (l, v, hi, s) => `<div class="${hi ? 'hi' : ''}"><b>${hi ? '⚠ ' : ''}${f2(v)}${v == null ? '' : ' %'}</b><span>${l}${s ? ' · ' + s : ''}</span></div>`;
   const st = (k, n) => { const t = (r.ts[TSKEY[k]] || {})[n]; return t ? `<span class="who">${esc(t.by || '')} ${when(Date.parse(t.at))}</span>` : ''; };
   const pctOf = k => k === 'ASH' ? residuePct(r.w.ASH) : lossPct(r.w[k]);
   dlg.innerHTML = `<div class="dlg"><button class="btn close" id="dclose" aria-label="Close">✕</button>
     <h2>${esc(r.code)} ${pill(r)}</h2>
-    <p class="sub">${[r.name, r.supplier, r.date && 'sample date ' + r.date, r.machine && 'machine ' + r.machine].filter(Boolean).map(esc).join(' · ') || 'No name in the Name Tags sheet yet'}</p>
+    <p class="sub">${[SRC[r.src].label, r.name, r.supplier, r.date && 'sample date ' + r.date, r.machine && 'machine ' + r.machine].filter(Boolean).map(esc).join(' · ') || 'No name in the Name Tags sheet yet'}</p>
     ${r.flags.length ? `<div class="note ${r.appr ? 'warn' : 'bad'}">⚠ ${esc(r.flags.join(' · '))}${r.appr ? ` — approved by ${esc(r.appr.by || '?')} ${esc(r.appr.at || '')}` : ` — retest ${[...r.flagTests].map(k => TNAME[k]).join(', ')} or approve in the weighing app`}${r.stale ? ' (earlier approval is outdated: weights changed)' : ''}</div>` : ''}
     ${r.checks.length ? `<div class="note warn">Possible error, retest ${[...r.suspect].map(k => TNAME[k]).join(', ')}: ${esc(r.checks.join(' · '))}</div>` : ''}
     ${!r.flags.length && !r.checks.length && r.status === 'complete' ? '<div class="note ok">✓ All tests done and within limits</div>' : ''}
@@ -475,9 +510,9 @@ function detail(code) {
 dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
 
 function csv(list) {
-  const head = ['Code', 'Sample name', 'Supplier', 'Sample date', 'Machine', 'Status', 'Waiting for', 'Moisture % (ar)', 'Total moisture %',
+  const head = ['App', 'Code', 'Sample name', 'Supplier', 'Sample date', 'Machine', 'Status', 'Waiting for', 'Moisture % (ar)', 'Total moisture %',
     'VM loss %', 'VM % (ar)', 'VM % (db)', 'Ash % (ar)', 'Ash % (db)', 'FC % (ar)', 'FC % (db)', 'Flags', 'Possible errors', 'Retest', 'Approved by', 'Approved at', 'Last weighed', 'Weighed by'];
-  const rows = list.map(r => [r.code, r.name, r.supplier, r.date, r.machine, STATE[r.state].label.replace(/^\S+ /, ''), r.pending.map(k => TNAME[k]).join(' '),
+  const rows = list.map(r => [SRC[r.src].label, r.code, r.name, r.supplier, r.date, r.machine, STATE[r.state].label.replace(/^\S+ /, ''), r.pending.map(k => TNAME[k]).join(' '),
     r.mc, r.tm, r.vml, r.vmAr, r.vmDb, r.ashAr, r.ashDb, r.fcAr, r.fcDb, r.flags.join('; '), r.checks.join('; '), [...new Set([...(r.state === 'flag' ? r.flagTests : []), ...r.suspect])].map(k => TNAME[k]).join(' '),
     r.appr ? r.appr.by : '', r.appr ? r.appr.at : '', r.last ? new Date(r.last).toLocaleString('en-GB') : '', r.who.join(' ')]);
   const q = v => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
@@ -492,9 +527,9 @@ function wire() {
   root.querySelectorAll('[data-basis]').forEach(b => b.onclick = () => { V.basis = b.dataset.basis; store.set('res-basis', V.basis); render(); });
   root.querySelectorAll('th[data-sort]').forEach(t => t.onclick = () => { const k = t.dataset.sort;
     if (V.sort === k) V.dir = -V.dir; else { V.sort = k; V.dir = ['code', 'name', 'supplier', 'machine', 'state'].includes(k) ? 1 : -1; } render(); });
-  root.querySelectorAll('tr[data-code], li[data-code], circle[data-code]').forEach(el => {
-    el.onclick = () => detail(el.dataset.code);
-    el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); detail(el.dataset.code); } };
+  root.querySelectorAll('tr[data-id], li[data-id], circle[data-id]').forEach(el => {
+    el.onclick = () => detail(el.dataset.id);
+    el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); detail(el.dataset.id); } };
   });
   root.querySelectorAll('circle[data-tip]').forEach(c => {
     const show = e => { tip.textContent = c.dataset.tip; tip.hidden = false; const r = c.getBoundingClientRect();
@@ -503,6 +538,8 @@ function wire() {
   });
   const m = document.getElementById('machine'); if (m) m.onchange = () => { V.machine = m.value; render(); };
   const s = document.getElementById('supplier'); if (s) s.onchange = () => { V.supplier = s.value; render(); };
+  const sr = document.getElementById('src'); if (sr) sr.onchange = () => { V.src = sr.value; render(); };
+  const ok = document.getElementById('oldkey'); if (ok) ok.onclick = addOldKey;
   const q = document.getElementById('q');
   q.oninput = () => { V.q = q.value; const pos = q.selectionStart; render(); const n = document.getElementById('q'); n.focus(); n.setSelectionRange(pos, pos); };
   document.getElementById('csv').onclick = () => csv(sorted(filtered()));
