@@ -113,6 +113,11 @@
   .note.ok { background: var(--okbg); color: var(--ok); }
   .note.warn { background: var(--warnbg); color: var(--warn); }
   .dlg .close { float: right; }
+  .apprbox { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 12px; }
+  .apprrow { display: flex; flex-wrap: wrap; gap: 8px; }
+  .apprrow input { flex: 1 1 160px; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 7px 10px; }
+  .btn.primary { background: var(--ok); color: #fff; border-color: var(--ok); font-weight: 700; }
+  .btn:disabled { opacity: .5; }
   @media (max-width: 640px) { input[type=search] { min-width: 0; width: 100%; } }
 </style>
 </head>
@@ -138,7 +143,7 @@ const TSKEY = { MC: 'Moisture', VM: 'VM', ASH: 'Ash', TM: 'Total Moisture' };  /
 
 const store = { get: k => { try { return localStorage.getItem('lab:' + k) || ''; } catch (e) { return ''; } },
                 set: (k, v) => { try { localStorage.setItem('lab:' + k, v); } catch (e) {} } };
-const KEY = store.get('ghkey');  // used when this device already has the app's key (fresher reads); otherwise public reads
+let KEY = store.get('ghkey');  // used when this device already has the app's key (fresher reads); otherwise public reads
 // key for the old app's private repo: its own (set here or by a #oldkey= link), else the app's key
 let OLDKEY = store.get('oldkey') || KEY;
 (function keyFromLink() {
@@ -195,6 +200,59 @@ async function load() {
   }
   render();
 }
+/* ---------- approvals: same approvals.json the weighing app writes (approval holds the weights it covered) ---------- */
+function isoLocal(ms) {
+  const d = new Date(ms || Date.now()), p = n => String(n).padStart(2, '0');
+  const off = -d.getTimezoneOffset(), sign = off >= 0 ? '+' : '-', a = Math.abs(off);
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}${sign}${p(Math.floor(a / 60))}:${p(a % 60)}`;
+}
+const b64 = str => btoa(unescape(encodeURIComponent(str)));
+const unb64 = str => decodeURIComponent(escape(atob(str.replace(/\n/g, ''))));
+async function setApproval(r, approve) {
+  const msg = document.getElementById('apmsg'), by = document.getElementById('apby'), note = document.getElementById('apnote');
+  const who = by ? by.value.trim() : '';
+  if (approve && !who) { msg.textContent = 'Type your name first.'; by.focus(); return; }
+  let key = r.src === 'old' ? OLDKEY : KEY;
+  if (!key) {
+    key = (prompt('Approving saves to GitHub. Paste the lab GitHub key (the same one the phones use). It is saved on this device.') || '').trim();
+    if (!key) return;
+    if (r.src === 'old') { OLDKEY = key; store.set('oldkey', key); } else { KEY = key; store.set('ghkey', key); if (!store.get('oldkey')) OLDKEY = key; }
+  }
+  if (who) store.set('supervisor', who);
+  dlg.querySelectorAll('.apprbox button').forEach(b => b.disabled = true);
+  msg.textContent = 'Saving…';
+  const url = `https://api.github.com/repos/${GH.owner}/${SRC[r.src].repo}/contents/approvals.json`;
+  const H = { Authorization: 'Bearer ' + key, Accept: 'application/vnd.github+json' };
+  try {
+    for (let attempt = 0; ; attempt++) {
+      const g = await fetch(url + '?ref=' + GH.branch, { cache: 'no-store', headers: H });
+      if (g.status === 401 || g.status === 403) throw new Error('The key was not accepted.');
+      let f = null, sha = null;
+      if (g.ok) { const meta = await g.json(); sha = meta.sha; f = JSON.parse(unb64(meta.content)); }
+      else if (g.status !== 404) throw new Error('GitHub error ' + g.status);
+      f = f || { app: 'proximate-approvals', version: 1, approvals: {} };
+      f.approvals = f.approvals || {}; f.limits = LIMITS;
+      if (approve) f.approvals[r.code] = { by: who, at: isoLocal(), flags: r.flags.join(', '), w: wSnap(r.w),
+        ...(note && note.value.trim() ? { note: note.value.trim() } : {}), via: 'results page' };
+      else delete f.approvals[r.code];
+      f.updated = isoLocal();
+      const body = { message: `approvals: ${r.code} ${approve ? 'approved' : 'unapproved'} by ${who || store.get('supervisor') || 'supervisor'} (results page)`,
+        branch: GH.branch, content: b64(JSON.stringify(f, null, 1)), ...(sha ? { sha } : {}) };
+      const put = await fetch(url, { method: 'PUT', headers: H, body: JSON.stringify(body) });
+      if (put.ok) { SD[r.src].appr = f.approvals; break; }
+      if (put.status === 404 || put.status === 403) throw new Error('This key cannot save to ' + SRC[r.src].repo + ' (needs Contents: Read and write).');
+      if ((put.status !== 409 && put.status !== 422) || attempt >= 4) throw new Error('GitHub error ' + put.status);
+    }
+    ROWS = Object.keys(SD).flatMap(src => Object.entries(SD[src].samples).map(([c, s]) => compute(c, s, src)));
+    markOutliers(ROWS);
+    render(); detail(r.id);
+    document.getElementById('apmsg').textContent = approve ? '✓ Approved. The results file updates on its next run (within 15 minutes).' : 'Approval removed.';
+  } catch (e) {
+    msg.textContent = '⚠ ' + (e.message === 'Failed to fetch' ? 'No internet connection.' : e.message);
+    dlg.querySelectorAll('.apprbox button').forEach(b => b.disabled = false);
+  }
+}
+
 function addOldKey() {
   const k = (prompt('Paste a GitHub key that can read girish-vastrakar/weighing-data (Contents: Read). It is saved on this device only.') || '').trim();
   if (!k) return;
@@ -421,7 +479,7 @@ function attentionHTML(list) {
     <p class="sub">Red = outside limits: kept off the final results until approved in the weighing app or retested. Possible errors = weights or times that look like a slip (sample mass off, W3 heavier than W2, not heated long enough, value far from that supplier's usual).</p>
     <ul class="attn">${items.map(r => `<li data-id="${esc(r.id)}"><b>${esc(r.code)}</b>${SD.old ? ` <span class="sm">${SRC[r.src].label}</span>` : ''}
       ${r.flags.length ? `<span class="why">⚠ ${esc(r.flags.join(' · '))}</span>` : ''}${r.checks.length ? `<span class="why" style="color:var(--warn)">? ${esc(r.checks.join(' · '))}</span>` : ''}
-      <span class="what">Retest ${[...new Set([...(r.state === 'flag' ? r.flagTests : []), ...r.suspect])].map(k => TNAME[k]).join(', ')}${r.state === 'flag' ? ' or approve' : ''}${r.stale ? ' · approval outdated, weights changed' : ''}${r.name ? ' · ' + esc(r.name) : ''} · ${when(r.last)}</span></li>`).join('')}</ul></div>`;
+      <span class="what">${r.state === 'flag' ? 'Tap to approve, or retest ' : 'Retest '}${[...new Set([...(r.state === 'flag' ? r.flagTests : []), ...r.suspect])].map(k => TNAME[k]).join(', ')}${r.stale ? ' · approval outdated, weights changed' : ''}${r.name ? ' · ' + esc(r.name) : ''} · ${when(r.last)}</span></li>`).join('')}</ul></div>`;
 }
 
 // One dot per sample on a 0–max line, with the limit marked: shows spread and outliers at a glance
@@ -487,7 +545,7 @@ function detail(id) {
   dlg.innerHTML = `<div class="dlg"><button class="btn close" id="dclose" aria-label="Close">✕</button>
     <h2>${esc(r.code)} ${pill(r)}</h2>
     <p class="sub">${[SRC[r.src].label, r.name, r.supplier, r.date && 'sample date ' + r.date, r.machine && 'machine ' + r.machine].filter(Boolean).map(esc).join(' · ') || 'No name in the Name Tags sheet yet'}</p>
-    ${r.flags.length ? `<div class="note ${r.appr ? 'warn' : 'bad'}">⚠ ${esc(r.flags.join(' · '))}${r.appr ? ` — approved by ${esc(r.appr.by || '?')} ${esc(r.appr.at || '')}` : ` — retest ${[...r.flagTests].map(k => TNAME[k]).join(', ')} or approve in the weighing app`}${r.stale ? ' (earlier approval is outdated: weights changed)' : ''}</div>` : ''}
+    ${r.flags.length ? `<div class="note ${r.appr ? 'warn' : 'bad'}">⚠ ${esc(r.flags.join(' · '))}${r.appr ? ` — approved by ${esc(r.appr.by || '?')} ${r.appr.at ? when(Date.parse(r.appr.at)) : ''}` : ` — retest ${[...r.flagTests].map(k => TNAME[k]).join(', ')} or approve below`}${r.stale ? ' (earlier approval is outdated: weights changed)' : ''}</div>` : ''}
     ${r.checks.length ? `<div class="note warn">Possible error, retest ${[...r.suspect].map(k => TNAME[k]).join(', ')}: ${esc(r.checks.join(' · '))}</div>` : ''}
     ${!r.flags.length && !r.checks.length && r.status === 'complete' ? '<div class="note ok">✓ All tests done and within limits</div>' : ''}
     <div class="res">
@@ -504,7 +562,21 @@ function detail(id) {
           <td>${p == null ? '–' : p.toFixed(2) + (k === 'ASH' ? ' residue' : ' loss')}</td></tr>`; }).join('')}</tbody></table></div>
     <p class="sub" style="margin:0">VM (ar) = VM furnace loss ${f2(r.vml)} % − moisture. Dry basis = as received ÷ (100 − moisture) × 100. Fixed carbon by difference.${r.lastText ? '<br>Last entry: ' + esc(r.lastText) : ''}</p>
   </div>`;
-  dlg.showModal();
+  if (r.flags.length) {
+    dlg.querySelector('.dlg').insertAdjacentHTML('beforeend', `<div class="apprbox">
+      <b>${r.appr ? 'Approved' : 'Approve this result'}</b>
+      <p class="sub" style="margin:2px 0 8px">${r.appr ? `By ${esc(r.appr.by || '?')}${r.appr.at ? ', ' + when(Date.parse(r.appr.at)) : ''}${r.appr.note ? ' · ' + esc(r.appr.note) : ''}. It goes into the final results.`
+        : 'Approve when the out-of-limit value is real (checked, not a weighing error). It then goes into the final results. If weights change later, the approval stops counting.'}</p>
+      ${r.appr ? `<button class="btn" id="unappr">Remove approval</button>`
+        : `<div class="apprrow"><input id="apby" placeholder="Your name" value="${esc(store.get('supervisor'))}" aria-label="Your name">
+           <input id="apnote" placeholder="Note (optional)" aria-label="Note"><button class="btn primary" id="appr">✓ Approve</button></div>`}
+      <p class="sub" id="apmsg" style="margin:6px 0 0"></p></div>`);
+    const go = approve => setApproval(r, approve);
+    const a = document.getElementById('appr'), u = document.getElementById('unappr');
+    if (a) a.onclick = () => go(true);
+    if (u) u.onclick = () => go(false);
+  }
+  if (!dlg.open) dlg.showModal();
   document.getElementById('dclose').onclick = () => dlg.close();
 }
 dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
