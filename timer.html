@@ -754,6 +754,7 @@ function render() {
     <div class="grid">${SECTIONS.map(tileHTML).join('')}</div>
     ${listsHTML()}
     <p class="meta" style="margin-top:14px">${esc(t.keepOpen)} ${S.loaded ? '· ' + esc(t.updated(hm(S.loaded))) : ''}</p>
+    <p class="meta"><a href="./" style="color:inherit">Weighing app</a> · <a href="results.html" style="color:inherit">Results</a> · <a href="dashboard.html" style="color:inherit">Lab timeline</a></p>
     ${sheetHTML()}${alarmHTML()}`;
 }
 

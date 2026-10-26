@@ -440,7 +440,7 @@ function render() {
   root.innerHTML = `
     <header><h1>Lab results</h1>
       <span class="meta">${ERR ? '⚠ ' + esc(ERR) + ' · showing last data · ' : ''}Updated ${LOADED ? hm(LOADED) : '–'} · refreshes every minute
-        <button class="btn" id="refresh" aria-label="Refresh now">↻</button><a href="dashboard.html">Lab timeline</a><a href="./">Weighing app</a><br>
+        <button class="btn" id="refresh" aria-label="Refresh now">↻</button><a href="./">Weighing app</a><a href="timer.html">Timer</a><a href="dashboard.html">Lab timeline</a><a href="labels.html">QR labels</a><br>
         ${SD.old ? `Old app data included (${Object.keys(SD.old.samples).length} samples)` : `Old app data not shown${OLDERR && OLDERR !== 'no key' ? ': ' + esc(OLDERR) : ''} · <button class="btn" id="oldkey">Add old app data</button>`}</span></header>
     <div class="filters">
       <div class="seg" role="group" aria-label="Time range">${seg('range', 'today', 'Today')}${seg('range', 'yesterday', 'Yesterday')}${seg('range', '7d', '7 days')}${seg('range', '30d', '30 days')}${seg('range', 'all', 'All')}</div>
