@@ -1560,14 +1560,16 @@ function renderSetup() {
         <input type="file" id="csvfile" accept=".csv,text/csv" hidden></div>
     </div>`;
 }
-// Supervisor on this phone (no PIN: anyone can step in), the workers' sign-in list and the heating times
+// Supervisor on this phone (PIN, off by itself after 30 minutes), the workers' sign-in list and the heating times
 function supervisorHTML() {
   const on = superOn(), ws = settings().workers || [], used = new Set(ws.map(w => w.sym));
   const m = settings().mins || {};
   return `<div class="prev" style="margin-top:0">
     <div class="row" style="display:block"><b>Supervisor on this phone</b>
       <p class="sub" style="margin:4px 0 8px">Lets this phone change a finished weight, reset a test, save a weight the red screen stopped, and approve results.</p>
-      <div class="toggle"><button aria-pressed="${!on}" data-act="super" data-val="0">Off</button><button aria-pressed="${on}" data-act="super" data-val="1">On</button></div></div>
+      <div class="toggle"><button aria-pressed="${!on}" data-act="super" data-val="0">Off</button><button aria-pressed="${on}" data-act="super" data-val="1">On</button></div>
+      <p class="sub" style="margin:6px 0 0">${settings().pin ? 'Needs the supervisor PIN. Turns itself off after 30 minutes.' : 'No PIN yet: turning it on asks you to choose one.'}
+        ${on && settings().pin ? ' <button class="link" data-act="pin-change">Change PIN</button>' : ''}</p></div>
     ${on ? `<div class="row" style="display:block"><b>Workers (sign-in list)</b>
       <p class="sub" style="margin:4px 0 8px">Each worker taps their own symbol at the start. The name goes with every weight and into the results page.</p>
       ${ws.map((w, i) => `<div style="display:flex;align-items:center;gap:8px;margin:4px 0"><span style="font-size:1.8rem">${w.sym}</span><b style="flex:1">${esc(w.name)}</b>
@@ -2103,7 +2105,11 @@ document.addEventListener('click', e => {
     }
     case 'confirm': doSave(); break;
     case 'who-list': S.view = 'who'; render(); break;
-    case 'super': store.set('super', el.dataset.val); render(); break;
+    case 'super':
+      if (el.dataset.val !== '1') { store.set('super', '0'); render(); break; }
+      askPin().then(ok => { if (ok) { store.set('super', '1'); store.set('superAt', String(Date.now())); } render(); });
+      break;
+    case 'pin-change': if (superOn()) newPin(); break;
     case 'worker-add': {
       const name = (document.getElementById('wname').value || '').trim(), sym = document.getElementById('wsym').value;
       if (!name || !sym) { toast('Type a name first.'); break; }

@@ -843,8 +843,24 @@ function readTime() {
   const h = parseInt(document.getElementById('hh').value, 10) || 0, m = parseInt(document.getElementById('mm').value, 10) || 0;
   return Math.max(0, Math.min(48 * 60, h * 60 + m));
 }
+// Supervisor buttons need the PIN set in the weighing app (data.json settings.pin); unlocked for 30 minutes
+const SUPER_MS = 30 * 60000;
+const supUnlocked = () => Date.now() - (+store.get('timer-superAt') || 0) < SUPER_MS;
+async function pinHash(pin) {
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('lab-pin:' + pin));
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+async function supUnlock() {
+  const set = S.file && S.file.settings && S.file.settings.pin;
+  if (!set) { toast('Set the supervisor PIN first: weighing app → Setup → Supervisor on.'); return false; }
+  const p = prompt('Supervisor PIN'); if (p == null) return false;
+  if (await pinHash(p.trim()) === set) { store.set('timer-superAt', String(Date.now())); return true; }
+  toast('Wrong PIN.'); return false;
+}
 document.addEventListener('click', e => {
   const el = e.target.closest('[data-act]'); if (!el) return;
+  if (/^sup-/.test(el.dataset.act) && !supUnlocked()) { const sel = `[data-act="${el.dataset.act}"]` + (el.dataset.rid ? `[data-rid="${el.dataset.rid}"]` : '');
+    supUnlock().then(ok => { if (ok) (document.querySelector(sel) || el).click(); }); return; }
   if (el.dataset.act === 'close-bg' && e.target !== el) return;   // only the dark background closes the sheet
   unlockAudio();
   const sh = S.sheet;
