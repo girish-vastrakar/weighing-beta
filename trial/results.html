@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Results trial</title>
+<link rel="icon" type="image/png" sizes="192x192" href="../icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #eef2f4; --surface: #ffffff; --ink: #1f2a33; --ink2: #4a5964; --muted: #6b7a85; --line: #d3dbe0; --grid: #e9eef1;
+    --dot: #4f6b80; --bad: #b3261e; --badbg: #fbe9e7; --ok: #2e7d32; --okbg: #e6f3e7; --warn: #8a5a00; --warnbg: #fdf2dc; --run: #2b6cb0; --runbg: #e6effa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12191e; --surface: #1b242b; --ink: #e6edf1; --ink2: #b6c3cc; --muted: #8a9aa5; --line: #2e3a43; --grid: #243038;
+      --dot: #9db6c8; --bad: #ff8a80; --badbg: #3a1f1d; --ok: #81c784; --okbg: #1d3320; --warn: #f0c060; --warnbg: #3a2f17; --run: #8ab8f0; --runbg: #1b2c40;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 15px/1.45 'Atkinson Hyperlegible', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+  button, select, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 3px solid #2b6cb0; outline-offset: 2px; }
+  a { color: inherit; }
+  .wrap { max-width: 1360px; margin: 0 auto; padding: 16px; }
+  header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; margin-bottom: 14px; }
+  h1 { font-size: 1.45rem; margin: 0; }
+  .meta { color: var(--muted); font-size: .9rem; }
+  .meta a { margin-left: 10px; }
+
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 14px; }
+  .seg { display: inline-flex; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 3px; }
+  .seg button { border: 0; background: none; padding: 6px 12px; border-radius: 7px; cursor: pointer; color: var(--ink2); }
+  .seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); font-weight: 700; }
+  select, .btn, input[type=search], input[type=date] { border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 6px 10px; }
+  .btn { cursor: pointer; }
+  input[type=search] { min-width: 200px; }
+
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .tile { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+  .tile b { display: block; font-size: 1.7rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  .tile span { color: var(--muted); font-size: .88rem; }
+  .tile.alert b { color: var(--bad); }
+  button.tile { text-align: left; cursor: pointer; }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 0 8px; margin-bottom: 14px; }
+  .card h2 { font-size: 1rem; margin: 0 16px 2px; }
+  .card .sub { color: var(--muted); font-size: .86rem; margin: 0 16px 8px; }
+  .scroll { overflow-x: auto; }
+  .empty { text-align: center; color: var(--muted); padding: 40px 16px; }
+
+  .strips { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 0 18px; padding: 0 16px; }
+  .strip h3 { font-size: .9rem; margin: 6px 0 0; display: flex; justify-content: space-between; gap: 8px; }
+  .strip h3 span { color: var(--muted); font-weight: 400; }
+  svg { display: block; width: 100%; }
+  svg text { fill: var(--muted); font-size: 11px; font-family: inherit; }
+  svg .lim { stroke: var(--bad); stroke-width: 1.5; stroke-dasharray: 4 3; }
+  svg .base { stroke: var(--line); }
+  svg circle { fill: var(--dot); stroke: var(--surface); stroke-width: 2; cursor: pointer; }
+  svg circle.bad { fill: var(--bad); }
+  svg circle.sus { fill: var(--warn); }
+  svg circle:hover, svg circle:focus { stroke: var(--ink); outline: none; }
+
+  table.list { width: 100%; border-collapse: collapse; font-size: .88rem; font-variant-numeric: tabular-nums; }
+  table.list th, table.list td { text-align: left; padding: 7px 10px; border-top: 1px solid var(--line); white-space: nowrap; }
+  table.list th:first-child, table.list td:first-child { padding-left: 16px; }
+  table.list th { color: var(--muted); font-weight: 400; cursor: pointer; user-select: none; position: sticky; top: 0; background: var(--surface); }
+  table.list th.num, table.list td.num { text-align: right; }
+  table.list th[aria-sort] { color: var(--ink); font-weight: 700; }
+  table.list tbody tr { cursor: pointer; }
+  table.list th:first-child, table.list td:first-child { position: sticky; left: 0; background: var(--surface); z-index: 1; }
+  table.list th:first-child { z-index: 2; }
+  table.list tbody tr:hover, table.list tbody tr:hover td:first-child { background: var(--grid); }
+  td.hi { color: var(--bad); font-weight: 700; }
+  td.sus { color: var(--warn); font-weight: 700; }
+  td .sm { color: var(--muted); font-size: .8rem; }
+  .wrapcell { white-space: normal !important; min-width: 180px; max-width: 320px; }
+  .pill { display: inline-block; border-radius: 999px; padding: 1px 9px; font-size: .8rem; font-weight: 700; white-space: nowrap; }
+  .p-complete { background: var(--okbg); color: var(--ok); }
+  .p-flag { background: var(--badbg); color: var(--bad); }
+  .p-appr { background: var(--warnbg); color: var(--warn); }
+  .p-run { background: var(--runbg); color: var(--run); }
+  .p-none { background: var(--grid); color: var(--muted); }
+  .attn { list-style: none; margin: 0; padding: 0; }
+  .attn li { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 8px 16px; border-top: 1px solid var(--line); cursor: pointer; }
+  .attn li:hover { background: var(--grid); }
+  .attn b { min-width: 70px; }
+  .attn .why { color: var(--bad); }
+  .attn .what { color: var(--muted); font-size: .86rem; }
+
+  #tip { position: fixed; z-index: 10; pointer-events: none; background: var(--surface); color: var(--ink);
+         border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.18); padding: 8px 10px; font-size: .86rem; }
+  dialog { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); color: var(--ink); padding: 0; width: min(760px, calc(100vw - 32px)); }
+  dialog::backdrop { background: rgba(0,0,0,.4); }
+  .dlg { padding: 16px 18px; }
+  .dlg h2 { margin: 0 0 2px; font-size: 1.2rem; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .dlg .sub { color: var(--muted); margin: 0 0 12px; font-size: .9rem; }
+  .dlg table { width: 100%; border-collapse: collapse; font-size: .86rem; font-variant-numeric: tabular-nums; margin-bottom: 12px; }
+  .dlg th, .dlg td { padding: 5px 8px; border-top: 1px solid var(--line); text-align: right; white-space: nowrap; }
+  .dlg th:first-child, .dlg td:first-child { text-align: left; }
+  .dlg th { color: var(--muted); font-weight: 400; }
+  .dlg .who { color: var(--muted); font-size: .78rem; display: block; }
+  .res { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 12px; }
+  .res div { border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; }
+  .res b { display: block; font-size: 1.25rem; }
+  .res span { color: var(--muted); font-size: .8rem; }
+  .res .hi b { color: var(--bad); }
+  .note { border-radius: 10px; padding: 8px 12px; margin-bottom: 8px; font-size: .9rem; }
+  .note.bad { background: var(--badbg); color: var(--bad); }
+  .note.ok { background: var(--okbg); color: var(--ok); }
+  .note.warn { background: var(--warnbg); color: var(--warn); }
+  .dlg .close { float: right; }
+  .apprbox { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-top: 12px; }
+  .apprrow { display: flex; flex-wrap: wrap; gap: 8px; }
+  .apprrow input { flex: 1 1 160px; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 7px 10px; }
+  .btn.primary { background: var(--ok); color: #fff; border-color: var(--ok); font-weight: 700; }
+  .btn:disabled { opacity: .5; }
+  @media (max-width: 640px) { input[type=search] { min-width: 0; width: 100%; } }
+  .trialbar { position: sticky; top: 0; z-index: 40; background: #e07a00; color: #fff; text-align: center; font-weight: 700; font-size: .8rem; padding: 4px; letter-spacing: .04em; }
+  .trh { font-size: .95rem; margin: 6px 0 6px; } .trh .sub { font-weight: 400; color: var(--muted); font-size: .82rem; }
+  ol.trail { list-style: none; margin: 0 0 12px; padding: 0; font-size: .86rem; border-left: 2px solid var(--line); }
+  ol.trail li { display: grid; grid-template-columns: 7.5em 1fr auto; gap: 8px; padding: 4px 0 4px 10px; border-bottom: 1px solid var(--grid); }
+  ol.trail li.bad { color: var(--bad); background: var(--badbg); border-left: 3px solid var(--bad); margin-left: -2px; }
+  ol.trail .tt { color: var(--muted); font-variant-numeric: tabular-nums; } ol.trail li.bad .tt { color: inherit; }
+  ol.trail .tw { color: var(--muted); font-size: .8rem; text-align: right; }
+  @media (max-width: 560px) { ol.trail li { grid-template-columns: 1fr; gap: 0; } ol.trail .tw { text-align: left; } }
+  table.mist tbody tr { cursor: default; } .wrapcell { white-space: normal !important; min-width: 12em; }
+</style>
+</head>
+<body>
+<div class="trialbar">TRIAL · results of the new bench flow · test data only</div>
+<div class="wrap" id="root"><div class="empty">Loading…</div></div>
+<div id="tip" hidden></div>
+<dialog id="dlg"></dialog>
+
+<script>
+/* Supervisor results page. Reads the lab data straight from girish-vastrakar/weighing_data_QR
+   (public, so no key is needed), plus the old app's girish-vastrakar/weighing-data (private: only with a key
+   that can open it), and works the results out live, with the same formulas and
+   limits as scripts/compute_results.py and the weighing app. Keep LIMITS/LOWER in step with FLAG in index.html. */
+const GH = { owner: 'girish-vastrakar', branch: 'main' };
+const SRC = { qr: { repo: 'weighing_data_QR', label: 'QR app', open: true }, old: { repo: 'weighing-data', label: 'Old app' } };
+const LIMITS = { MC: 17.5, VM: 17.5, ASH: 12, TM: 60 };
+const DB_LIMITS = { VM: true, ASH: true };  // these upper limits are on dry basis
+const LOWER = { MC: 1.5, VM: 5, ASH: 1.5, TM: 1.5 };
+const TESTS = ['MC', 'VM', 'ASH', 'TM'];
+const MINS = { MC: 60, VM: 7, ASH: 60 };  // heating times, as in hold.js
+const TNAME = { MC: 'Moisture', VM: 'VM', ASH: 'Ash', TM: 'Total moisture' };
+const TSKEY = { MC: 'Moisture', VM: 'VM', ASH: 'Ash', TM: 'Total Moisture' };  // test names in timestamps.json
+
+// Trial: own keys ('bench:'), but the phone's GitHub key is shared with the live app
+const store = { get: k => { try { return localStorage.getItem('bench:' + k) || (k === 'ghkey' ? localStorage.getItem('lab:ghkey') : '') || ''; } catch (e) { return ''; } },
+                set: (k, v) => { try { localStorage.setItem('bench:' + k, v); } catch (e) {} } };
+const TRIAL = p => p === 'names.json' ? p : 'trial/' + p;   // trial data lives under trial/ (names stay shared)
+let KEY = store.get('ghkey');  // used when this device already has the app's key (fresher reads); otherwise public reads
+// key for the old app's private repo: its own (set here or by a #oldkey= link), else the app's key
+let OLDKEY = '';   // the trial never reads the old app
+(function keyFromLink() {
+  const m = location.hash.match(/oldkey=([^&]+)/);
+  if (m) { OLDKEY = decodeURIComponent(m[1]).trim(); store.set('oldkey', OLDKEY); history.replaceState(null, '', location.pathname); }
+})();
+
+const V = { range: store.get('res-range') || '7d', status: 'all', machine: '', supplier: '', src: '', q: '',
+            basis: store.get('res-basis') || 'db', sort: 'done', dir: -1 };
+let DATA = null, LOADED = 0, ERR = null, OLDERR = null, ROWS = [];
+const SD = {};  // per source: { samples, ts, names, appr }
+
+/* ---------- data ---------- */
+const ETAG = {};  // url -> { etag, json }: unchanged files come back as 304, which GitHub doesn't count against the key's limit
+async function fetchFile(src, path) {
+  const open = SRC[src].open, key = open ? KEY : OLDKEY;
+  let res;
+  if (key) {
+    const url = `https://api.github.com/repos/${GH.owner}/${SRC[src].repo}/contents/${TRIAL(path)}?ref=${GH.branch}`, c = ETAG[url];
+    res = await fetch(url, { cache: 'no-store', headers: { Authorization: 'Bearer ' + key, Accept: 'application/vnd.github.raw+json',
+      ...(c ? { 'If-None-Match': c.etag } : {}) } }).catch(() => null);
+    if (res && res.status === 304 && c) return c.json;
+    if (res && res.ok) { const json = await res.json(), etag = res.headers.get('ETag'); if (etag) ETAG[url] = { etag, json }; return json; }
+    if (!open) {
+      if (!res) throw new Error('No internet connection.');
+      if (res.status === 404 && path !== 'data.json') return null;
+      throw new Error(res.status === 401 ? 'the key was not accepted' : 'this key cannot open weighing-data');
+    }
+    if (res && res.status === 404) return null;
+  }
+  if (!open) throw new Error('no key');
+  res = await fetch(`https://raw.githubusercontent.com/${GH.owner}/${SRC[src].repo}/${GH.branch}/${TRIAL(path)}?t=${Date.now()}`, { cache: 'no-store' });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error('GitHub error ' + res.status);
+  return res.json();
+}
+async function loadSrc(src) {
+  const [d, t, n, a] = await Promise.all(['data.json', 'timestamps.json', 'names.json', 'approvals.json']
+    .map(p => fetchFile(src, p).catch(e => p === 'data.json' ? Promise.reject(e) : null)));
+  const names = {};
+  Object.entries((n && n.names) || {}).forEach(([k, v]) => { names[normCode(k)] = v; });
+  return { samples: (d && d.samples) || {}, ts: t || {}, names, appr: (a && a.approvals) || {},
+           runs: Object.values((d && d.runs) || {}), settings: (d && d.settings) || {} };
+}
+async function load() {
+  const [q, o] = await Promise.allSettled([loadSrc('qr'), OLDKEY ? loadSrc('old') : Promise.reject(new Error('no key'))]);
+  if (q.status === 'fulfilled') { SD.qr = q.value; ERR = null; }
+  else ERR = q.reason.message === 'Failed to fetch' ? 'No internet connection.' : q.reason.message;
+  if (o.status === 'fulfilled') { SD.old = o.value; OLDERR = null; }
+  else { OLDERR = o.reason.message === 'Failed to fetch' ? 'No internet connection.' : o.reason.message; if (OLDERR !== 'No internet connection.') delete SD.old; }
+  if (SD.qr || SD.old) {
+    ROWS = Object.keys(SD).flatMap(src => Object.entries(SD[src].samples).map(([c, s]) => compute(c, s, src)));
+    markOutliers(ROWS);
+    DATA = true; LOADED = Date.now();
+  }
+  render();
+}
+/* ---------- approvals: same approvals.json the weighing app writes (approval holds the weights it covered) ---------- */
+function isoLocal(ms) {
+  const d = new Date(ms || Date.now()), p = n => String(n).padStart(2, '0');
+  const off = -d.getTimezoneOffset(), sign = off >= 0 ? '+' : '-', a = Math.abs(off);
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}${sign}${p(Math.floor(a / 60))}:${p(a % 60)}`;
+}
+const b64 = str => btoa(unescape(encodeURIComponent(str)));
+const unb64 = str => decodeURIComponent(escape(atob(str.replace(/\n/g, ''))));
+async function setApproval(r, approve) {
+  const msg = document.getElementById('apmsg'), by = document.getElementById('apby'), note = document.getElementById('apnote');
+  const who = by ? by.value.trim() : '';
+  if (approve && !who) { msg.textContent = 'Type your name first.'; by.focus(); return; }
+  let key = r.src === 'old' ? OLDKEY : KEY;
+  if (!key) {
+    key = (prompt('Approving saves to GitHub. Paste the lab GitHub key (the same one the phones use). It is saved on this device.') || '').trim();
+    if (!key) return;
+    if (r.src === 'old') { OLDKEY = key; store.set('oldkey', key); } else { KEY = key; store.set('ghkey', key); if (!store.get('oldkey')) OLDKEY = key; }
+  }
+  if (who) store.set('supervisor', who);
+  dlg.querySelectorAll('.apprbox button').forEach(b => b.disabled = true);
+  msg.textContent = 'Saving…';
+  const url = `https://api.github.com/repos/${GH.owner}/${SRC[r.src].repo}/contents/${TRIAL('approvals.json')}`;
+  const H = { Authorization: 'Bearer ' + key, Accept: 'application/vnd.github+json' };
+  try {
+    for (let attempt = 0; ; attempt++) {
+      const g = await fetch(url + '?ref=' + GH.branch, { cache: 'no-store', headers: H });
+      if (g.status === 401 || g.status === 403) throw new Error('The key was not accepted.');
+      let f = null, sha = null;
+      if (g.ok) { const meta = await g.json(); sha = meta.sha; f = JSON.parse(unb64(meta.content)); }
+      else if (g.status !== 404) throw new Error('GitHub error ' + g.status);
+      f = f || { app: 'proximate-approvals', version: 1, approvals: {} };
+      f.approvals = f.approvals || {}; f.limits = LIMITS;
+      if (approve) f.approvals[r.code] = { by: who, at: isoLocal(), flags: r.flags.join(', '), w: wSnap(r.w),
+        ...(note && note.value.trim() ? { note: note.value.trim() } : {}), via: 'results page' };
+      else delete f.approvals[r.code];
+      f.updated = isoLocal();
+      const body = { message: `approvals: ${r.code} ${approve ? 'approved' : 'unapproved'} by ${who || store.get('supervisor') || 'supervisor'} (results page)`,
+        branch: GH.branch, content: b64(JSON.stringify(f, null, 1)), ...(sha ? { sha } : {}) };
+      const put = await fetch(url, { method: 'PUT', headers: H, body: JSON.stringify(body) });
+      if (put.ok) { SD[r.src].appr = f.approvals; break; }
+      if (put.status === 404 || put.status === 403) throw new Error('This key cannot save to ' + SRC[r.src].repo + ' (needs Contents: Read and write).');
+      if ((put.status !== 409 && put.status !== 422) || attempt >= 4) throw new Error('GitHub error ' + put.status);
+    }
+    ROWS = Object.keys(SD).flatMap(src => Object.entries(SD[src].samples).map(([c, s]) => compute(c, s, src)));
+    markOutliers(ROWS);
+    render(); detail(r.id);
+    document.getElementById('apmsg').textContent = approve ? '✓ Approved. The results file updates on its next run (within 15 minutes).' : 'Approval removed.';
+  } catch (e) {
+    msg.textContent = '⚠ ' + (e.message === 'Failed to fetch' ? 'No internet connection.' : e.message);
+    dlg.querySelectorAll('.apprbox button').forEach(b => b.disabled = false);
+  }
+}
+
+function addOldKey() {
+  const k = (prompt('Paste a GitHub key that can read girish-vastrakar/weighing-data (Contents: Read). It is saved on this device only.') || '').trim();
+  if (!k) return;
+  OLDKEY = k; store.set('oldkey', k); load();
+}
+
+/* ---------- results (port of compute_results.py) ---------- */
+const normCode = c => String(c || '').replace(/[\s-]/g, '').toUpperCase();
+const isNum = v => typeof v === 'number' && isFinite(v);
+const complete = w => Array.isArray(w) && w.length >= 3 && w.slice(0, 3).every(isNum);
+const massOf = w => Array.isArray(w) && isNum(w[0]) && isNum(w[1]) ? w[1] - w[0] : null;
+const lossPct = w => { if (!complete(w)) return null; const m = w[1] - w[0]; return m > 0 ? (w[1] - w[2]) / m * 100 : null; };
+const residuePct = w => { if (!complete(w)) return null; const m = w[1] - w[0]; return m > 0 ? (w[2] - w[0]) / m * 100 : null; };
+const r2 = v => v == null ? null : Math.round(v * 100) / 100;
+const wSnap = w => Object.fromEntries(TESTS.map(k => [k, [0, 1, 2].map(i => { const v = ((w || {})[k] || [])[i]; return isNum(v) ? v : null; })]));
+
+function compute(code, s, src) {
+  const D = SD[src];
+  const w = s.w || {};
+  const mc = lossPct(w.MC), vml = lossPct(w.VM), ashAr = residuePct(w.ASH), tm = s.tm ? lossPct(w.TM) : null;
+  let vmAr = null, vmDb = null, ashDb = null, fcAr = null, fcDb = null;
+  if (vml != null && mc != null) { vmAr = vml - mc; if (mc < 100) vmDb = vmAr / (100 - mc) * 100; }
+  if (ashAr != null && mc != null && mc < 100) ashDb = ashAr / (100 - mc) * 100;
+  if (mc != null && vmAr != null && ashAr != null) fcAr = 100 - mc - vmAr - ashAr;
+  if (vmDb != null && ashDb != null) fcDb = 100 - vmDb - ashDb;
+
+  const done = { MC: mc != null, VM: vml != null, ASH: ashAr != null };
+  if (s.tm) done.TM = tm != null;
+  const anyW = TESTS.some(k => (w[k] || []).some(isNum));
+  const status = Object.values(done).every(Boolean) ? 'complete' : anyW ? 'incomplete' : 'not started';
+
+  // Possible errors: weights or times that point to a slip (wrong code, typo, not heated), each with the test to redo
+  const checks = [], suspect = new Set(), chk = (k, msg) => { checks.push(msg); suspect.add(k); };
+  ['MC', 'VM', 'ASH'].forEach(k => { const m = massOf(w[k]); if (m != null && !(m >= 0.95 && m <= 1.10)) chk(k, `${TNAME[k]} sample mass ${m.toFixed(3)} g`); });
+  if (mc != null && mc > 50) chk('MC', 'moisture > 50 %');
+  TESTS.forEach(k => {
+    const x = w[k]; if (!complete(x)) return;
+    if (x[1] === x[0]) chk(k, `${TNAME[k]} W2 same as W1`);
+    else if (k !== 'ASH' && x[2] > x[1]) chk(k, `${TNAME[k]} W3 heavier than W2`);
+    else if (k === 'VM' && lossPct(x) != null && lossPct(x) < 3) chk(k, `VM lost only ${lossPct(x).toFixed(2)} %, furnace step missed?`);
+    else if (k === 'ASH' && x[2] >= x[1] - 0.0005) chk(k, 'Ash W3 same as W2, not burnt?');
+    else if (k === 'ASH' && residuePct(x) > 60) chk(k, `Ash residue ${residuePct(x).toFixed(1)} %, not fully burnt?`);
+  });
+  // W3 saved sooner after W2 than the heating takes (wrong sample weighed, or taken out early)
+  const tsS = D.ts[code] || {};
+  Object.entries(Object.assign({}, MINS, (D.settings && D.settings.mins) || {})).forEach(([k, mins]) => {
+    if (!complete(w[k])) return;
+    // the bench app knows the load: judge by its door closed / door open times
+    const run = runsOf(D, code).filter(x => x.test === k && x.outAt).pop();
+    if (run) { if (run.early) chk(k, `${TNAME[k]} door opened early, after ${Math.round((run.outAt - run.start) / 6e4)} min (heating is ${run.mins} min)`); return; }
+    const t = tsS[TSKEY[k]] || {}; if (!t.W2 || !t.W3) return;
+    const gap = (Date.parse(t.W3.at) - Date.parse(t.W2.at)) / 6e4;
+    if (gap >= 0 && gap < mins * 0.9) chk(k, `${TNAME[k]} W3 only ${Math.round(gap)} min after W2 (heating is ${mins} min)`);
+  });
+
+  // flag numbers exactly as the app shows them (rounded moisture first)
+  const app = { MC: r2(mc), VM: vml != null && mc != null ? r2(vml - r2(mc)) : null, ASH: r2(ashAr), TM: r2(tm) };
+  const appDb = k => app[k] != null && app.MC != null && app.MC < 100 ? r2(app[k] / (100 - app.MC) * 100) : null;
+  const flags = [], flagTests = new Set();
+  Object.entries(LIMITS).forEach(([k, lim]) => {
+    const v = app[k], hi = DB_LIMITS[k] ? appDb(k) : v;
+    if (v != null && v < 0) { flags.push(`${TNAME[k]} ${v.toFixed(2)} % negative`); flagTests.add(k); }
+    else if (hi != null && hi > lim) { flags.push(`${TNAME[k]} ${hi.toFixed(2)} %${DB_LIMITS[k] ? ' db' : ''} above ${lim} %`); flagTests.add(k); }
+    else if (v != null && v < LOWER[k]) { flags.push(`${TNAME[k]} ${v.toFixed(2)} % below ${LOWER[k]} %`); flagTests.add(k); }
+  });
+
+  let appr = D.appr[code] || null, stale = false;
+  if (appr && appr.w && JSON.stringify(wSnap(appr.w)) !== JSON.stringify(wSnap(w))) { appr = null; stale = true; }
+
+  // times from timestamps.json
+  const ts = D.ts[code] || {}, stamps = [];
+  TESTS.forEach(k => { const t = ts[TSKEY[k]] || {}; ['W1', 'W2', 'W3'].forEach(n => { if (t[n] && t[n].at) stamps.push({ k, n, t: Date.parse(t[n].at), by: t[n].by || '' }); }); });
+  const last = stamps.length ? Math.max(...stamps.map(x => x.t)) : null;
+  const first = stamps.length ? Math.min(...stamps.map(x => x.t)) : null;
+  const doneAt = status === 'complete' ? last : null;
+  const who = [...new Set(stamps.map(x => x.by).filter(Boolean))];
+
+  const info = (SD.qr && SD.qr.names[normCode(code)]) || D.names[normCode(code)] || {};
+  const machine = String(info.machine || '').toUpperCase();
+  let state = status === 'complete' ? 'complete' : status === 'incomplete' ? 'running' : 'none';
+  if (flags.length) state = appr ? 'approved' : 'flag';
+  return { id: src + ':' + code, src, code, name: info.name || '', supplier: info.supplier || '', date: info.date || '', machine,
+    status, state, pending: Object.keys(done).filter(k => !done[k]),
+    mc: r2(mc), tm: r2(tm), vml: r2(vml), vmAr: r2(vmAr), vmDb: r2(vmDb), ashAr: r2(ashAr), ashDb: r2(ashDb), fcAr: r2(fcAr), fcDb: r2(fcDb),
+    flags, flagTests, checks, suspect, appr, stale, w, ts, first, last, doneAt, who, hasTm: !!s.tm, lastText: s.last || '',
+    ev: s.ev || [], holders: holdersOf(s), runs: runsOf(D, code) };
+}
+
+/* A result far from the usual for its supplier (or for all samples when the supplier has few) is a possible error,
+   even inside the limits: robust z-score = 0.6745 (x - median) / MAD above 3.5, and at least MIN_GAP points away. */
+const OUT = [{ k: 'MC', v: r => r.mc, gap: 3 }, { k: 'VM', v: r => r.vmDb, gap: 3 }, { k: 'ASH', v: r => r.ashDb, gap: 2 }];
+function markOutliers(rows) {
+  const med = a => { const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2; };
+  OUT.forEach(o => {
+    const all = rows.filter(r => isNum(o.v(r)));
+    all.forEach(r => {
+      if (r.flagTests.has(o.k)) return;  // already out of limit
+      const same = r.supplier ? all.filter(x => x.supplier === r.supplier) : [];
+      const pool = same.length >= 6 ? same : all.length >= 8 ? all : null;
+      if (!pool) return;
+      const vals = pool.map(o.v), m = med(vals), mad = med(vals.map(v => Math.abs(v - m))) || 0.5;
+      const v = o.v(r), z = 0.6745 * (v - m) / mad;
+      if (Math.abs(z) > 3.5 && Math.abs(v - m) >= o.gap) {
+        r.checks.push(`${TNAME[o.k]} ${v.toFixed(2)} %${o.k === 'MC' ? '' : ' db'} unusual (usual ${m.toFixed(1)} %${pool === same ? ' for ' + r.supplier : ''})`);
+        r.suspect.add(o.k);
+      }
+    });
+  });
+  rows.forEach(r => { if (r.checks.length && (r.state === 'complete' || r.state === 'running')) r.state = 'check'; });
+}
+
+/* ---------- helpers ---------- */
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const p2 = n => String(n).padStart(2, '0');
+const hm = t => { const d = new Date(t); return `${p2(d.getHours())}:${p2(d.getMinutes())}`; };
+const dayLabel = t => new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+const when = t => t == null ? '–' : (new Date(t).toDateString() === new Date().toDateString() ? 'Today ' : dayLabel(t) + ' ') + hm(t);
+const f2 = v => v == null ? '–' : v.toFixed(2);
+const codeKey = c => { const m = String(c).match(/^([A-Za-z]*)(\d+)(.*)$/); return m ? [m[1], +m[2], m[3]] : [c, 0, '']; };
+const cmpCode = (a, b) => { const x = codeKey(a), y = codeKey(b); return x[0].localeCompare(y[0]) || x[1] - y[1] || x[2].localeCompare(y[2]); };
+const avg = a => a.length ? a.reduce((s, v) => s + v, 0) / a.length : null;
+
+function rangeBounds() {
+  const d0 = new Date(); d0.setHours(0, 0, 0, 0);
+  const day = 864e5, t = d0.getTime();
+  return { today: [t, t + day], yesterday: [t - day, t], '7d': [t - 6 * day, t + day], '30d': [t - 29 * day, t + day] }[V.range] || [-Infinity, Infinity];
+}
+// The value shown for each result column on the chosen basis, and whether it is outside the limits
+const COLS = [
+  { k: 'MC', label: 'Moisture', val: r => r.mc, basisFree: true },
+  { k: 'VM', label: 'VM', val: r => V.basis === 'db' ? r.vmDb : r.vmAr },
+  { k: 'ASH', label: 'Ash', val: r => V.basis === 'db' ? r.ashDb : r.ashAr },
+  { k: 'FC', label: 'Fixed carbon', val: r => V.basis === 'db' ? r.fcDb : r.fcAr },
+];
+const isHi = (r, k) => r.flagTests.has(k);
+const STATE = {
+  complete: { cls: 'p-complete', label: '✓ Complete' },
+  approved: { cls: 'p-appr', label: '✓ Out of limit, approved' },
+  flag: { cls: 'p-flag', label: '⚠ Out of limit' },
+  check: { cls: 'p-appr', label: '? Possible error' },
+  running: { cls: 'p-run', label: '◔ In progress' },
+  none: { cls: 'p-none', label: '○ Not started' },
+};
+const pill = r => `<span class="pill ${STATE[r.state].cls}">${STATE[r.state].label}</span>`;
+
+function filtered() {
+  const [a, b] = rangeBounds(), q = V.q.trim().toLowerCase();
+  return ROWS.filter(r => {
+    if (isFinite(a)) { const t = r.last; if (t == null || t < a || t >= b) return false; }
+    if (V.status === 'complete' && r.state !== 'complete' && r.state !== 'approved') return false;
+    if (V.status === 'running' && r.state !== 'running' && r.state !== 'none') return false;
+    if (V.status === 'flag' && r.state !== 'flag') return false;
+    if (V.status === 'checks' && !r.checks.length) return false;
+    if (V.machine && !(V.machine === '-' ? !r.machine : r.machine.split(/[^A-Z0-9]+/).includes(V.machine))) return false;
+    if (V.supplier && r.supplier !== V.supplier) return false;
+    if (V.src && r.src !== V.src) return false;
+    if (q && ![r.code, r.name, r.supplier].some(x => String(x).toLowerCase().includes(q))) return false;
+    return true;
+  });
+}
+function sorted(list) {
+  const col = COLS.find(c => c.k === V.sort), d = V.dir;
+  const key = col ? col.val : { code: null, name: r => r.name, supplier: r => r.supplier, machine: r => r.machine,
+    state: r => ['flag', 'check', 'running', 'none', 'approved', 'complete'].indexOf(r.state), done: r => r.last, tm: r => r.tm }[V.sort];
+  return list.slice().sort((x, y) => {
+    if (!key) return d * cmpCode(x.code, y.code);
+    const a = key(x), b = key(y);
+    if (a == null && b == null) return cmpCode(x.code, y.code);
+    if (a == null) return 1; if (b == null) return -1;
+    return (typeof a === 'string' ? a.localeCompare(b) : a - b) * d || cmpCode(x.code, y.code);
+  });
+}
+
+/* ---------- render ---------- */
+const root = document.getElementById('root'), tip = document.getElementById('tip'), dlg = document.getElementById('dlg');
+function render() {
+  if (!DATA) { root.innerHTML = `<div class="empty">${esc(ERR || 'Loading…')} ${ERR ? '<button class="btn" onclick="load()">Try again</button>' : ''}</div>`; return; }
+  const list = sorted(filtered());
+  const done = list.filter(r => r.status === 'complete');
+  const accepted = done.filter(r => r.state !== 'flag');
+  const flagged = list.filter(r => r.state === 'flag'), checks = list.filter(r => r.checks.length);
+  const running = list.filter(r => r.state === 'running');
+  const machines = [...new Set(ROWS.flatMap(r => r.machine.split(/[^A-Z0-9]+/)).filter(Boolean))].sort();
+  const suppliers = [...new Set(ROWS.map(r => r.supplier).filter(Boolean))].sort();
+  const anyTm = list.some(r => r.hasTm);
+  const seg = (name, v, l) => `<button data-${name}="${v}" aria-pressed="${V[name] === v}">${l}</button>`;
+  const b = V.basis === 'db' ? 'dry basis' : 'as received';
+  const avgTile = (c, l) => { const v = avg(accepted.map(c.val).filter(isNum)); return `<div class="tile"><b>${v == null ? '–' : v.toFixed(2) + ' %'}</b><span>average ${l}</span></div>`; };
+
+  root.innerHTML = `
+    <header><h1>Lab results</h1>
+      <span class="meta">${ERR ? '⚠ ' + esc(ERR) + ' · showing last data · ' : ''}Updated ${LOADED ? hm(LOADED) : '–'} · refreshes every minute
+        <button class="btn" id="refresh" aria-label="Refresh now">↻</button><a href="./">Weighing trial</a><a href="timer.html">Timer trial</a><a href="labels.html">Boards and labels</a></span></header>
+    <div class="filters">
+      <div class="seg" role="group" aria-label="Time range">${seg('range', 'today', 'Today')}${seg('range', 'yesterday', 'Yesterday')}${seg('range', '7d', '7 days')}${seg('range', '30d', '30 days')}${seg('range', 'all', 'All')}</div>
+      <div class="seg" role="group" aria-label="Status">${seg('status', 'all', 'All')}${seg('status', 'complete', 'Complete')}${seg('status', 'running', 'In progress')}${seg('status', 'flag', 'Needs approval')}${seg('status', 'checks', 'Possible errors')}</div>
+      <div class="seg" role="group" aria-label="Basis">${seg('basis', 'db', 'Dry basis')}${seg('basis', 'ar', 'As received')}</div>
+      <select id="machine" aria-label="Weighing machine"><option value="">All machines</option>
+        ${machines.map(m => `<option value="${esc(m)}"${V.machine === m ? ' selected' : ''}>${esc(m === 'ALL' ? 'ALL (any machine)' : 'Machine ' + m)}</option>`).join('')}
+        <option value="-"${V.machine === '-' ? ' selected' : ''}>No machine in sheet</option></select>
+      ${suppliers.length ? `<select id="supplier" aria-label="Supplier"><option value="">All suppliers</option>${suppliers.map(s => `<option${V.supplier === s ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select>` : ''}
+      ${SD.old ? `<select id="src" aria-label="App"><option value="">Both apps</option>${Object.keys(SRC).map(k => `<option value="${k}"${V.src === k ? ' selected' : ''}>${SRC[k].label}</option>`).join('')}</select>` : ''}
+      <input type="search" id="q" placeholder="Search code, name, supplier" value="${esc(V.q)}" aria-label="Search">
+      <button class="btn" id="csv">Download CSV</button>
+    </div>
+    <div class="tiles">
+      <div class="tile"><b>${list.length}</b><span>samples in view</span></div>
+      <div class="tile"><b>${done.length}</b><span>all tests done</span></div>
+      <div class="tile"><b>${running.length}</b><span>in progress</span></div>
+      <button class="tile${flagged.length ? ' alert' : ''}" data-status="flag"><b>${flagged.length}</b><span>out of limit, need approval</span></button>
+      <button class="tile${checks.length ? ' alert' : ''}" data-status="checks"><b>${checks.length}</b><span>possible errors, retest</span></button>
+      ${COLS.map(c => avgTile(c, c.basisFree ? 'moisture (as received)' : `${c.label} (${b})`)).join('')}
+    </div>
+    ${mistakesHTML(list)}
+    ${attentionHTML(list)}
+    ${stripsHTML(list)}
+    <div class="card">
+      <h2>Results</h2>
+      <p class="sub">${list.length} sample${list.length === 1 ? '' : 's'} · VM, Ash and fixed carbon on ${b}, moisture as received · tap a row for the weights · red = outside limits (moisture ${LIMITS.MC} %, VM ${LIMITS.VM} % db, ash ${LIMITS.ASH} % db)</p>
+      ${list.length ? tableHTML(list, anyTm) : `<div class="empty">No samples in this view.${V.range !== 'all' ? ' Try a longer time range.' : ''}</div>`}
+    </div>`;
+  wire();
+}
+
+/* ---------- trail and mistakes (from the bench app's samples[c].ev and runs) ----------
+   ev entry: { t, by, a, k, s, v, o, h, b, x }  a = w | hold | redish | undo | fix | restore | override | reset | warn */
+const holdersOf = s => [...new Set([...Object.values(s.h || {}), ...(s.ev || []).filter(e => e.h).map(e => e.h)])];
+const runsOf = (D, code) => (D.runs || []).filter(x => (x.items || []).some(i => i.code === code));
+const WARN = { swap: 'W3 outside W1–W2 (crucible swapped?)', unheated: 'W3 tried before heating', w1ge: 'W2 not above W1', w2le: 'W2 not above W1',
+  tooMuch: 'sample too heavy / light', wrongBal: 'other balance', heating: 'scanned while heating' };
+const warnText = x => WARN[x] || x || 'red screen';
+const g4 = v => isNum(v) ? v.toFixed(4) : '–';
+const hTxt = h => esc(String(h || '').replace(/^ASH /, 'Ash board ').replace(/^VM /, 'VM board ').replace(/^DISH /, 'Dish '));
+// What counts as a mistake on the bench (normal saves and holds don't)
+const MISTAKE = {
+  warn: { l: 'Red screens', d: 'the app stopped a wrong step' },
+  override: { l: 'Saved anyway', d: 'saved after a red screen' },
+  undo: { l: 'Undo', d: 'undo right after saving' },
+  fix: { l: 'Corrected', d: 'a saved W changed with ✎' },
+  redish: { l: 'Changed dish', d: 'wrong dish picked first' },
+  reset: { l: 'Retests', d: 'test started again' },
+};
+function evLine(e) {
+  const t = TNAME[e.k] || e.k || '', st = e.s ? ' W' + e.s : '';
+  switch (e.a) {
+    case 'w': return `${t}${st} = ${g4(e.v)} g`;
+    case 'hold': return `${t} on ${hTxt(e.h)}`;
+    case 'redish': return `${t} dish changed ${hTxt(e.o)} → ${hTxt(e.h)}`;
+    case 'undo': return `${t}${st} undone (${g4(e.o)} → ${g4(e.v)})`;
+    case 'fix': return `${t}${st} corrected ${g4(e.o)} → ${g4(e.v)} g`;
+    case 'restore': return `${t}${st} put back ${g4(e.v)} g`;
+    case 'override': return `${t}${st} = ${g4(e.v)} g saved after red screen${e.x ? ': ' + esc(warnText(e.x)) : ''}`;
+    case 'reset': return `${t} retest: cleared ${(e.o || []).map(g4).join(' / ')}`;
+    case 'warn': return `${t}${st} red screen: ${esc(warnText(e.x))}${isNum(e.v) ? ' (' + g4(e.v) + ' g)' : ''}`;
+  }
+  return esc(e.a);
+}
+function trailHTML(r) {
+  const PL = { O1: 'Oven 1', O2: 'Oven 2', F1: 'Furnace 1', F2: 'Furnace 2' };
+  const items = r.ev.map(e => ({ t: e.t, by: e.by, b: e.b, bad: !!MISTAKE[e.a], txt: evLine(e) }));
+  r.runs.forEach(x => {
+    const p = PL[x.place] || x.place, n = (x.items || []).length;
+    items.push({ t: x.start, by: x.by, b: x.bal, txt: `${TNAME[x.test]}: door closed, ${p} (${n} in, ${x.mins} min)` });
+    if (x.outAt) items.push({ t: x.outAt, by: x.outBy, bad: !!x.early, txt: `${TNAME[x.test]}: door open, ${p}${x.early ? ` EARLY after ${Math.round((x.outAt - x.start) / 6e4)} min` : ''}` });
+    if (x.cancelled) items.push({ t: x.cancelled.at, by: x.cancelled.by, bad: true, txt: `${TNAME[x.test]}: load cancelled, ${p}` });
+  });
+  if (!items.length) return '';
+  items.sort((a, b) => a.t - b.t);
+  return `<h3 class="trh">Trail <span class="sub">every step, retest and correction · red = mistake</span></h3>
+    <ol class="trail">${items.map(i => `<li class="${i.bad ? 'bad' : ''}"><span class="tt">${when(i.t)}</span><span>${i.txt}</span>
+      <span class="tw">${esc(i.by || '?')}${i.b ? ' · balance ' + i.b : ''}</span></li>`).join('')}</ol>`;
+}
+function mistakesHTML(list) {
+  const [a, b] = rangeBounds(), codes = new Set(list.map(r => r.id)), per = {}, kinds = {};
+  ROWS.filter(r => codes.has(r.id)).forEach(r => {
+    r.ev.forEach(e => {
+      if (isFinite(a) && (e.t < a || e.t >= b)) return;
+      const who = e.by || '?', w = per[who] = per[who] || { n: 0, saves: 0, bal: new Set(), samples: new Set() };
+      if (e.b) w.bal.add(e.b);
+      if (e.a === 'w') { w.saves++; return; }
+      if (!MISTAKE[e.a]) return;
+      w[e.a] = (w[e.a] || 0) + 1; w.n++; w.samples.add(r.code);
+      if (e.a === 'warn') { const kk = warnText(e.x) + ' · ' + (TNAME[e.k] || e.k); kinds[kk] = (kinds[kk] || 0) + 1; }
+    });
+    r.runs.forEach(x => { if (x.early && x.outAt && (!isFinite(a) || (x.outAt >= a && x.outAt < b))) { const kk = 'door opened early · ' + TNAME[x.test]; kinds[kk] = (kinds[kk] || 0) + 1 / (x.items || [1]).length; } });
+  });
+  const ws = Object.entries(per).sort((x, y) => y[1].n - x[1].n);
+  if (!ws.length) return '';
+  const ks = Object.keys(MISTAKE);
+  const kindList = Object.entries(kinds).map(([k, v]) => [k, Math.round(v)]).filter(x => x[1]).sort((x, y) => y[1] - x[1]);
+  return `<div class="card"><h2>Mistakes by worker</h2>
+    <p class="sub">From the bench app, in this view's time range. Tap a sample below to see its trail.</p>
+    <div class="scroll"><table class="list mist"><thead><tr><th>Worker</th><th class="num">Mistakes</th><th class="num">Weights saved</th>
+      ${ks.map(k => `<th class="num" title="${esc(MISTAKE[k].d)}">${MISTAKE[k].l}</th>`).join('')}<th>Balance</th><th>Samples</th></tr></thead>
+      <tbody>${ws.map(([who, w]) => `<tr><td><b>${esc(who)}</b></td><td class="num">${w.n ? `<b style="color:var(--bad)">${w.n}</b>` : '0'}</td>
+        <td class="num">${w.saves}</td>${ks.map(k => `<td class="num">${w[k] || ''}</td>`).join('')}
+        <td>${[...w.bal].sort().join(', ')}</td><td class="wrapcell">${[...w.samples].slice(0, 8).map(esc).join(', ')}${w.samples.size > 8 ? ' …' : ''}</td></tr>`).join('')}</tbody></table></div>
+    ${kindList.length ? `<p class="sub" style="margin-top:8px">Most common: ${kindList.slice(0, 6).map(([k, v]) => `${esc(k)} <b>×${v}</b>`).join(' · ')}</p>` : ''}
+  </div>`;
+}
+
+function attentionHTML(list) {
+  const items = list.filter(r => r.state === 'flag' || r.checks.length).sort((x, y) => (y.last || 0) - (x.last || 0));
+  if (!items.length) return '';
+  return `<div class="card"><h2>Needs attention</h2>
+    <p class="sub">Red = outside limits: kept off the final results until approved in the weighing app or retested. Possible errors = weights or times that look like a slip (sample mass off, W3 heavier than W2, not heated long enough, value far from that supplier's usual).</p>
+    <ul class="attn">${items.map(r => `<li data-id="${esc(r.id)}"><b>${esc(r.code)}</b>${SD.old ? ` <span class="sm">${SRC[r.src].label}</span>` : ''}
+      ${r.flags.length ? `<span class="why">⚠ ${esc(r.flags.join(' · '))}</span>` : ''}${r.checks.length ? `<span class="why" style="color:var(--warn)">? ${esc(r.checks.join(' · '))}</span>` : ''}
+      <span class="what">${r.state === 'flag' ? 'Tap to approve, or retest ' : 'Retest '}${[...new Set([...(r.state === 'flag' ? r.flagTests : []), ...r.suspect])].map(k => TNAME[k]).join(', ')}${r.stale ? ' · approval outdated, weights changed' : ''}${r.name ? ' · ' + esc(r.name) : ''} · ${when(r.last)}</span></li>`).join('')}</ul></div>`;
+}
+
+// One dot per sample on a 0–max line, with the limit marked: shows spread and outliers at a glance
+function stripsHTML(list) {
+  const defs = [
+    { k: 'MC', label: 'Moisture', unit: 'as received', val: r => r.mc, lim: LIMITS.MC, low: LOWER.MC },
+    { k: 'VM', label: 'VM', unit: 'dry basis', val: r => r.vmDb, lim: LIMITS.VM },
+    { k: 'ASH', label: 'Ash', unit: 'dry basis', val: r => r.ashDb, lim: LIMITS.ASH },
+    { k: 'FC', label: 'Fixed carbon', unit: 'dry basis', val: r => r.fcDb },
+  ];
+  const any = defs.some(d => list.some(r => isNum(d.val(r))));
+  if (!any) return '';
+  const W = 320, H = 54, L = 8, R = 8;
+  const strip = d => {
+    const pts = list.filter(r => isNum(d.val(r)));
+    if (!pts.length) return `<div class="strip"><h3>${d.label} <span>no results</span></h3></div>`;
+    const vals = pts.map(d.val);
+    let lo = Math.min(...vals, d.lim != null ? d.lim : Infinity, d.low != null ? 0 : Infinity), hi = Math.max(...vals, d.lim != null ? d.lim : -Infinity);
+    const pad = Math.max((hi - lo) * 0.08, 1); lo = Math.max(0, Math.floor(lo - pad)); hi = Math.ceil(hi + pad);
+    const x = v => L + (v - lo) / (hi - lo) * (W - L - R);
+    // stack dots that land on the same spot
+    const used = {};
+    const dots = pts.sort((a, b) => d.val(a) - d.val(b)).map(r => {
+      const v = d.val(r), px = x(v), slot = Math.round(px / 9); used[slot] = (used[slot] || 0) + 1;
+      const y = 30 - ((used[slot] - 1) % 3) * 10;
+      const bad = d.k !== 'FC' && isHi(r, d.k), sus = !bad && r.suspect.has(d.k);
+      return `<circle r="5" cx="${px.toFixed(1)}" cy="${y}" class="${bad ? 'bad' : sus ? 'sus' : ''}" tabindex="0" data-id="${esc(r.id)}" data-tip="${esc(r.code)}${r.name ? ' · ' + esc(r.name) : ''}: ${v.toFixed(2)} %"></circle>`;
+    }).join('');
+    const ticks = [lo, (lo + hi) / 2, hi].map(v => `<text x="${x(v)}" y="${H - 2}" text-anchor="${v === lo ? 'start' : v === hi ? 'end' : 'middle'}">${Math.round(v)}</text>`).join('');
+    const lim = d.lim != null ? `<line class="lim" x1="${x(d.lim)}" x2="${x(d.lim)}" y1="4" y2="${H - 16}"></line><text x="${x(d.lim) > W - 60 ? x(d.lim) - 3 : x(d.lim) + 3}" y="11" text-anchor="${x(d.lim) > W - 60 ? 'end' : 'start'}" style="fill:var(--bad)">limit ${d.lim}</text>` : '';
+    const m = avg(vals);
+    return `<div class="strip"><h3>${d.label} % <span>${d.unit} · avg ${m.toFixed(2)} · ${pts.length} sample${pts.length === 1 ? '' : 's'}</span></h3>
+      <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${d.label} spread, ${pts.length} samples, average ${m.toFixed(2)} %">
+        <line class="base" x1="${L}" x2="${W - R}" y1="${H - 16}" y2="${H - 16}"></line>${ticks}${lim}${dots}</svg></div>`;
+  };
+  return `<div class="card"><h2>Spread of results</h2><p class="sub">Each dot is a sample; red = outside limits, amber = possible error. Hover or tap for the code.</p>
+    <div class="strips">${defs.map(strip).join('')}</div></div>`;
+}
+
+function tableHTML(list, anyTm) {
+  const th = (k, l, num) => `<th data-sort="${k}"${num ? ' class="num"' : ''}${V.sort === k ? ` aria-sort="${V.dir > 0 ? 'ascending' : 'descending'}"` : ''}>${l}${V.sort === k ? (V.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
+  const cell = (r, c) => { const v = c.val(r), hi = c.k !== 'FC' && isHi(r, c.k), sus = !hi && r.suspect.has(c.k);
+    return `<td class="num${hi ? ' hi' : sus ? ' sus' : ''}">${hi ? '⚠ ' : sus ? '? ' : ''}${f2(v)}</td>`; };
+  return `<div class="scroll"><table class="list"><thead><tr>
+      ${th('code', 'Code')}${th('name', 'Sample')}${th('supplier', 'Supplier')}${th('machine', 'Machine')}${th('state', 'Status')}
+      ${COLS.map(c => th(c.k, c.label + ' %', true)).join('')}${anyTm ? th('tm', 'Total moist. %', true) : ''}
+      <th>Notes</th>${th('done', 'Last weighed')}</tr></thead>
+    <tbody>${list.map(r => `<tr data-id="${esc(r.id)}">
+      <td><b>${esc(r.code)}</b>${SD.old ? `<span class="sm"> ${r.src === 'old' ? 'old' : 'QR'}</span>` : ''}</td><td>${esc(r.name) || '<span class="sm">–</span>'}</td><td>${esc(r.supplier) || '<span class="sm">–</span>'}</td>
+      <td>${esc(r.machine) || '<span class="sm">–</span>'}</td><td>${pill(r)}</td>
+      ${COLS.map(c => cell(r, c)).join('')}${anyTm ? `<td class="num${isHi(r, 'TM') ? ' hi' : ''}">${r.hasTm ? f2(r.tm) : '<span class="sm">–</span>'}</td>` : ''}
+      <td class="wrapcell"><span class="sm">${esc([...(r.pending.length && r.status !== 'not started' ? ['waiting: ' + r.pending.map(k => TNAME[k]).join(', ')] : []),
+        ...r.flags, ...r.checks, ...(r.appr && r.flags.length ? ['approved by ' + (r.appr.by || '?')] : [])].join(' · '))}</span></td>
+      <td>${when(r.last)}</td></tr>`).join('')}</tbody></table></div>`;
+}
+
+function detail(id) {
+  const r = ROWS.find(x => x.id === id); if (!r) return;
+  const tests = TESTS.filter(k => k !== 'TM' || r.hasTm);
+  const res = (l, v, hi, s) => `<div class="${hi ? 'hi' : ''}"><b>${hi ? '⚠ ' : ''}${f2(v)}${v == null ? '' : ' %'}</b><span>${l}${s ? ' · ' + s : ''}</span></div>`;
+  const st = (k, n) => { const t = (r.ts[TSKEY[k]] || {})[n]; return t ? `<span class="who">${esc(t.by || '')} ${when(Date.parse(t.at))}</span>` : ''; };
+  const pctOf = k => k === 'ASH' ? residuePct(r.w.ASH) : lossPct(r.w[k]);
+  dlg.innerHTML = `<div class="dlg"><button class="btn close" id="dclose" aria-label="Close">✕</button>
+    <h2>${esc(r.code)} ${pill(r)}</h2>
+    <p class="sub">${[SRC[r.src].label, r.name, r.supplier, r.date && 'sample date ' + r.date, r.machine && 'machine ' + r.machine].filter(Boolean).map(esc).join(' · ') || 'No name in the Name Tags sheet yet'}</p>
+    ${r.flags.length ? `<div class="note ${r.appr ? 'warn' : 'bad'}">⚠ ${esc(r.flags.join(' · '))}${r.appr ? ` — approved by ${esc(r.appr.by || '?')} ${r.appr.at ? when(Date.parse(r.appr.at)) : ''}` : ` — retest ${[...r.flagTests].map(k => TNAME[k]).join(', ')} or approve below`}${r.stale ? ' (earlier approval is outdated: weights changed)' : ''}</div>` : ''}
+    ${r.checks.length ? `<div class="note warn">Possible error, retest ${[...r.suspect].map(k => TNAME[k]).join(', ')}: ${esc(r.checks.join(' · '))}</div>` : ''}
+    ${!r.flags.length && !r.checks.length && r.status === 'complete' ? '<div class="note ok">✓ All tests done and within limits</div>' : ''}
+    <div class="res">
+      ${res('Moisture (ar)', r.mc, isHi(r, 'MC'))}
+      ${res('VM (db)', r.vmDb, isHi(r, 'VM'), 'ar ' + f2(r.vmAr))}
+      ${res('Ash (db)', r.ashDb, isHi(r, 'ASH'), 'ar ' + f2(r.ashAr))}
+      ${res('Fixed carbon (db)', r.fcDb, false, 'ar ' + f2(r.fcAr))}
+      ${r.hasTm ? res('Total moisture', r.tm, isHi(r, 'TM')) : ''}
+    </div>
+    <div class="scroll"><table><thead><tr><th>Test</th><th>W1 empty (g)</th><th>W2 + sample (g)</th><th>W3 after heating (g)</th><th>Sample (g)</th><th>${'Loss / residue %'}</th></tr></thead>
+      <tbody>${tests.map(k => { const w = r.w[k] || [], m = massOf(w), p = pctOf(k);
+        return `<tr><td>${TNAME[k]}</td>${[0, 1, 2].map(i => `<td>${isNum(w[i]) ? w[i].toFixed(4) : '–'}${st(k, 'W' + (i + 1))}</td>`).join('')}
+          <td${m != null && !(m >= 0.95 && m <= 1.10) ? ' style="color:var(--bad);font-weight:700"' : ''}>${m == null ? '–' : m.toFixed(4)}</td>
+          <td>${p == null ? '–' : p.toFixed(2) + (k === 'ASH' ? ' residue' : ' loss')}</td></tr>`; }).join('')}</tbody></table></div>
+    ${trailHTML(r)}
+    <p class="sub" style="margin:0">VM (ar) = VM furnace loss ${f2(r.vml)} % − moisture. Dry basis = as received ÷ (100 − moisture) × 100. Fixed carbon by difference.${r.lastText ? '<br>Last entry: ' + esc(r.lastText) : ''}</p>
+  </div>`;
+  if (r.flags.length) {
+    dlg.querySelector('.dlg').insertAdjacentHTML('beforeend', `<div class="apprbox">
+      <b>${r.appr ? 'Approved' : 'Approve this result'}</b>
+      <p class="sub" style="margin:2px 0 8px">${r.appr ? `By ${esc(r.appr.by || '?')}${r.appr.at ? ', ' + when(Date.parse(r.appr.at)) : ''}${r.appr.note ? ' · ' + esc(r.appr.note) : ''}. It goes into the final results.`
+        : 'Approve when the out-of-limit value is real (checked, not a weighing error). It then goes into the final results. If weights change later, the approval stops counting.'}</p>
+      ${r.appr ? `<button class="btn" id="unappr">Remove approval</button>`
+        : `<div class="apprrow"><input id="apby" placeholder="Your name" value="${esc(store.get('supervisor'))}" aria-label="Your name">
+           <input id="apnote" placeholder="Note (optional)" aria-label="Note"><button class="btn primary" id="appr">✓ Approve</button></div>`}
+      <p class="sub" id="apmsg" style="margin:6px 0 0"></p></div>`);
+    const go = approve => setApproval(r, approve);
+    const a = document.getElementById('appr'), u = document.getElementById('unappr');
+    if (a) a.onclick = () => go(true);
+    if (u) u.onclick = () => go(false);
+  }
+  if (!dlg.open) dlg.showModal();
+  document.getElementById('dclose').onclick = () => dlg.close();
+}
+dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+
+function csv(list) {
+  const head = ['App', 'Code', 'Sample name', 'Supplier', 'Sample date', 'Machine', 'Status', 'Waiting for', 'Moisture % (ar)', 'Total moisture %',
+    'VM loss %', 'VM % (ar)', 'VM % (db)', 'Ash % (ar)', 'Ash % (db)', 'FC % (ar)', 'FC % (db)', 'Flags', 'Possible errors', 'Retest', 'Approved by', 'Approved at', 'Last weighed', 'Weighed by'];
+  const rows = list.map(r => [SRC[r.src].label, r.code, r.name, r.supplier, r.date, r.machine, STATE[r.state].label.replace(/^\S+ /, ''), r.pending.map(k => TNAME[k]).join(' '),
+    r.mc, r.tm, r.vml, r.vmAr, r.vmDb, r.ashAr, r.ashDb, r.fcAr, r.fcDb, r.flags.join('; '), r.checks.join('; '), [...new Set([...(r.state === 'flag' ? r.flagTests : []), ...r.suspect])].map(k => TNAME[k]).join(' '),
+    r.appr ? r.appr.by : '', r.appr ? r.appr.at : '', r.last ? new Date(r.last).toLocaleString('en-GB') : '', r.who.join(' ')]);
+  const q = v => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const blob = new Blob(['﻿' + [head, ...rows].map(x => x.map(q).join(',')).join('\r\n')], { type: 'text/csv' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = `lab-results-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function wire() {
+  root.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { V.range = b.dataset.range; store.set('res-range', V.range); render(); });
+  root.querySelectorAll('[data-status]').forEach(b => b.onclick = () => { V.status = V.status === b.dataset.status && b.classList.contains('tile') ? 'all' : b.dataset.status; render(); });
+  root.querySelectorAll('[data-basis]').forEach(b => b.onclick = () => { V.basis = b.dataset.basis; store.set('res-basis', V.basis); render(); });
+  root.querySelectorAll('th[data-sort]').forEach(t => t.onclick = () => { const k = t.dataset.sort;
+    if (V.sort === k) V.dir = -V.dir; else { V.sort = k; V.dir = ['code', 'name', 'supplier', 'machine', 'state'].includes(k) ? 1 : -1; } render(); });
+  root.querySelectorAll('tr[data-id], li[data-id], circle[data-id]').forEach(el => {
+    el.onclick = () => detail(el.dataset.id);
+    el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); detail(el.dataset.id); } };
+  });
+  root.querySelectorAll('circle[data-tip]').forEach(c => {
+    const show = e => { tip.textContent = c.dataset.tip; tip.hidden = false; const r = c.getBoundingClientRect();
+      tip.style.left = Math.min(r.left, innerWidth - tip.offsetWidth - 8) + 'px'; tip.style.top = (r.top - tip.offsetHeight - 6) + 'px'; };
+    c.onmouseenter = show; c.onfocus = show; c.onmouseleave = c.onblur = () => { tip.hidden = true; };
+  });
+  const m = document.getElementById('machine'); if (m) m.onchange = () => { V.machine = m.value; render(); };
+  const s = document.getElementById('supplier'); if (s) s.onchange = () => { V.supplier = s.value; render(); };
+  const sr = document.getElementById('src'); if (sr) sr.onchange = () => { V.src = sr.value; render(); };
+  const ok = document.getElementById('oldkey'); if (ok) ok.onclick = addOldKey;
+  const q = document.getElementById('q');
+  q.oninput = () => { V.q = q.value; const pos = q.selectionStart; render(); const n = document.getElementById('q'); n.focus(); n.setSelectionRange(pos, pos); };
+  document.getElementById('csv').onclick = () => csv(sorted(filtered()));
+  document.getElementById('refresh').onclick = load;
+}
+
+load();
+setInterval(() => { if (!document.hidden && !dlg.open) load(); }, 60000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - LOADED > 30000) load(); });
+</script>
+</body>
+</html>
