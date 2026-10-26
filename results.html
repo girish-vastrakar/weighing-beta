@@ -119,6 +119,14 @@
   .btn.primary { background: var(--ok); color: #fff; border-color: var(--ok); font-weight: 700; }
   .btn:disabled { opacity: .5; }
   @media (max-width: 640px) { input[type=search] { min-width: 0; width: 100%; } }
+  .trh { font-size: .95rem; margin: 6px 0 6px; } .trh .sub { font-weight: 400; color: var(--muted); font-size: .82rem; }
+  ol.trail { list-style: none; margin: 0 0 12px; padding: 0; font-size: .86rem; border-left: 2px solid var(--line); }
+  ol.trail li { display: grid; grid-template-columns: 7.5em 1fr auto; gap: 8px; padding: 4px 0 4px 10px; border-bottom: 1px solid var(--grid); }
+  ol.trail li.bad { color: var(--bad); background: var(--badbg); border-left: 3px solid var(--bad); margin-left: -2px; }
+  ol.trail .tt { color: var(--muted); font-variant-numeric: tabular-nums; } ol.trail li.bad .tt { color: inherit; }
+  ol.trail .tw { color: var(--muted); font-size: .8rem; text-align: right; }
+  @media (max-width: 560px) { ol.trail li { grid-template-columns: 1fr; gap: 0; } ol.trail .tw { text-align: left; } }
+  table.mist tbody tr { cursor: default; } .wrapcell { white-space: normal !important; min-width: 12em; }
 </style>
 </head>
 <body>
@@ -137,7 +145,7 @@ const LIMITS = { MC: 17.5, VM: 17.5, ASH: 12, TM: 60 };
 const DB_LIMITS = { VM: true, ASH: true };  // these upper limits are on dry basis
 const LOWER = { MC: 1.5, VM: 5, ASH: 1.5, TM: 1.5 };
 const TESTS = ['MC', 'VM', 'ASH', 'TM'];
-const MINS = { MC: 60, VM: 7, ASH: 60 };  // heating times, as in hold.js
+const MINS = { MC: 60, VM: 7, ASH: 60 };  // default heating times, as in bench.js (the supervisor can change them: data.json settings.mins)
 const TNAME = { MC: 'Moisture', VM: 'VM', ASH: 'Ash', TM: 'Total moisture' };
 const TSKEY = { MC: 'Moisture', VM: 'VM', ASH: 'Ash', TM: 'Total Moisture' };  // test names in timestamps.json
 
@@ -185,7 +193,8 @@ async function loadSrc(src) {
     .map(p => fetchFile(src, p).catch(e => p === 'data.json' ? Promise.reject(e) : null)));
   const names = {};
   Object.entries((n && n.names) || {}).forEach(([k, v]) => { names[normCode(k)] = v; });
-  return { samples: (d && d.samples) || {}, ts: t || {}, names, appr: (a && a.approvals) || {} };
+  return { samples: (d && d.samples) || {}, ts: t || {}, names, appr: (a && a.approvals) || {},
+           runs: Object.values((d && d.runs) || {}), settings: (d && d.settings) || {} };
 }
 async function load() {
   const [q, o] = await Promise.allSettled([loadSrc('qr'), OLDKEY ? loadSrc('old') : Promise.reject(new Error('no key'))]);
@@ -298,8 +307,12 @@ function compute(code, s, src) {
   });
   // W3 saved sooner after W2 than the heating takes (wrong sample weighed, or taken out early)
   const tsS = D.ts[code] || {};
-  Object.entries(MINS).forEach(([k, mins]) => {
-    const t = tsS[TSKEY[k]] || {}; if (!complete(w[k]) || !t.W2 || !t.W3) return;
+  Object.entries(Object.assign({}, MINS, (D.settings && D.settings.mins) || {})).forEach(([k, mins]) => {
+    if (!complete(w[k])) return;
+    // the bench app knows the load: judge by its door closed / door open times
+    const run = runsOf(D, code).filter(x => x.test === k && x.outAt).pop();
+    if (run) { if (run.early) chk(k, `${TNAME[k]} door opened early, after ${Math.round((run.outAt - (run.go || run.start)) / 6e4)} min (heating is ${run.mins} min)`); return; }
+    const t = tsS[TSKEY[k]] || {}; if (!t.W2 || !t.W3) return;
     const gap = (Date.parse(t.W3.at) - Date.parse(t.W2.at)) / 6e4;
     if (gap >= 0 && gap < mins * 0.9) chk(k, `${TNAME[k]} W3 only ${Math.round(gap)} min after W2 (heating is ${mins} min)`);
   });
@@ -333,7 +346,8 @@ function compute(code, s, src) {
   return { id: src + ':' + code, src, code, name: info.name || '', supplier: info.supplier || '', date: info.date || '', machine,
     status, state, pending: Object.keys(done).filter(k => !done[k]),
     mc: r2(mc), tm: r2(tm), vml: r2(vml), vmAr: r2(vmAr), vmDb: r2(vmDb), ashAr: r2(ashAr), ashDb: r2(ashDb), fcAr: r2(fcAr), fcDb: r2(fcDb),
-    flags, flagTests, checks, suspect, appr, stale, w, ts, first, last, doneAt, who, hasTm: !!s.tm, lastText: s.last || '' };
+    flags, flagTests, checks, suspect, appr, stale, w, ts, first, last, doneAt, who, hasTm: !!s.tm, lastText: s.last || '',
+    ev: s.ev || [], holders: holdersOf(s), runs: runsOf(D, code) };
 }
 
 /* A result far from the usual for its supplier (or for all samples when the supplier has few) is a possible error,
@@ -440,7 +454,7 @@ function render() {
   root.innerHTML = `
     <header><h1>Lab results</h1>
       <span class="meta">${ERR ? '⚠ ' + esc(ERR) + ' · showing last data · ' : ''}Updated ${LOADED ? hm(LOADED) : '–'} · refreshes every minute
-        <button class="btn" id="refresh" aria-label="Refresh now">↻</button><a href="./">Weighing app</a><a href="timer.html">Timer</a><a href="dashboard.html">Lab timeline</a><a href="labels.html">QR labels</a><br>
+        <button class="btn" id="refresh" aria-label="Refresh now">↻</button><a href="./">Weighing app</a><a href="timer.html">Timer</a><a href="dashboard.html">Lab timeline</a><a href="labels.html">Boards and labels</a><br>
         ${SD.old ? `Old app data included (${Object.keys(SD.old.samples).length} samples)` : `Old app data not shown${OLDERR && OLDERR !== 'no key' ? ': ' + esc(OLDERR) : ''} · <button class="btn" id="oldkey">Add old app data</button>`}</span></header>
     <div class="filters">
       <div class="seg" role="group" aria-label="Time range">${seg('range', 'today', 'Today')}${seg('range', 'yesterday', 'Yesterday')}${seg('range', '7d', '7 days')}${seg('range', '30d', '30 days')}${seg('range', 'all', 'All')}</div>
@@ -462,6 +476,7 @@ function render() {
       <button class="tile${checks.length ? ' alert' : ''}" data-status="checks"><b>${checks.length}</b><span>possible errors, retest</span></button>
       ${COLS.map(c => avgTile(c, c.basisFree ? 'moisture (as received)' : `${c.label} (${b})`)).join('')}
     </div>
+    ${mistakesHTML(list)}
     ${attentionHTML(list)}
     ${stripsHTML(list)}
     <div class="card">
@@ -470,6 +485,85 @@ function render() {
       ${list.length ? tableHTML(list, anyTm) : `<div class="empty">No samples in this view.${V.range !== 'all' ? ' Try a longer time range.' : ''}</div>`}
     </div>`;
   wire();
+}
+
+/* ---------- trail and mistakes (from the bench app's samples[c].ev and runs) ----------
+   ev entry: { t, by, a, k, s, v, o, h, b, x }  a = w | hold | redish | undo | fix | restore | override | reset | warn */
+const holdersOf = s => [...new Set([...Object.values(s.h || {}), ...(s.ev || []).filter(e => e.h).map(e => e.h)])];
+const runsOf = (D, code) => (D.runs || []).filter(x => (x.items || []).some(i => i.code === code));
+const WARN = { swap: 'W3 outside W1–W2 (crucible swapped?)', unheated: 'W3 tried before heating', w1ge: 'W2 not above W1', w2le: 'W2 not above W1',
+  tooMuch: 'sample too heavy', tooLittle: 'sample too light', wrongBal: 'other balance', heating: 'scanned while heating' };
+const warnText = x => WARN[x] || x || 'red screen';
+const g4 = v => isNum(v) ? v.toFixed(4) : '–';
+const hTxt = h => esc(String(h || '').replace(/^ASH /, 'Ash board ').replace(/^VM /, 'VM board ').replace(/^DISH /, 'Dish '));
+// What counts as a mistake on the bench (normal saves and holds don't)
+const MISTAKE = {
+  warn: { l: 'Red screens', d: 'the app stopped a wrong step' },
+  override: { l: 'Saved anyway', d: 'saved after a red screen' },
+  undo: { l: 'Undo', d: 'undo right after saving' },
+  fix: { l: 'Corrected', d: 'a saved W changed with ✎' },
+  redish: { l: 'Changed dish', d: 'wrong dish picked first' },
+  reset: { l: 'Retests', d: 'test started again' },
+};
+function evLine(e) {
+  const t = TNAME[e.k] || e.k || '', st = e.s ? ' W' + e.s : '';
+  switch (e.a) {
+    case 'w': return `${t}${st} = ${g4(e.v)} g`;
+    case 'hold': return `${t} on ${hTxt(e.h)}`;
+    case 'redish': return `${t} dish changed ${hTxt(e.o)} → ${hTxt(e.h)}`;
+    case 'undo': return `${t}${st} undone (${g4(e.o)} → ${g4(e.v)})`;
+    case 'fix': return `${t}${st} corrected ${g4(e.o)} → ${g4(e.v)} g`;
+    case 'restore': return `${t}${st} put back ${g4(e.v)} g`;
+    case 'override': return `${t}${st} = ${g4(e.v)} g saved after red screen${e.x ? ': ' + esc(warnText(e.x)) : ''}`;
+    case 'reset': { const o = e.o || [], p = e.k === 'ASH' ? residuePct(o) : lossPct(o);
+      return `${t} retest: cleared W1 ${g4(o[0])} · W2 ${g4(o[1])} · W3 ${g4(o[2])} g${p == null ? '' : ` = <b>${p.toFixed(2)} %</b> ${e.k === 'ASH' ? 'residue' : 'loss'}`}`; }
+    case 'warn': return `${t}${st} red screen: ${esc(warnText(e.x))}${isNum(e.v) ? ' (' + g4(e.v) + ' g)' : ''}`;
+  }
+  return esc(e.a);
+}
+function trailHTML(r) {
+  const PL = { O1: 'Oven 1', O2: 'Oven 2', F1: 'Furnace 1', F2: 'Furnace 2' };
+  const items = r.ev.map(e => ({ t: e.t, by: e.by, b: e.b, bad: !!MISTAKE[e.a], txt: evLine(e) }));
+  r.runs.forEach(x => {
+    const p = PL[x.place] || x.place, n = (x.items || []).length;
+    items.push({ t: x.start, by: x.by, b: x.bal, txt: `${TNAME[x.test]}: door closed, ${p} (${n} in, ${x.mins} min)` });
+    if (x.go) items.push({ t: x.go, by: x.goBy, txt: `${TNAME[x.test]}: furnace hot again, timer started (reheat ${Math.round((x.go - x.start) / 6e4)} min)` });
+    if (x.outAt) items.push({ t: x.outAt, by: x.outBy, bad: !!x.early, txt: `${TNAME[x.test]}: door open, ${p}${x.early ? ` EARLY after ${Math.round((x.outAt - (x.go || x.start)) / 6e4)} min` : ''}` });
+    if (x.cancelled) items.push({ t: x.cancelled.at, by: x.cancelled.by, bad: true, txt: `${TNAME[x.test]}: load cancelled, ${p}` });
+  });
+  if (!items.length) return '';
+  items.sort((a, b) => a.t - b.t);
+  return `<h3 class="trh">Trail <span class="sub">every step, retest and correction · red = mistake</span></h3>
+    <ol class="trail">${items.map(i => `<li class="${i.bad ? 'bad' : ''}"><span class="tt">${when(i.t)}</span><span>${i.txt}</span>
+      <span class="tw">${esc(i.by || '?')}${i.b ? ' · balance ' + i.b : ''}</span></li>`).join('')}</ol>`;
+}
+function mistakesHTML(list) {
+  const [a, b] = rangeBounds(), codes = new Set(list.map(r => r.id)), per = {}, kinds = {};
+  ROWS.filter(r => codes.has(r.id)).forEach(r => {
+    r.ev.forEach(e => {
+      if (isFinite(a) && (e.t < a || e.t >= b)) return;
+      const who = e.by || '?', w = per[who] = per[who] || { n: 0, saves: 0, bal: new Set(), samples: new Set() };
+      if (e.b) w.bal.add(e.b);
+      if (e.a === 'w') { w.saves++; return; }
+      if (!MISTAKE[e.a]) return;
+      w[e.a] = (w[e.a] || 0) + 1; w.n++; w.samples.add(r.code);
+      if (e.a === 'warn') { const kk = warnText(e.x) + ' · ' + (TNAME[e.k] || e.k); kinds[kk] = (kinds[kk] || 0) + 1; }
+    });
+    r.runs.forEach(x => { if (x.early && x.outAt && (!isFinite(a) || (x.outAt >= a && x.outAt < b))) { const kk = 'door opened early · ' + TNAME[x.test]; kinds[kk] = (kinds[kk] || 0) + 1 / (x.items || [1]).length; } });
+  });
+  const ws = Object.entries(per).sort((x, y) => y[1].n - x[1].n);
+  if (!ws.length) return '';
+  const ks = Object.keys(MISTAKE);
+  const kindList = Object.entries(kinds).map(([k, v]) => [k, Math.round(v)]).filter(x => x[1]).sort((x, y) => y[1] - x[1]);
+  return `<div class="card"><h2>Mistakes by worker</h2>
+    <p class="sub">From the bench app, in this view's time range. Tap a sample below to see its trail.</p>
+    <div class="scroll"><table class="list mist"><thead><tr><th>Worker</th><th class="num">Mistakes</th><th class="num">Weights saved</th>
+      ${ks.map(k => `<th class="num" title="${esc(MISTAKE[k].d)}">${MISTAKE[k].l}</th>`).join('')}<th>Balance</th><th>Samples</th></tr></thead>
+      <tbody>${ws.map(([who, w]) => `<tr><td><b>${esc(who)}</b></td><td class="num">${w.n ? `<b style="color:var(--bad)">${w.n}</b>` : '0'}</td>
+        <td class="num">${w.saves}</td>${ks.map(k => `<td class="num">${w[k] || ''}</td>`).join('')}
+        <td>${[...w.bal].sort().join(', ')}</td><td class="wrapcell">${[...w.samples].slice(0, 8).map(esc).join(', ')}${w.samples.size > 8 ? ' …' : ''}</td></tr>`).join('')}</tbody></table></div>
+    ${kindList.length ? `<p class="sub" style="margin-top:8px">Most common: ${kindList.slice(0, 6).map(([k, v]) => `${esc(k)} <b>×${v}</b>`).join(' · ')}</p>` : ''}
+  </div>`;
 }
 
 function attentionHTML(list) {
@@ -560,6 +654,7 @@ function detail(id) {
         return `<tr><td>${TNAME[k]}</td>${[0, 1, 2].map(i => `<td>${isNum(w[i]) ? w[i].toFixed(4) : '–'}${st(k, 'W' + (i + 1))}</td>`).join('')}
           <td${m != null && !(m >= 0.95 && m <= 1.10) ? ' style="color:var(--bad);font-weight:700"' : ''}>${m == null ? '–' : m.toFixed(4)}</td>
           <td>${p == null ? '–' : p.toFixed(2) + (k === 'ASH' ? ' residue' : ' loss')}</td></tr>`; }).join('')}</tbody></table></div>
+    ${trailHTML(r)}
     <p class="sub" style="margin:0">VM (ar) = VM furnace loss ${f2(r.vml)} % − moisture. Dry basis = as received ÷ (100 − moisture) × 100. Fixed carbon by difference.${r.lastText ? '<br>Last entry: ' + esc(r.lastText) : ''}</p>
   </div>`;
   if (r.flags.length) {

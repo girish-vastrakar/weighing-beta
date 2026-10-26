@@ -225,6 +225,130 @@
   .scanbox .vid { position: relative; border-radius: 12px; overflow: hidden; background: #000; aspect-ratio: 1; margin-bottom: 10px; }
   .scanbox video { width: 100%; height: 100%; object-fit: cover; display: block; }
   .scanbox .aim { position: absolute; inset: 18%; border: 3px solid #fff; border-radius: 12px; box-shadow: 0 0 0 999px rgba(0, 0, 0, .25); }
+
+  /* ====== bench flow: icons, colours, big numbers ====== */
+  svg { width: 1em; height: 1em; vertical-align: middle; }
+  .center-t { text-align: center; }
+  .tbar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .tbar .lang { margin-left: auto; font-size: .8rem; padding: 6px 8px; }
+  .tbar .iconbtn { min-width: 44px; }
+  .iconbtn { border: 1px solid var(--line); background: var(--surface); border-radius: 12px; min-width: 48px; height: 48px; font-size: 1.4rem; font-weight: 700; }
+  .balbadge { display: flex; align-items: center; gap: 6px; border: 0; background: var(--ink); color: #fff; border-radius: 12px; height: 48px; padding: 0 12px; }
+  .balbadge span { font-size: 1.6rem; display: flex; } .balbadge b { font-size: 1.8rem; }
+  .whobadge { display: flex; align-items: center; gap: 6px; border: 1px solid var(--line); background: var(--surface); border-radius: 12px; height: 48px; padding: 0 10px; max-width: 30vw; min-width: 0; }
+  .whobadge span { font-size: 1.6rem; } .whobadge small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .scanbig { padding: 18px; }
+  .scanbig .qr { font-size: 4.2rem; line-height: 1; display: flex; }
+  .scanbig .sbags { display: flex; gap: 12px; font-size: 1.6rem; opacity: .85; }
+  .ptiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .ptile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; border: 2px solid var(--line); border-radius: 16px; background: var(--surface); padding: 12px 8px; min-height: 140px; }
+  .ptile .pi { font-size: 2.6rem; display: flex; align-items: center; gap: 4px; color: var(--muted); }
+  .ptile .pi em { font-style: normal; font-weight: 700; font-size: 2rem; color: var(--ink); }
+  .ptile .pk { position: absolute; top: 8px; right: 10px; font-size: 1.5rem; color: var(--c); }
+  .ptile .pb { display: flex; align-items: center; gap: 6px; }
+  .ptile .pb b { font-size: 2.2rem; line-height: 1; } .ptile .pb small { color: var(--muted); }
+  .ptile .pic { font-size: 1.8rem; display: flex; }
+  .ptile.heat { border-color: var(--c); background: var(--c-bg); }
+  .ptile.up { border-color: var(--err); background: #fdecea; animation: blink 1s steps(2, start) infinite; }
+  .ptile.up .pb small { color: var(--err); font-weight: 700; }
+  .ptile.out { border-color: var(--c); border-style: dashed; }
+  @keyframes blink { 50% { background: #f9c9c4; } }
+  .waits { display: flex; flex-wrap: wrap; gap: 10px; }
+  .wtile { display: flex; align-items: center; gap: 8px; border: 2px solid var(--c); background: var(--c-bg); border-radius: 14px; padding: 10px 14px; font: inherit; color: inherit; }
+  .wtile .wi { font-size: 2rem; color: var(--c); display: flex; } .wtile b { font-size: 2rem; }
+  .bnum { display: inline-flex; align-items: baseline; font-weight: 700; font-size: 2rem; background: var(--ink); color: #fff; border-radius: 10px; padding: 0 8px; line-height: 1.3; }
+  .bnum i { font-style: normal; font-size: 1.1rem; margin-left: 2px; opacity: .85; }
+  .bagline { display: flex; align-items: center; gap: 10px; } .bagline .bi { font-size: 2.4rem; display: flex; color: var(--muted); }
+  .tiles { display: flex; flex-direction: column; gap: 12px; margin-top: 14px; }
+  .ttile-row { display: flex; gap: 8px; }
+  .ttile { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; border: 2px solid var(--c); border-left-width: 12px; border-radius: 16px; background: var(--surface); padding: 14px; text-align: left; min-height: 92px; }
+  .ttile .ti { font-size: 2.6rem; color: var(--c); display: flex; }
+  .ttile .tn { font-weight: 700; font-size: 1.6rem; flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+  .ttile .tb { flex: 0 0 auto; }
+  .ttile .ts { flex: 0 0 auto; max-width: 92px; text-align: center; } .ttile .ts small { line-height: 1.1; }
+  .ttile .tb { font-size: 2.4rem; font-weight: 700; color: var(--c); }
+  .ttile .ts { display: flex; flex-direction: column; align-items: center; color: var(--c); }
+  .ttile .tsi { font-size: 2.2rem; display: flex; } .ttile .ts small { font-size: .8rem; color: var(--muted); }
+  .ttile.done { background: var(--c-bg); } .ttile.done .tsi { color: var(--ok); }
+  .ttile.flag { border-color: var(--err); background: #fdecea; } .ttile.flag .ts { color: var(--err); }
+  .tfix { flex: 0 0 64px; border: 2px solid var(--line); border-radius: 16px; background: var(--surface); font-size: 1.8rem; color: var(--c); }
+  .stephead { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; }
+  .stephead .ti { font-size: 2.4rem; color: var(--c); display: flex; } .stephead b { font-size: 1.5rem; flex: 1; }
+  .stephead .wn { font-size: 2rem; font-weight: 700; color: #fff; background: var(--c); border-radius: 12px; padding: 0 12px; }
+  .hold { display: flex; align-items: center; gap: 14px; background: var(--c-bg); border: 3px solid var(--c); border-radius: 16px; padding: 10px 14px; margin: 8px 0; }
+  .hold .hi { font-size: 2.6rem; color: var(--c); display: flex; }
+  .hold > b, .hold .hb b { font-size: 4rem; line-height: 1; color: var(--c); }
+  .hold small { color: var(--muted); }
+  .hold .hb { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .hold .board { flex: 1; max-width: 120px; } .hold .board[style*="repeat(3"] { max-width: 170px; }
+  .hold.mc { justify-content: flex-start; } .hold .chg { margin-left: auto; display: flex; flex-direction: column; align-items: center; border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 6px 10px; font-size: 1.6rem; }
+  .hold .chg small { font-size: .7rem; }
+  .board { display: grid; grid-auto-flow: column; gap: 5px; width: 100%; max-width: 150px; margin: 0 auto; }
+  .board[style*="repeat(3"] { max-width: 210px; }
+  .runboard .board, .loadboard .board { max-width: 220px; } .runboard .board[style*="repeat(3"], .loadboard .board[style*="repeat(3"] { max-width: 340px; }
+  .bs { position: relative; display: flex; align-items: center; justify-content: center; border: 2px solid var(--line); border-radius: 50%; aspect-ratio: 1; font-weight: 700; font-size: .95rem; color: var(--muted); background: var(--surface); padding: 0; min-width: 0; }
+  .bs.lit { background: var(--c); border-color: var(--c); color: #fff; font-size: 1.15rem; box-shadow: 0 0 0 3px var(--c-bg), 0 0 0 5px var(--c); }
+  .bs.off { opacity: .35; }
+  .bs.out { background: #ccc; border-color: #999; color: #666; text-decoration: line-through; }
+  .bs.w3 { background: #e4f3ea; border-color: var(--ok); color: var(--ok); }
+  .bs em { position: absolute; top: -6px; right: -4px; font-style: normal; color: var(--ok); font-size: .9rem; }
+  button.bs { cursor: pointer; font: inherit; font-weight: 700; }
+  .onbal { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 2.6rem; color: var(--c); margin: 6px 0 10px; }
+  .onbal .plus { font-size: 1.8rem; color: var(--muted); } .onbal .v { display: flex; } .onbal b { font-size: 2.4rem; }
+  .readout input { font-size: 3rem; }
+  .bigok { font-size: 2.6rem; padding: 10px; }
+  .pws { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  .pw { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; font-variant-numeric: tabular-nums; font-weight: 700; }
+  .pw small { display: block; color: var(--muted); font-weight: 400; font-size: .75rem; }
+  .btnrow .primary, .btnrow .secondary { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 2rem; }
+  .btnrow small { font-size: .8rem; font-weight: 400; }
+  .nobtn { color: var(--muted); }
+  .redm .sheet { background: #b3261e; color: #fff; text-align: center; }
+  .redm .redicon { font-size: 5rem; display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .redm .redicon b { font-size: 4.5rem; }
+  .redm .redsub { font-size: 1.6rem; font-weight: 700; margin: 0; }
+  .redm .redmsg { font-size: .95rem; opacity: .9; margin: 6px 0 14px; }
+  .redm .primary { background: #fff; color: #b3261e; }
+  .redm .link { color: #fff; }
+  .greenm .tick.big { width: 96px; height: 96px; font-size: 3.4rem; margin: 0 auto 10px; }
+  .nextpic { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 3rem; color: var(--c); margin: 4px 0 10px; }
+  .nextpic b { font-size: 3.4rem; } .nextpic .plus { font-size: 2rem; color: var(--muted); }
+  .greenm .board { max-width: 280px; margin: 0 auto 12px; }
+  .greenm .result { margin: 0 0 12px; } .greenm .result span { font-size: 2.4rem; color: var(--c); display: flex; }
+  .undobtn { flex: 0 0 34% !important; }
+  .wboxes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0 12px; }
+  .wbox { display: flex; flex-direction: column; align-items: center; gap: 4px; border: 2px solid var(--c); border-radius: 14px; background: var(--surface); padding: 12px 4px; }
+  .wbox small { font-size: 1.3rem; font-weight: 700; color: var(--c); } .wbox b { font-size: .95rem; font-variant-numeric: tabular-nums; }
+  .wbox span { font-size: 1.6rem; color: var(--c); } .wbox:disabled { opacity: .45; border-color: var(--line); }
+  .whogrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .whobtn { display: flex; flex-direction: column; align-items: center; gap: 4px; border: 2px solid var(--line); border-radius: 16px; background: var(--surface); padding: 14px 4px; }
+  .whobtn span { font-size: 3rem; line-height: 1; } .whobtn small { color: var(--muted); overflow-wrap: anywhere; }
+  .whobtn.on, .balbtn.on { border-color: var(--ink); border-width: 3px; }
+  .balgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .balbtn { font-size: 4rem; font-weight: 700; border: 2px solid var(--line); border-radius: 18px; background: var(--surface); padding: 20px 0; }
+  .bigicon { font-size: 4rem; display: inline-flex; }
+  .placehead { display: flex; align-items: center; gap: 10px; font-size: 3rem; color: var(--muted); margin-bottom: 10px; }
+  .placehead b { font-size: 3rem; color: var(--ink); } .placehead small { font-size: .9rem; } .placehead .ti { color: var(--c); display: flex; }
+  .loadhead { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 4px 0 8px; }
+  .loadhead .ti { font-size: 2.4rem; color: var(--c); display: flex; } .loadhead b { font-size: 3rem; color: var(--c); }
+  .countbig { text-align: center; font-size: 1.4rem; margin: 10px 0; } .countbig b { font-size: 3rem; color: var(--c); }
+  .dishes { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 8px 0; }
+  .dslot { position: relative; display: flex; flex-direction: column; align-items: center; border: 2px solid var(--c); background: var(--c-bg); border-radius: 12px; padding: 6px 2px; font: inherit; color: inherit; }
+  .dslot span { font-size: 1.6rem; color: var(--c); display: flex; } .dslot b { font-size: 1.5rem; }
+  .dslot em { position: absolute; top: 2px; right: 6px; font-style: normal; color: var(--muted); font-size: .8rem; }
+  .dslot.w3 { border-color: var(--ok); background: #e4f3ea; } .dslot.w3 em { color: var(--ok); font-size: 1rem; }
+  .dslot.gone { opacity: .4; }
+  .doorbtn { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 4rem; padding: 16px; margin-top: 12px; }
+  .doorbtn small { font-size: .9rem; font-weight: 400; }
+  .doorbtn.blink { background: var(--err); animation: blink2 1s steps(2, start) infinite; }
+  .doorbtn.okbtn { background: #2e7d32; border-color: #2e7d32; color: #fff; font-size: 5rem; padding: 22px; }
+  .scanwhat .scannum { font-size: 3.4rem; line-height: 1; }
+  @keyframes blink2 { 50% { background: #7a1a14; } }
+  .bigtime { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 3rem; } .bigtime b { font-size: 4rem; } .bigtime small { font-size: 1rem; color: var(--muted); }
+  .bigtime.ok { color: var(--ok); font-size: 5rem; }
+  .scanwhat { display: flex; justify-content: center; gap: 14px; font-size: 3rem; margin-bottom: 8px; }
+  #scanner .wide { font-size: 2rem; }
+  #sync { top: auto; bottom: 2px; font-size: .72rem; padding: 2px 12px; }
 </style>
 </head>
 <body>
@@ -232,7 +356,7 @@
 <input type="file" id="photofile" accept="image/*" capture="environment" hidden>
 <div class="wrap" id="app"><div class="empty">Loading…</div></div>
 
-<script src="hold.js"></script>
+<script src="bench.js"></script>
 <script>
 /* ====== SETTINGS: where the results are stored (a PRIVATE GitHub repository) ====== */
 const GH = { owner: 'girish-vastrakar', repo: 'weighing_data_QR', path: 'data.json', tsPath: 'timestamps.json', namesPath: 'names.json', apprPath: 'approvals.json', logPath: 'corrections.json', branch: 'main' };
@@ -345,7 +469,7 @@ const L = {
     errW3hi: 'Weight after heating cannot be more than W2.',
     errW3lo: v => `Weight after heating cannot be less than the empty ${v} (W1).`,
     chipStep2: 'step 2', chipIn: h => `ready for ${h}`,
-    label: { MC: 'Moisture', VM: 'Volatile Matter', ASH: 'Ash', TM: 'Total Moisture' },
+    label: { MC: 'MT', VM: 'VM', ASH: 'Ash', TM: 'TM' },   // short names: workers read these at a glance
     short: { MC: 'Moisture', VM: 'VM', ASH: 'Ash', TM: 'Total moisture' },
     vessel: { MC: 'petri dish', VM: 'VM crucible', ASH: 'ash crucible', TM: 'petri dish' },
     heat: { oven: 'oven', furnace: 'furnace' }
@@ -430,7 +554,7 @@ const L = {
     errW3hi: 'ગરમ કર્યા પછીનું વજન W2 કરતાં વધારે ન હોઈ શકે.',
     errW3lo: v => `ગરમ કર્યા પછીનું વજન ખાલી ${v} (W1) કરતાં ઓછું ન હોઈ શકે.`,
     chipStep2: 'પગલું 2', chipIn: h => `${h} માટે તૈયાર`,
-    label: { MC: 'ભેજ (Moisture)', VM: 'બાષ્પશીલ પદાર્થ (VM)', ASH: 'રાખ (Ash)', TM: 'કુલ ભેજ (Total Moisture)' },
+    label: { MC: 'MT', VM: 'VM', ASH: 'Ash', TM: 'TM' },   // short names: workers read these at a glance
     short: { MC: 'ભેજ', VM: 'VM', ASH: 'રાખ', TM: 'કુલ ભેજ' },
     vessel: { MC: 'પેટ્રી ડિશ', VM: 'VM ક્રુસિબલ', ASH: 'રાખની ક્રુસિબલ', TM: 'પેટ્રી ડિશ' },
     heat: { oven: 'ઓવન', furnace: 'ફર્નેસ' }
@@ -698,6 +822,7 @@ function fileSample(f, code) {
 }
 // Apply one change (from this phone's waiting list) to the data file
 function fileApply(f, j) {
+  trailWeight(f, j);                         // the sample's trail gets the old value before it is replaced
   if (batchApply(f, j)) return;
   if (j.action === 'saveWeight') {
     const s = fileSample(f, j.code);
@@ -734,12 +859,12 @@ function fileApply(f, j) {
 function toData(f) {
   const samples = f.codes.filter(c => f.samples[c]).map(code => {
     const fs = f.samples[code];
-    const s = { code, tmRequired: !!fs.tm, last: fs.last || '', photos: fs.photos || [], hold: fs.h || {}, holdAt: fs.ha || {}, tests: {} };
+    const s = { code, tmRequired: !!fs.tm, last: fs.last || '', photos: fs.photos || [], hold: fs.h || {}, holdAt: fs.ha || {}, holdBal: fs.hb || {}, ev: fs.ev || [], tests: {} };
     ORDER.forEach(k => { s.tests[k] = { w: fs.w[k].slice(), pct: isNum(fs.pct[k]) ? fs.pct[k] : null, done: 0, required: true }; });
     recompute(s);
     return s;
   });
-  return { samples, tests: TESTS, order: ORDER, runs: Object.values(f.runs || {}).sort((a, b) => a.start - b.start) };
+  return { samples, tests: TESTS, order: ORDER, runs: Object.values(f.runs || {}).sort((a, b) => a.start - b.start), settings: f.settings || {} };
 }
 // What the worker sees = last copy from GitHub + this phone's unsent changes
 function rebuild() {
@@ -1327,8 +1452,11 @@ function liveText() {
   if (S.step === 2 && isNum(w[0])) {
     const d = v - w[0];
     if (d <= 0) return warn(t.notMoreW1(ves(k), fmt(w[0])));
-    if (cfg.maxSample && overMax(d, cfg.maxSample))
-      return `<span class="ind over">${esc(t.tooMuch(fmt(d), cfg.maxSample.toFixed(3), fmt(d - cfg.maxSample)))}</span>`;
+    const rg = rangeFor(k);
+    if (rg && overMax(d, rg[1]))
+      return `<span class="ind over">${esc(t.tooMuch(fmt(d), rg[1].toFixed(3), fmt(d - rg[1])))}</span>`;
+    if (rg) return overMax(rg[0], d) ? `<span class="ind low">${esc(t.sampleW(fmt(d)))} (${rg[0].toFixed(3)} – ${rg[1].toFixed(3)})</span>`
+      : `<span class="ind ok">${esc(t.sampleW(fmt(d)))} ✓</span>`;
     if (!cfg.targetSample) return esc(t.sampleW(fmt(d)));
     return d < cfg.targetSample
       ? `<span class="ind low">${esc(t.sampleW(fmt(d)))}</span>`
@@ -1383,6 +1511,7 @@ function renderSetup() {
     <h2 class="title">Setup</h2>
     <p class="sub">Workers: choose your weighing machine here. The rest is for the supervisor.</p>
     <p><a class="link" href="labels.html" target="_blank" rel="noopener">▣ ${esc(B().labels)}</a></p>
+    ${supervisorHTML()}
     <div class="prev" style="margin-top:0">
       <div class="row" style="display:block"><b>Weighing machine on this phone</b>
         <p class="sub" style="margin:4px 0 8px">The sample list then shows only the samples given to this machine in the Machine column of the sheet. ALL shows the samples marked ALL or not given to any machine.</p>
@@ -1430,6 +1559,36 @@ function renderSetup() {
         <button class="secondary" data-act="import" style="width:100%">Import logging CSV</button>
         <input type="file" id="csvfile" accept=".csv,text/csv" hidden></div>
     </div>`;
+}
+// Supervisor on this phone (no PIN: anyone can step in), the workers' sign-in list and the heating times
+function supervisorHTML() {
+  const on = superOn(), ws = settings().workers || [], used = new Set(ws.map(w => w.sym));
+  const m = settings().mins || {};
+  return `<div class="prev" style="margin-top:0">
+    <div class="row" style="display:block"><b>Supervisor on this phone</b>
+      <p class="sub" style="margin:4px 0 8px">Lets this phone change a finished weight, reset a test, save a weight the red screen stopped, and approve results.</p>
+      <div class="toggle"><button aria-pressed="${!on}" data-act="super" data-val="0">Off</button><button aria-pressed="${on}" data-act="super" data-val="1">On</button></div></div>
+    ${on ? `<div class="row" style="display:block"><b>Workers (sign-in list)</b>
+      <p class="sub" style="margin:4px 0 8px">Each worker taps their own symbol at the start. The name goes with every weight and into the results page.</p>
+      ${ws.map((w, i) => `<div style="display:flex;align-items:center;gap:8px;margin:4px 0"><span style="font-size:1.8rem">${w.sym}</span><b style="flex:1">${esc(w.name)}</b>
+        <button class="link" data-act="worker-del" data-i="${i}">Remove</button></div>`).join('')}
+      <div class="typerow" style="margin-top:8px"><input class="field" id="wname" type="text" placeholder="Name" autocomplete="off">
+        <select id="wsym" class="field" style="flex:0 0 80px;font-size:1.4rem">${SYMS.filter(x => !used.has(x)).map(x => `<option>${x}</option>`).join('')}</select></div>
+      <button class="secondary" data-act="worker-add" style="width:100%">Add worker</button></div>
+    <div class="row" style="display:block"><b>Heating times (minutes)</b>
+      <p class="sub" style="margin:4px 0 8px">Used for every new load. Workers never see these. The lab timer can change them too.</p>
+      <div class="typerow">${['MC', 'VM', 'ASH'].map(k => `<label style="flex:1;font-weight:700">${esc(lbl(k))}<input class="field" id="mins-${k}" type="number" inputmode="numeric" min="1" value="${esc(String(m[k] || DEF_MINS[k]))}"></label>`).join('')}</div>
+      <p class="sub" style="margin:8px 0 4px">Furnace temperature (°C). After door closed the worker sees this number and scans the furnace when its display reaches it; only then the minutes start.</p>
+      <div class="typerow">${['VM', 'ASH'].map(k => `<label style="flex:1;font-weight:700">${esc(lbl(k))} °C<input class="field" id="temp-${k}" type="number" inputmode="numeric" min="0" value="${esc(String(tempFor(k) || ''))}"></label>`).join('')}</div>
+      <button class="secondary" data-act="save-mins" style="width:100%">Save heating times</button></div>
+    <div class="row" style="display:block"><b>Sample weight range (g)</b>
+      <p class="sub" style="margin:4px 0 8px">W2 − W1 must be inside this range, or the worker gets a red screen and weighs again. Leave TM empty to not check it.</p>
+      ${['MC', 'VM', 'ASH', 'TM'].map(k => { const r = rangeFor(k) || ['', ''];
+        return `<div class="typerow" style="align-items:center"><b style="flex:0 0 3em">${esc(lbl(k))}</b>
+          <input class="field" id="rmin-${k}" type="number" inputmode="decimal" step="0.001" placeholder="min" value="${r[0] === '' ? '' : (+r[0]).toFixed(3)}">
+          <span>–</span><input class="field" id="rmax-${k}" type="number" inputmode="decimal" step="0.001" placeholder="max" value="${r[1] === '' ? '' : (+r[1]).toFixed(3)}"></div>`; }).join('')}
+      <button class="secondary" data-act="save-range" style="width:100%">Save weight range</button></div>` : ''}
+  </div>`;
 }
 const fmtV = v => v == null ? '–' : fmt(v);
 function logHTML() {
@@ -1658,10 +1817,7 @@ function renderModal() {
   const m = S.modal;
   if (!m) return '';
   const t = T(), k = S.test;
-  if (m.type === 'addcode') return renderAddCode(m);
-  if (m.type === 'moved') return renderMoved(m);
-  if (m.type === 'freeplace') return renderFreePlace(m);
-  if (m.type === 'early') return renderEarly(m);
+  const bm = renderBenchModal(m); if (bm) return bm;
   if (m.type === 'reset') return `<div class="modal" style="${cvar(m.key)}"><div class="sheet" role="dialog" aria-modal="true">
       <p class="instr">${esc(t.resetQ(S.code, lbl(m.key)))}</p>
       <p class="sub">${esc(t.resetInfo)}</p>
@@ -1675,12 +1831,12 @@ function renderModal() {
       ${m.url ? `<img src="${m.url}" alt="${esc(S.code)} ${esc(lbl(p.test || 'ASH'))}">` : `<div class="empty">${esc(t.phLoading)}</div>`}
       <div class="btnrow" style="margin-top:12px"><button class="secondary" data-act="photo-close">${esc(t.phClose)}</button></div></div></div>`; }
   if (m.type === 'confirm') return `<div class="modal" style="${cvar(k)}"><div class="sheet" role="dialog" aria-modal="true">
-      <p class="sub" style="margin:0">${esc(S.code)}, ${esc(lbl(k))}, W${S.step}: ${esc(wLabel(k, S.step - 1))}</p>
-      <div class="big">${esc(m.raw)} g</div>
-      <p style="margin-top:0">${esc(t.isThis)}</p>${unheatedNote()}
+      <div class="stephead"><span class="ti">${ICON[k]}</span><b>${esc(S.code)}</b><span class="wn">W${S.step}</span></div>
+      <div class="big">${esc(m.raw)} <small>g</small></div>
+      <div class="onbal"><span class="v">${ICON.balance}</span><span class="plus">=</span><b>?</b></div>
       <div class="btnrow">
-        <button class="secondary" data-act="cancel" ${S.busy ? 'disabled' : ''}>${esc(t.change)}</button>
-        <button class="primary" data-act="confirm" ${S.busy ? 'disabled' : ''}>${esc(S.busy ? t.saving : t.yesSave)}</button>
+        <button class="secondary nobtn" data-act="cancel" ${S.busy ? 'disabled' : ''}>${ICON.cross}</button>
+        <button class="primary" data-act="confirm" ${S.busy ? 'disabled' : ''}>${ICON.check}</button>
       </div></div></div>`;
   return `<div class="modal" style="${cvar(k)}"><div class="sheet" role="dialog" aria-modal="true">
       <div class="tick" aria-hidden="true">✓</div>
@@ -1710,8 +1866,8 @@ function savedMsg(m) {
 
 function afterSaved() {
   const next = S.modal && S.modal.next; S.modal = null;
-  if (holdAfter(next)) return;          // weighed from a dish / spot scan: back to the load, or home for the next scan
-  if (next === 'step2') { S.step = 2; S.draft = ''; S.editing = false; S.view = 'step'; }
+  if (next === 'step2') { S.step = 2; S.draft = ''; S.editing = false; S.view = 'step'; return; }
+  if (holdAfter(next)) return;          // weighed from a dish scan or the W3 walk: back to the load, the next spot, or home
   else S.view = 'sample';
 }
 
@@ -1742,9 +1898,10 @@ function render() {
   S.lastView = S.view;
   document.documentElement.lang = S.lang;
   document.title = T().title;
-  if (!S.worker && S.view !== 'setup') S.view = 'name';
-  if (!S.data && S.view !== 'name' && S.view !== 'setup') { app.innerHTML = `<div class="empty">${esc(T().loading)}</div>`; return; }
-  const v = { home: renderHomeBeta, run: renderRun, load: renderLoad, sample: renderSample, step: renderStep, review: renderReview, name: renderName, setup: renderSetup }[S.view];
+  if (!S.worker && S.view !== 'setup' && S.view !== 'name') S.view = 'who';
+  if (S.worker && !balNo() && !['setup', 'name', 'who', 'bal'].includes(S.view)) S.view = 'bal';
+  if (!S.data && !['name', 'setup', 'bal', 'who'].includes(S.view)) { app.innerHTML = `<div class="empty">${esc(T().loading)}</div>`; return; }
+  const v = { home: renderHomeB, run: renderRun, load: renderLoad, sample: renderSampleB, step: renderStepB, review: renderReviewB, name: renderName, who: renderWho, bal: renderBal, setup: renderSetup }[S.view];
   const tc = document.getElementById('typecode'), typed = tc && tc.value, typing = tc && document.activeElement === tc;
   app.innerHTML = v() + renderModal();
   const tc2 = document.getElementById('typecode');      // a refresh must not wipe a half-typed code
@@ -1796,16 +1953,7 @@ function renderNotReady(err) {
     <button class="secondary" data-act="refresh">${esc(t.tryAgain)}</button></div></div>`;
 }
 
-function openTest(k) {
-  const st = sample(S.code).tests[k];
-  const blocked = startBlocked(S.code, k, st.done);
-  if (blocked) { toast(blocked); return; }
-  S.test = k; S.editing = false; S.draft = ''; S.modal = null;
-  if (st.done === 3) S.view = 'review';
-  else { S.step = st.done + 1; S.view = 'step'; }
-  render();
-  if (S.view === 'step') checkCard();
-}
+function openTest(k) { openTestB(k); }
 // Two phones on one card: look at the newest copy as soon as a weight screen opens,
 // and if another phone has already saved this weight, show that instead of asking for it again
 async function checkCard() {
@@ -1821,7 +1969,7 @@ async function checkCard() {
   if (!st || st.done < step) return;
   S.modal = null;
   toast(T().takenOther(step));
-  openTest(k);
+  S.via = code + '|' + k; openTest(k);
 }
 
 // Rounded to 4 decimals (the balance) so 1.0090 is allowed and 1.0091 is not
@@ -1838,19 +1986,38 @@ function checkWeight(v) {
   return '';
 }
 
+// A weight that does not fit gets a red screen (and a line in the trail), not a message to read
 function askConfirm() {
   const v = parseW(S.draft);
-  if (v === null) { toast(T().typeWeight); return; }
-  const problem = checkWeight(v);
-  if (problem) { toast(problem); return; }
+  if (v === null) { bad(); toast('0.0000 g'); return; }
+  const b = B().bad, k = S.test, w = sample(S.code).tests[k].w.slice(); w[S.step - 1] = v;
+  const icon = vesselIcon(k), rg = rangeFor(k), d = isNum(w[0]) && isNum(w[1]) ? w[1] - w[0] : null;
+  let why = '', msg = '';
+  if (isNum(w[0]) && isNum(w[1]) && w[1] <= w[0]) { why = S.step === 1 ? 'w1ge' : 'w2le'; msg = S.step === 1 ? b.w1ge : b.w2le; }
+  else if (rg && S.step <= 2 && d != null && overMax(d, rg[1])) { why = 'tooMuch'; msg = b.tooMuch; }
+  else if (rg && S.step <= 2 && d != null && overMax(rg[0], d)) { why = 'tooLittle'; msg = b.tooLittle; }
+  else if (S.step === 3 && ((isNum(w[1]) && v > w[1]) || (isNum(w[0]) && v < w[0]))) { why = 'swap'; msg = b.swap; }
+  else if (S.step === 3 && unheated(k, w, v)) { why = 'unheated'; msg = b.unheated; }
+  if (why) {
+    logWarn(why, { value: v });
+    const range = why === 'tooMuch' || why === 'tooLittle';   // the sample weight, big, and the range it must be in
+    redScreen(msg, { icon: why === 'swap' ? ICON.swap : why === 'unheated' ? (S.tests[k].heat === 'oven' ? ICON.oven : ICON.furnace) : icon,
+      num: range ? fmt(d) : undefined, sub: range ? `${rg[0].toFixed(3)} – ${rg[1].toFixed(3)} g` : undefined,
+      again: true, override: why === 'swap' || why === 'unheated', value: v, why });
+    return;
+  }
   S.modal = { type: 'confirm', value: v, raw: S.draft.trim().replace(',', '.') };
   render();
 }
 
-function doSave() {
-  enqueue({ action: 'saveWeight', code: S.code, key: S.test, step: S.step, value: S.modal.value, worker: S.worker });
+function doSave(value, override) {
+  if (value == null) value = S.modal.value;
+  const old = sample(S.code).tests[S.test].w[S.step - 1];
+  enqueue({ action: 'saveWeight', code: S.code, key: S.test, step: S.step, value, worker: S.worker, bal: balNo(),
+            override: override ? true : undefined, why: override || undefined });
+  good();
   const st = sample(S.code).tests[S.test];
-  const m = { type: 'saved', next: 'sample', step: S.step, pct: st.pct };
+  const m = { type: 'saved', next: 'sample', step: S.step, pct: st.pct, at: Date.now(), old: isNum(old) ? old : null, value };
   const at = S.step === 2 && !S.editing ? batchAfterW2(S.code, S.test) : null;     // W2: where the dish / crucible goes
   if (at) m.slot = at;
   if (S.editing) m.kind = 'corrected';
@@ -1911,7 +2078,7 @@ document.addEventListener('click', e => {
     case 'card': goCard(el.dataset.dir); break;
     case 'home': S.view = 'home'; render(); S.restoreOnce = true; load(false); break;
     case 'back-sample':
-      S.via = null;
+      S.via = null; S.walk = null;
       S.view = 'sample'; S.modal = null; render(); break;
     case 'tm': setTm(el.dataset.val === '1'); break;
     case 'approve': {
@@ -1930,12 +2097,32 @@ document.addEventListener('click', e => {
     case 'do-reset': {
       const key = S.modal.key; S.modal = null;
       enqueue({ action: 'resetTest', code: S.code, key, worker: S.worker });
-      if (CAP[key]) enqueue({ action: 'batchRemove', code: S.code, key, worker: S.worker });
       S.view = 'sample'; render();
       toast(T().resetDone(S.code, lbl(key)), true);
       break;
     }
     case 'confirm': doSave(); break;
+    case 'who-list': S.view = 'who'; render(); break;
+    case 'super': store.set('super', el.dataset.val); render(); break;
+    case 'worker-add': {
+      const name = (document.getElementById('wname').value || '').trim(), sym = document.getElementById('wsym').value;
+      if (!name || !sym) { toast('Type a name first.'); break; }
+      enqueue({ action: 'setWorkers', workers: (settings().workers || []).filter(w => w.name !== name).concat([{ name, sym }]), worker: S.worker });
+      render(); break;
+    }
+    case 'worker-del': if (confirmTap(el)) { const ws = (settings().workers || []).slice(); ws.splice(+el.dataset.i, 1); enqueue({ action: 'setWorkers', workers: ws, worker: S.worker }); render(); } break;
+    case 'save-range': {
+      const range = {};
+      ['MC', 'VM', 'ASH', 'TM'].forEach(k => { const a = parseFloat(document.getElementById('rmin-' + k).value), b = parseFloat(document.getElementById('rmax-' + k).value);
+        range[k] = b > 0 && !(a > b) ? [a > 0 ? a : 0, b] : null; });
+      enqueue({ action: 'setRange', range, worker: S.worker }); toast('Saved.', true); render(); break;
+    }
+    case 'save-mins': {
+      const mins = {}; ['MC', 'VM', 'ASH'].forEach(k => { const v = +document.getElementById('mins-' + k).value; if (v > 0) mins[k] = v; });
+      enqueue({ action: 'setMins', mins, worker: S.worker });
+      const temp = {}; ['VM', 'ASH'].forEach(k => { const v = +document.getElementById('temp-' + k).value; temp[k] = v > 0 ? v : null; });
+      enqueue({ action: 'setTemp', temp, worker: S.worker }); toast('Saved.', true); render(); break;
+    }
     case 'after': afterSaved(); render(); break;
     case 'photo-take': {
       S.photoFor = { code: S.code, test: el.dataset.test || S.test };
@@ -1962,7 +2149,7 @@ document.addEventListener('click', e => {
     case 'load-log': loadLog(); break;
     case 'restore-log': restoreLog(el); break;
     case 'import': document.getElementById('csvfile').click(); break;
-    case 'name': S.view = 'name'; render(); break;
+    case 'name': S.view = (settings().workers || []).length ? 'who' : 'name'; render(); break;
     case 'save-name': saveName(); break;
   }
 });
@@ -1970,6 +2157,9 @@ document.addEventListener('click', e => {
 document.addEventListener('input', e => {
   if (loadInput(e.target)) return;
   if (e.target.id === 'w') {
+    // the balance reads 0.0001 g: a 5th decimal is a typing slip, so it is not taken
+    const m = e.target.value.match(/^(\d*[.,]\d{4})\d+/);
+    if (m) { e.target.value = m[1]; bad(); }
     S.draft = e.target.value;
     document.getElementById('live').innerHTML = liveText();
   } else if (e.target.dataset.input === 'logq') {
@@ -2035,7 +2225,7 @@ setInterval(() => {
 // Batch countdowns: redraw the batch screens while nobody is typing
 setInterval(() => {
   const typing = document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
-  if (document.visibilityState === 'visible' && S.data && (S.view === 'home' || S.view === 'run') && !S.modal && !S.busy && !SCAN && !typing) render();
+  if (document.visibilityState === 'visible' && S.data && (S.view === 'home' || S.view === 'run' || S.view === 'sample') && !S.modal && !S.busy && !SCAN && !typing) render();
 }, 20000);
 
 // One-time setup link: #key=...  (saved on this phone, then removed from the address bar)
@@ -2051,8 +2241,25 @@ S.tests = TESTS; S.order = ORDER;
 S.file = readJSON('file', null); S.fileSha = store.get('fileSha');
 setTimeout(syncTs, 1500); setTimeout(syncLog, 2500); setTimeout(uploadPhotos, 3500);
 if (S.file && S.file.codes) rebuild();
-if (S.worker) { if (S.data) render(); else renderNotReady(); load(); sync(); } else render();
+if (S.worker) { if (S.data) render(); else renderNotReady(); load(); sync(); } else { render(); load(); }
 showSync();
+
+// The phone's back button goes back one step inside the app instead of closing it:
+// one extra history entry is kept, and each back press does what the screen's own back does.
+function goBack() {
+  if (SCAN) { closeScanner(); return; }
+  if (S.modal) {
+    const b = app.querySelector('.modal [data-act=red-ok], .modal [data-act=red-again], .modal [data-act=after], .modal [data-act=cancel]');
+    if (b) b.click(); else { S.modal = null; render(); }
+    return;
+  }
+  if (S.view === 'home' || S.view === 'who' && !S.worker) return;          // first screen: stay in the app
+  const b = app.querySelector('header.tbar .iconbtn');
+  if (b && (S.view === 'step' || S.view === 'sample' || S.view === 'run' || S.view === 'load')) { b.click(); return; }
+  S.view = 'home'; render();
+}
+try { history.pushState({ app: 1 }, ''); } catch (e) {}
+window.addEventListener('popstate', () => { goBack(); try { history.pushState({ app: 1 }, ''); } catch (e) {} });
 </script>
 </body>
 </html>

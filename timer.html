@@ -132,6 +132,8 @@
 const GH = { owner: 'girish-vastrakar', repo: 'weighing_data_QR', branch: 'main', data: 'data.json', ts: 'timestamps.json', log: 'timerlog.json' };
 // Suggested times in minutes (the worker can change them on every start)
 const DEFAULT_MIN = { MC: 60, VM: 7, ASH: 60 };
+// the supervisor's heating times (data.json settings.mins) win over these
+const minsFor = k => { const m = S.file && S.file.settings && S.file.settings.mins; return m && +m[k] > 0 ? +m[k] : DEFAULT_MIN[k]; };
 // The four sections: which tests they take and how many samples fit (the order is the order workers fill them)
 const SECTIONS = [
   { id: 'O1', name: 'Oven 1',    tests: { MC: 12 } },
@@ -349,7 +351,7 @@ const CAP = { MC: 12, VM: 18, ASH: 10 };
 let MUTE = (() => { try { return JSON.parse(store.get('timer-mute')) || {}; } catch (e) { return {}; } })();
 function saveMute() { const now = Date.now(); Object.keys(MUTE).forEach(k => { if (MUTE[k] < now - 86400000) delete MUTE[k]; }); store.set('timer-mute', JSON.stringify(MUTE)); }
 // one load of an oven / furnace in the weighing app: { rid, place, test, tray, items: [{ h, code, w2 }], start, mins, outAt }
-const appAll = () => Object.values((S.file && S.file.runs) || {});
+const appAll = () => Object.values((S.file && S.file.runs) || {}).filter(r => !r.cancelled);
 // the dish / spot still holds the sample that went in (not reset or moved since)
 const itemLive = (r, it) => { const s = S.file.samples && S.file.samples[it.code];
   return !!s && s.h && s.h[r.test] === it.h && ((s.ha && s.ha[r.test]) || 0) <= r.start; };
@@ -359,7 +361,9 @@ function appBatches() {
   return appAll().filter(r => r.start && r.mins && SECTIONS.some(x => x.id === r.place))
     .map(r => {
       const samples = r.items.filter(it => itemLive(r, it)).map(it => it.code);
-      return { id: 'app-' + r.rid, app: true, no: runLabel(r), section: r.place, test: r.test, samples, start: r.start, end: r.start + r.mins * 60000,
+      // furnace loads count from when the furnace was hot again (go); until then the full time stays on the clock
+      const warm = r.reheat && !r.go, t0 = r.reheat ? r.go : r.start;
+      return { id: 'app-' + r.rid, app: true, warm, no: runLabel(r), section: r.place, test: r.test, samples, start: warm ? r.start : t0, end: warm ? r.start + 1e12 : t0 + r.mins * 60000,
                planned: r.mins, snoozes: 0, snoozeMin: 0, state: r.outAt ? 'out' : 'run', events: [],
                left: samples.filter(c => stateOf(c, r.test) === 'w2') };
     })
@@ -378,6 +382,27 @@ function oldBatches() {
 }
 const live = () => S.batches.concat(appBatches(), oldBatches());
 const muted = b => b.app && MUTE[b.id] > Date.now();
+
+/* ---------- supervisor changes to data.json (open a door early, cancel a load, heating times) ----------
+   Read, change, write with the file's sha; another phone saving at the same moment makes GitHub refuse it, so read again. */
+async function dataEdit(change, what) {
+  const url = `https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${GH.data}`;
+  const hdr = { Authorization: 'Bearer ' + KEY, Accept: 'application/vnd.github+json' };
+  try {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const r = await fetch(url + '?ref=' + GH.branch, { cache: 'no-store', headers: hdr });
+      if (!r.ok) throw new Error('GitHub ' + r.status);
+      const m = await r.json();
+      const f = m.content ? JSON.parse(b64d(m.content)) : await (await fetch(url + '?ref=' + GH.branch, { cache: 'no-store', headers: { ...hdr, Accept: 'application/vnd.github.raw+json' } })).json();
+      if (!change(f)) return false;
+      const w = await fetch(url, { method: 'PUT', headers: { ...hdr, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: `timer supervisor: ${what}`, branch: GH.branch, sha: m.sha, content: b64e(JSON.stringify(f, null, 1)) }) });
+      if (w.ok) { S.file = f; DATATAG = ''; render(); return true; }
+      if (w.status !== 409 && w.status !== 422) throw new Error('GitHub ' + w.status);
+    }
+  } catch (e) { return false; }
+  return false;
+}
 
 /* ---------- timerlog.json: a permanent record of every batch ----------
    { "batches": { "<id>": { section, test, capacity, samples, plannedMin, started, ready, events, takenOut, actualMin, stoppedEarly, cancelled } } }
@@ -623,14 +648,14 @@ function tileHTML(sec) {
   if (!b) return `<button class="tile free" data-act="open" data-sec="${sec.id}">
       <span class="name">${esc(secName(sec.id))}</span><span class="what">${esc(accepts)}</span>
       <span class="state">${esc(t.free)}</span><span class="startcue">${esc(t.tapStart)}</span></button>`;
-  const left = b.end - now, ringing = left <= 0;
-  const pct = Math.min(100, Math.max(0, (now - b.start) / (b.end - b.start) * 100));
+  const left = b.warm ? b.planned * 60000 : b.end - now, ringing = left <= 0;   // heating up: the full time waits
+  const pct = b.warm ? 0 : Math.min(100, Math.max(0, (now - b.start) / (b.end - b.start) * 100));
   return `<button class="tile run ${ringing ? 'ring' : ''}" style="${cvar(b.test)}" data-act="open" data-sec="${sec.id}">
       <span class="name">${esc(secName(sec.id))}</span>
       <span class="tag">${esc(t.test[b.test])} · ${esc(t.samples(b.samples.length))}</span>
       <span class="readout">${ringing ? '+' + countdown(-left) : countdown(left)}</span>
       <span class="bar"><i style="width:${pct}%"></i></span>
-      <span class="meta">${esc(t.readyAt(hm(b.end)))}${b.snoozes ? ' · ' + esc(t.snoozed(b.snoozes, b.snoozeMin)) : ''}${b.app ? ' · ' + esc(t.fromApp(b.no)) : ''}</span></button>`;
+      <span class="meta">${b.warm ? '🌡 Heating up, not counting yet' : esc(t.readyAt(hm(b.end)))}${b.snoozes ? ' · ' + esc(t.snoozed(b.snoozes, b.snoozeMin)) : ''}${b.app ? ' · ' + esc(t.fromApp(b.no)) : ''}</span></button>`;
 }
 
 function nextFree(k) {
@@ -665,10 +690,16 @@ function sheetHTML() {
   if (b && b.app) {   // a weighing-app batch: details only, the weighing app runs it
     return `<div class="modal" data-act="close-bg"><div class="sheet" style="${cvar(b.test)}" role="dialog" aria-modal="true">
       <h3>${esc(secName(sec.id))} · ${esc(t.test[b.test])}</h3>
-      <p class="meta">${esc(t.fromApp(b.no))} · ${esc(t.started(hm(b.start)))} · ${esc(t.readyAt(hm(b.end)))}</p>
-      <div class="readout" id="sheet-cd" style="margin:10px 0">${countdown(b.end - Date.now())}</div>
+      <p class="meta">${esc(t.fromApp(b.no))} · ${esc(t.started(hm(b.start)))}${b.warm ? '' : ' · ' + esc(t.readyAt(hm(b.end)))}</p>
+      <div class="readout" id="sheet-cd" style="margin:10px 0">${countdown(b.warm ? b.planned * 60000 : b.end - Date.now())}</div>
       <div class="goin"><b>${esc(t.inside)} (${b.samples.length} / ${sec.tests[b.test]})</b>
         <div class="codes" style="margin-top:6px">${b.samples.map((c, i) => `<span class="code ${stateOf(c, b.test) !== 'w2' ? 'done' : ''}">${i + 1}. ${esc(c)}</span>`).join('')}</div></div>
+      ${b.warm ? '<p class="meta" style="color:var(--err);font-weight:700">🌡 Heating up: the timer starts when a worker scans the furnace at temperature, or here.</p>' : ''}
+      <p style="font-weight:700;margin:14px 0 6px">Supervisor</p>
+      ${b.warm ? `<div class="btnrow" style="margin-top:0"><button class="primary" data-act="sup-go" data-rid="${esc(b.id.slice(4))}">Furnace is hot: start the timer now</button></div>` : ''}
+      <div class="btnrow" style="margin-top:0"><button class="secondary" data-act="sup-open" data-rid="${esc(b.id.slice(4))}">${esc(S.armed === 'open' + b.id ? 'Tap again: open the door now' : 'Open the door now (early)')}</button></div>
+      <button class="secondary" style="width:100%;margin-top:8px;${S.armed === 'cancel' + b.id ? 'border-color:var(--err);color:var(--err)' : ''}" data-act="sup-cancel" data-rid="${esc(b.id.slice(4))}">${esc(S.armed === 'cancel' + b.id ? 'Tap again: cancel this load' : 'Cancel this load (loaded by mistake)')}</button>
+      <p class="meta" style="margin:6px 0 0">Opening early lets the workers weigh W3 now. Cancelling puts the samples back to waiting; it stays in the trail on the results page.</p>
       <div class="btnrow"><button class="secondary" data-act="close">${esc(t.close)}</button></div>
     </div></div>`;
   }
@@ -753,8 +784,12 @@ function render() {
     ${S.clockOff ? `<div class="banner"><span>${esc(t.clockOff(Math.abs(S.clockOff)))}</span></div>` : ''}
     <div class="grid">${SECTIONS.map(tileHTML).join('')}</div>
     ${listsHTML()}
+    <div class="card" style="margin-top:12px"><h2>Heating times (supervisor)</h2><p class="sub">Every new load in the weighing app uses these. Workers only see the door buttons.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${['MC', 'VM', 'ASH'].map(k => `<label style="flex:1;min-width:90px;font-weight:700">${esc(t.test[k])}<br>
+        <input id="smin-${k}" inputmode="numeric" value="${minsFor(k)}" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;font:inherit"> <span class="meta">${esc(t.m)}</span></label>`).join('')}</div>
+      <button class="primary" style="width:100%;margin-top:10px" data-act="sup-mins">Save heating times</button></div>
     <p class="meta" style="margin-top:14px">${esc(t.keepOpen)} ${S.loaded ? '· ' + esc(t.updated(hm(S.loaded))) : ''}</p>
-    <p class="meta"><a href="./" style="color:inherit">Weighing app</a> · <a href="results.html" style="color:inherit">Results</a> · <a href="dashboard.html" style="color:inherit">Lab timeline</a></p>
+    <p class="meta"><a href="./" style="color:inherit">Weighing app</a> · <a href="results.html" style="color:inherit">Results</a></p>
     ${sheetHTML()}${alarmHTML()}`;
 }
 
@@ -770,12 +805,13 @@ function tick() {
   document.getElementById('clock') && (document.getElementById('clock').textContent = hm(now));
   document.querySelectorAll('.tile.run').forEach(el => {
     const b = sectionBatch(el.dataset.sec); if (!b) return;
+    if (b.warm) return;
     const left = b.end - now;
     el.querySelector('.readout').textContent = left <= 0 ? '+' + countdown(-left) : countdown(left);
     el.querySelector('.bar i').style.width = Math.min(100, Math.max(0, (now - b.start) / (b.end - b.start) * 100)) + '%';
   });
   const cd = document.getElementById('sheet-cd');
-  if (cd && S.sheet) { const b = sectionBatch(S.sheet.sec); if (b) cd.textContent = countdown(b.end - now); }
+  if (cd && S.sheet) { const b = sectionBatch(S.sheet.sec); if (b && !b.warm) cd.textContent = countdown(b.end - now); }
 }
 
 /* ---------- adding a code by hand ---------- */
@@ -823,6 +859,28 @@ document.addEventListener('click', e => {
       S.armed = null; render(); break;
     }
     case 'close': case 'close-bg': S.sheet = null; S.armed = null; render(); break;
+    case 'sup-open': case 'sup-cancel': {
+      const rid = el.dataset.rid, arm = (el.dataset.act === 'sup-open' ? 'open' : 'cancel') + 'app-' + rid;
+      if (S.armed !== arm) { S.armed = arm; render(); setTimeout(() => { if (S.armed === arm) { S.armed = null; render(); } }, 4000); break; }
+      const now = Date.now(), cancel = el.dataset.act === 'sup-cancel';
+      dataEdit(f => { const r = f.runs && f.runs[rid]; if (!r) return false;
+        if (cancel) r.cancelled = { at: now, by: 'Supervisor (timer)' };
+        else if (!r.outAt) { r.outAt = now; r.outBy = 'Supervisor (timer)'; const end = r.reheat ? (r.go ? r.go + r.mins * 60000 : Infinity) : r.start + r.mins * 60000; if (now < end) r.early = true; }
+        return true; }, `${cancel ? 'cancel' : 'open early'} ${rid}`).then(ok => toast(ok ? (cancel ? 'Load cancelled.' : 'Door open: W3 can be weighed now.') : 'Could not save. Check the internet.'));
+      S.sheet = null; S.armed = null; render(); break;
+    }
+    case 'sup-go': {
+      const rid = el.dataset.rid, now = Date.now();
+      dataEdit(f => { const r = f.runs && f.runs[rid]; if (!r || !r.reheat || r.go) return false; r.go = now; r.goBy = 'Supervisor (timer)'; return true; }, `start timer ${rid}`)
+        .then(ok => toast(ok ? 'Timer started.' : 'Could not save. Check the internet.'));
+      S.sheet = null; render(); break;
+    }
+    case 'sup-mins': {
+      const mins = {}; ['MC', 'VM', 'ASH'].forEach(k => { const v = +document.getElementById('smin-' + k).value; if (v > 0) mins[k] = v; });
+      dataEdit(f => { f.settings = f.settings || {}; f.settings.mins = Object.assign({}, f.settings.mins, mins); return true; }, 'heating times')
+        .then(ok => toast(ok ? 'Heating times saved.' : 'Could not save. Check the internet.'));
+      break;
+    }
     case 'pick': {
       const sec = SECTIONS.find(s => s.id === sh.sec);
       sh.test = el.dataset.test; sh.min = DEFAULT_MIN[sh.test]; sh.sel = waiting(sh.test).slice(0, sec.tests[sh.test]); sh.extra = []; render(); break;
@@ -892,8 +950,9 @@ document.addEventListener('keydown', e => {
 (function fromCache() {
   try { const c = JSON.parse(store.get('timer-cache')); if (c) { S.file = c.f; S.ts = c.t; S.loaded = c.at; } } catch (e) {}
 })();
-if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});
+
 render(); load(); pullShared(); setTimeout(syncLog, 2000);
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => {});
 if (live().some(b => b.state !== 'out')) keepAwake();
 setInterval(tick, 1000);
 setInterval(() => { if (document.visibilityState === 'visible') load(); }, 15000);

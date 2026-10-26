@@ -1,7 +1,7 @@
 // Service worker for the weighing app.
 // Change VERSION whenever you upload a new index.html so phones pick it up.
-const VERSION = 'lab-v8';
-const SHELL = ['./', './index.html', './hold.js', './manifest.json',
+const VERSION = 'lab-v9';
+const SHELL = ['./', './index.html', './bench.js', './lib/jsQR.js', './manifest.json',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
