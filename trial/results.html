@@ -518,7 +518,8 @@ function evLine(e) {
     case 'fix': return `${t}${st} corrected ${g4(e.o)} → ${g4(e.v)} g`;
     case 'restore': return `${t}${st} put back ${g4(e.v)} g`;
     case 'override': return `${t}${st} = ${g4(e.v)} g saved after red screen${e.x ? ': ' + esc(warnText(e.x)) : ''}`;
-    case 'reset': return `${t} retest: cleared ${(e.o || []).map(g4).join(' / ')}`;
+    case 'reset': { const o = e.o || [], p = e.k === 'ASH' ? residuePct(o) : lossPct(o);
+      return `${t} retest: cleared W1 ${g4(o[0])} · W2 ${g4(o[1])} · W3 ${g4(o[2])} g${p == null ? '' : ` = <b>${p.toFixed(2)} %</b> ${e.k === 'ASH' ? 'residue' : 'loss'}`}`; }
     case 'warn': return `${t}${st} red screen: ${esc(warnText(e.x))}${isNum(e.v) ? ' (' + g4(e.v) + ' g)' : ''}`;
   }
   return esc(e.a);
