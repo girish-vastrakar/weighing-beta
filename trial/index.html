@@ -263,7 +263,7 @@
   .ttile-row { display: flex; gap: 8px; }
   .ttile { flex: 1; min-width: 0; display: flex; align-items: center; gap: 12px; border: 2px solid var(--c); border-left-width: 12px; border-radius: 16px; background: var(--surface); padding: 14px; text-align: left; min-height: 92px; }
   .ttile .ti { font-size: 2.6rem; color: var(--c); display: flex; }
-  .ttile .tn { font-weight: 700; font-size: .95rem; flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+  .ttile .tn { font-weight: 700; font-size: 1.6rem; flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
   .ttile .tb { flex: 0 0 auto; }
   .ttile .ts { flex: 0 0 auto; max-width: 92px; text-align: center; } .ttile .ts small { line-height: 1.1; }
   .ttile .tb { font-size: 2.4rem; font-weight: 700; color: var(--c); }
@@ -469,7 +469,7 @@ const L = {
     errW3hi: 'Weight after heating cannot be more than W2.',
     errW3lo: v => `Weight after heating cannot be less than the empty ${v} (W1).`,
     chipStep2: 'step 2', chipIn: h => `ready for ${h}`,
-    label: { MC: 'Moisture', VM: 'Volatile Matter', ASH: 'Ash', TM: 'Total Moisture' },
+    label: { MC: 'MT', VM: 'VM', ASH: 'Ash', TM: 'TM' },   // short names: workers read these at a glance
     short: { MC: 'Moisture', VM: 'VM', ASH: 'Ash', TM: 'Total moisture' },
     vessel: { MC: 'petri dish', VM: 'VM crucible', ASH: 'ash crucible', TM: 'petri dish' },
     heat: { oven: 'oven', furnace: 'furnace' }
@@ -554,7 +554,7 @@ const L = {
     errW3hi: 'ગરમ કર્યા પછીનું વજન W2 કરતાં વધારે ન હોઈ શકે.',
     errW3lo: v => `ગરમ કર્યા પછીનું વજન ખાલી ${v} (W1) કરતાં ઓછું ન હોઈ શકે.`,
     chipStep2: 'પગલું 2', chipIn: h => `${h} માટે તૈયાર`,
-    label: { MC: 'ભેજ (Moisture)', VM: 'બાષ્પશીલ પદાર્થ (VM)', ASH: 'રાખ (Ash)', TM: 'કુલ ભેજ (Total Moisture)' },
+    label: { MC: 'MT', VM: 'VM', ASH: 'Ash', TM: 'TM' },   // short names: workers read these at a glance
     short: { MC: 'ભેજ', VM: 'VM', ASH: 'રાખ', TM: 'કુલ ભેજ' },
     vessel: { MC: 'પેટ્રી ડિશ', VM: 'VM ક્રુસિબલ', ASH: 'રાખની ક્રુસિબલ', TM: 'પેટ્રી ડિશ' },
     heat: { oven: 'ઓવન', furnace: 'ફર્નેસ' }
