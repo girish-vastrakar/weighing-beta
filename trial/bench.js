@@ -44,7 +44,7 @@ const BL = {
       wrongThing: 'Not this. Scan what the picture shows.', done: 'This test is already finished.',
       noBoard: 'No free board for this balance.', noBal: 'Choose the balance first.',
       notIn: 'It has not been in the oven / furnace yet.', heating: 'Still heating. Wait.',
-      otherBal: 'Weigh it on the balance shown.', swap: 'Wrong crucible / dish? This weight does not fit.',
+      otherBal: 'Weigh it on the balance shown.', otherMachine: 'This sample belongs to another weighing machine. Take it there.', swap: 'Wrong crucible / dish? This weight does not fit.',
       unheated: 'It hardly lost weight. Did it go in?', w2le: 'W2 must be more than W1.', w1ge: 'W1 must be less than W2.',
       tooMuch: 'Too much sample. Take some out and weigh again.', tooLittle: 'Too little sample. Add some and weigh again.', inOven: 'Already in the oven. It cannot change now.',
       wrongPlace: 'This oven / furnace is not for this test.', full: 'Full.', notWaiting: 'Not waiting to go in.',
@@ -72,7 +72,7 @@ const BL = {
       wrongThing: 'આ નહીં. ચિત્રમાં દેખાય તે સ્કેન કરો.', done: 'આ ટેસ્ટ પૂરો થઈ ગયો છે.',
       noBoard: 'આ કાંટા માટે ખાલી બોર્ડ નથી.', noBal: 'પહેલા કાંટો પસંદ કરો.',
       notIn: 'હજી ઓવન / ફર્નેસમાં ગયું નથી.', heating: 'હજી ગરમ થાય છે. રાહ જુઓ.',
-      otherBal: 'દેખાડેલા કાંટા પર વજન કરો.', swap: 'ખોટી ક્રુસિબલ / ડિશ? આ વજન બંધબેસતું નથી.',
+      otherBal: 'દેખાડેલા કાંટા પર વજન કરો.', otherMachine: 'આ સેમ્પલ બીજા વજન કાંટાનું છે. ત્યાં લઈ જાઓ.', swap: 'ખોટી ક્રુસિબલ / ડિશ? આ વજન બંધબેસતું નથી.',
       unheated: 'વજન લગભગ ઘટ્યું નથી. શું અંદર ગયું હતું?', w2le: 'W2 એ W1 કરતાં વધારે હોવું જોઈએ.', w1ge: 'W1 એ W2 કરતાં ઓછું હોવું જોઈએ.',
       tooMuch: 'સેમ્પલ વધારે છે. થોડું કાઢીને ફરી વજન કરો.', tooLittle: 'સેમ્પલ ઓછું છે. થોડું ઉમેરીને ફરી વજન કરો.', inOven: 'ઓવનમાં છે. હવે બદલાય નહીં.',
       wrongPlace: 'આ ઓવન / ફર્નેસ આ ટેસ્ટ માટે નથી.', full: 'ભરાઈ ગયું.', notWaiting: 'અંદર જવાની રાહમાં નથી.',
@@ -99,6 +99,15 @@ const minsFor = k => { const m = settings().mins; return (m && +m[k] > 0) ? +m[k
 const balNo = () => { const m = /^W([1-4])$/.exec(S.machine || ''); return m ? +m[1] : 0; };
 // Supervisor mode: needs the PIN (its hash is in data.json settings.pin) and switches itself off after 30 minutes
 const SUPER_MS = 30 * 60000;
+// Weighing machine of a sample (Name Tags sheet → names.json machine W1–W4): only that balance may weigh it.
+// Blank or ALL = any balance.
+const balsOf = code => { const n = nameOf(code); return [...new Set(String((n && n.machine) || '').toUpperCase().match(/W[1-4]/g) || [])].map(x => +x[1]); };
+function machineOk(code) {
+  const m = balsOf(code);
+  if (!m.length || m.includes(balNo())) return true;
+  S.code = code; redScreen(B().bad.otherMachine, { icon: ICON.balance, num: m.join(' / '), sub: code });
+  return false;
+}
 const superOn = () => store.get('super') === '1' && Date.now() - (+store.get('superAt') || 0) < SUPER_MS;
 async function pinHash(pin) {
   const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('lab-pin:' + pin));
@@ -650,6 +659,7 @@ function onScan(txt, purpose) {
   const code = codeFromText(txt);
   if (!code) { bad(); S.modal = { type: 'addcode', code: String(txt).trim().toUpperCase().slice(0, 20) }; render(); return; }
   // a code from the Name Tags sheet that has no weights yet joins the list by itself
+  if (!machineOk(code)) return;
   if (!sample(code)) enqueue({ action: 'addCodes', codes: [code], worker: S.worker });
   good(); S.code = code; S.view = 'sample'; S.via = null; S.walk = null; render();
 }
@@ -702,6 +712,7 @@ function onHolder(h) {
   const t = B(), occ = occupants(h.id);
   if (!occ.length) { redScreen(t.bad.empty, { icon: h.test === 'MC' ? ICON.dish : ICON.crucible, num: hBig(h.id) }); return; }
   const { s, k } = occ[occ.length - 1], st = s.tests[k];
+  if (!machineOk(s.code)) return;
   if (st.done === 1) { good(); return goTest(s.code, k); }
   const r = runOf(s.code, k);
   if (!r) { S.code = s.code; redScreen(t.bad.notIn, { icon: placeIcon(k === 'MC' ? 'O1' : 'F1') }); return; }
@@ -717,6 +728,7 @@ function onHolder(h) {
 /* ---------- opening a test ---------- */
 function openTestB(k) {
   const t = B(), s = sample(S.code), st = s.tests[k];
+  if (!machineOk(S.code)) return;
   if (HELD.includes(k) && S.via !== S.code + '|' + k) {
     // not from a scan: what tapping the tile does
     if (st.done === 0 && k === 'MC') { openScanner('dish'); return; }
