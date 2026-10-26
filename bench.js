@@ -104,7 +104,7 @@ const SUPER_MS = 30 * 60000;
 const balsOf = code => { const n = nameOf(code); return [...new Set(String((n && n.machine) || '').toUpperCase().match(/W[1-4]/g) || [])].map(x => +x[1]); };
 function machineOk(code) {
   const m = balsOf(code);
-  if (!m.length || m.includes(balNo())) return true;
+  if (!m.length || m.includes(balNo()) || superOn()) return true;   // the supervisor may open any sample
   S.code = code; redScreen(B().bad.otherMachine, { icon: ICON.balance, num: m.join(' / '), sub: code });
   return false;
 }
@@ -879,7 +879,10 @@ function batchAct(el) {
     case 'red-again': S.modal = null; S.draft = ''; render(); return true;
     case 'red-override': { const m = S.modal; S.modal = null; if (m && m.value != null) doSave(m.value, m.why); return true; }
     case 'undo': undoSave(); return true;
-    case 'pick-bal': S.view = 'bal'; render(); return true;
+    case 'pick-bal':   // each phone stays on its balance: only the supervisor (PIN) moves it
+      if (!balNo() || superOn()) { S.view = 'bal'; render(); }
+      else askPin().then(ok => { if (ok) { S.view = 'bal'; render(); } });
+      return true;
     case 'set-bal': S.machine = 'W' + el.dataset.bal; store.set('machine', S.machine); good(); S.view = 'home'; render(); return true;
     case 'who': S.worker = el.dataset.name; store.set('worker', S.worker); good(); S.view = balNo() ? 'home' : 'bal'; render(); load(); return true;
     case 'add-scanned': {

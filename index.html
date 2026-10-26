@@ -1509,15 +1509,9 @@ function renderSetup() {
   return `<div style="display:flex;justify-content:space-between;align-items:center">
       <button class="back" data-act="setup-done">← Back</button>${langBtn()}</div>
     <h2 class="title">Setup</h2>
-    <p class="sub">Workers: choose your weighing machine here. The rest is for the supervisor.</p>
+    <p class="sub">For the supervisor. Each phone stays on its weighing machine (balance button at the top); only the supervisor can change it.</p>
     <p><a class="link" href="labels.html" target="_blank" rel="noopener">▣ ${esc(B().labels)}</a></p>
     ${supervisorHTML()}
-    <div class="prev" style="margin-top:0">
-      <div class="row" style="display:block"><b>Weighing machine on this phone</b>
-        <p class="sub" style="margin:4px 0 8px">The sample list then shows only the samples given to this machine in the Machine column of the sheet. ALL shows the samples marked ALL or not given to any machine.</p>
-        <div class="toggle mpick">${[...MACHINES, 'ALL'].map(m => `<button aria-pressed="${S.machine === m}" data-act="machine" data-val="${m}">${m}</button>`).join('')}</div>
-        ${S.machine ? '<button class="link" data-act="machine" data-val="">Show every sample (no machine)</button>' : '<p class="sub" style="margin:0">No machine chosen: every sample is shown.</p>'}</div>
-    </div>
 
 
     <div class="prev">
