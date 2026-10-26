@@ -495,7 +495,7 @@ function render() {
 const holdersOf = s => [...new Set([...Object.values(s.h || {}), ...(s.ev || []).filter(e => e.h).map(e => e.h)])];
 const runsOf = (D, code) => (D.runs || []).filter(x => (x.items || []).some(i => i.code === code));
 const WARN = { swap: 'W3 outside W1–W2 (crucible swapped?)', unheated: 'W3 tried before heating', w1ge: 'W2 not above W1', w2le: 'W2 not above W1',
-  tooMuch: 'sample too heavy / light', wrongBal: 'other balance', heating: 'scanned while heating' };
+  tooMuch: 'sample too heavy', tooLittle: 'sample too light', wrongBal: 'other balance', heating: 'scanned while heating' };
 const warnText = x => WARN[x] || x || 'red screen';
 const g4 = v => isNum(v) ? v.toFixed(4) : '–';
 const hTxt = h => esc(String(h || '').replace(/^ASH /, 'Ash board ').replace(/^VM /, 'VM board ').replace(/^DISH /, 'Dish '));

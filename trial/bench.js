@@ -19,6 +19,8 @@
 const CAP = { MC: 12, VM: 18, ASH: 10 };          // dishes per oven load, spots per board (= one furnace load)
 const COLS = { VM: 3, ASH: 2 };                   // board layout, numbered down each column like the paper job card
 const DEF_MINS = { MC: 60, VM: 7, ASH: 60 };      // heating time until the supervisor sets another one
+// allowed sample weight (W2 − W1) in g until the supervisor sets another range; TM is not checked unless set
+const DEF_RANGE = { MC: [0.990, 1.009], VM: [0.990, 1.009], ASH: [0.990, 1.009] };
 const HELD = ['MC', 'VM', 'ASH'];                 // tests that sit on a dish / spot (Total Moisture does not)
 const UNHEATED = { MC: 0.2, VM: 1, ASH: 1 };      // % of the sample lost below which W3 looks like it never went in
 const BOARDS = ['A', 'B'];
@@ -44,7 +46,7 @@ const BL = {
       notIn: 'It has not been in the oven / furnace yet.', heating: 'Still heating. Wait.',
       otherBal: 'Weigh it on the balance shown.', swap: 'Wrong crucible / dish? This weight does not fit.',
       unheated: 'It hardly lost weight. Did it go in?', w2le: 'W2 must be more than W1.', w1ge: 'W1 must be less than W2.',
-      tooMuch: 'Too much sample. Take some out.', inOven: 'Already in the oven. It cannot change now.',
+      tooMuch: 'Too much sample. Take some out and weigh again.', tooLittle: 'Too little sample. Add some and weigh again.', inOven: 'Already in the oven. It cannot change now.',
       wrongPlace: 'This oven / furnace is not for this test.', full: 'Full.', notWaiting: 'Not waiting to go in.',
       nothing: 'Nothing is waiting to go in.', empty: 'Nothing is on this.', notSample: 'Not in the sample list.',
       locked: 'Only the supervisor can change this now.', otherLoad: 'This load belongs to another balance.', wrongPlace: 'Wrong oven / furnace. Scan this one:'
@@ -72,7 +74,7 @@ const BL = {
       notIn: 'હજી ઓવન / ફર્નેસમાં ગયું નથી.', heating: 'હજી ગરમ થાય છે. રાહ જુઓ.',
       otherBal: 'દેખાડેલા કાંટા પર વજન કરો.', swap: 'ખોટી ક્રુસિબલ / ડિશ? આ વજન બંધબેસતું નથી.',
       unheated: 'વજન લગભગ ઘટ્યું નથી. શું અંદર ગયું હતું?', w2le: 'W2 એ W1 કરતાં વધારે હોવું જોઈએ.', w1ge: 'W1 એ W2 કરતાં ઓછું હોવું જોઈએ.',
-      tooMuch: 'સેમ્પલ વધારે છે. થોડું કાઢો.', inOven: 'ઓવનમાં છે. હવે બદલાય નહીં.',
+      tooMuch: 'સેમ્પલ વધારે છે. થોડું કાઢીને ફરી વજન કરો.', tooLittle: 'સેમ્પલ ઓછું છે. થોડું ઉમેરીને ફરી વજન કરો.', inOven: 'ઓવનમાં છે. હવે બદલાય નહીં.',
       wrongPlace: 'આ ઓવન / ફર્નેસ આ ટેસ્ટ માટે નથી.', full: 'ભરાઈ ગયું.', notWaiting: 'અંદર જવાની રાહમાં નથી.',
       nothing: 'અંદર જવા માટે કંઈ નથી.', empty: 'આના પર કંઈ નથી.', notSample: 'સેમ્પલ યાદીમાં નથી.',
       locked: 'હવે ફક્ત સુપરવાઇઝર બદલી શકે.', otherLoad: 'આ લોડ બીજા કાંટાનો છે.', wrongPlace: 'ખોટું ઓવન / ફર્નેસ. આ સ્કેન કરો:'
@@ -92,6 +94,7 @@ const PLACE_NAME = { en: { O1: 'Oven 1', O2: 'Oven 2', F1: 'Furnace 1', F2: 'Fur
 const placeName = p => (PLACE_NAME[S.lang] || PLACE_NAME.en)[p] || p;
 const placeNo = p => p.slice(1);
 const settings = () => (S.data && S.data.settings) || {};
+const rangeFor = k => { const set = settings().range || {}, r = k in set ? set[k] : DEF_RANGE[k]; return r && +r[1] > 0 ? [+r[0] || 0, +r[1]] : null; };
 const minsFor = k => { const m = settings().mins; return (m && +m[k] > 0) ? +m[k] : DEF_MINS[k]; };
 const balNo = () => { const m = /^W([1-4])$/.exec(S.machine || ''); return m ? +m[1] : 0; };
 const superOn = () => store.get('super') === '1';
@@ -190,6 +193,7 @@ function batchApply(f, j) {
     return true;
   }
   if (j.action === 'warn') { trailAdd(f, j.code, j, { a: 'warn', k: j.key, s: j.step, v: j.value, x: j.kind, b: j.bal || 0 }); return true; }
+  if (j.action === 'setRange') { f.settings = f.settings || {}; f.settings.range = Object.assign({}, f.settings.range, j.range); return true; }
   if (j.action === 'setMins') { f.settings = f.settings || {}; f.settings.mins = Object.assign({}, f.settings.mins, j.mins); return true; }
   if (j.action === 'setWorkers') { f.settings = f.settings || {}; f.settings.workers = j.workers; return true; }
   if (!/^run/.test(j.action)) return false;

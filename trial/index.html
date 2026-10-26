@@ -1454,8 +1454,11 @@ function liveText() {
   if (S.step === 2 && isNum(w[0])) {
     const d = v - w[0];
     if (d <= 0) return warn(t.notMoreW1(ves(k), fmt(w[0])));
-    if (cfg.maxSample && overMax(d, cfg.maxSample))
-      return `<span class="ind over">${esc(t.tooMuch(fmt(d), cfg.maxSample.toFixed(3), fmt(d - cfg.maxSample)))}</span>`;
+    const rg = rangeFor(k);
+    if (rg && overMax(d, rg[1]))
+      return `<span class="ind over">${esc(t.tooMuch(fmt(d), rg[1].toFixed(3), fmt(d - rg[1])))}</span>`;
+    if (rg) return overMax(rg[0], d) ? `<span class="ind low">${esc(t.sampleW(fmt(d)))} (${rg[0].toFixed(3)} – ${rg[1].toFixed(3)})</span>`
+      : `<span class="ind ok">${esc(t.sampleW(fmt(d)))} ✓</span>`;
     if (!cfg.targetSample) return esc(t.sampleW(fmt(d)));
     return d < cfg.targetSample
       ? `<span class="ind low">${esc(t.sampleW(fmt(d)))}</span>`
@@ -1577,7 +1580,14 @@ function supervisorHTML() {
     <div class="row" style="display:block"><b>Heating times (minutes)</b>
       <p class="sub" style="margin:4px 0 8px">Used for every new load. Workers never see these. The lab timer can change them too.</p>
       <div class="typerow">${['MC', 'VM', 'ASH'].map(k => `<label style="flex:1;font-weight:700">${esc(lbl(k))}<input class="field" id="mins-${k}" type="number" inputmode="numeric" min="1" value="${esc(String(m[k] || DEF_MINS[k]))}"></label>`).join('')}</div>
-      <button class="secondary" data-act="save-mins" style="width:100%">Save heating times</button></div>` : ''}
+      <button class="secondary" data-act="save-mins" style="width:100%">Save heating times</button></div>
+    <div class="row" style="display:block"><b>Sample weight range (g)</b>
+      <p class="sub" style="margin:4px 0 8px">W2 − W1 must be inside this range, or the worker gets a red screen and weighs again. Leave TM empty to not check it.</p>
+      ${['MC', 'VM', 'ASH', 'TM'].map(k => { const r = rangeFor(k) || ['', ''];
+        return `<div class="typerow" style="align-items:center"><b style="flex:0 0 3em">${esc(lbl(k))}</b>
+          <input class="field" id="rmin-${k}" type="number" inputmode="decimal" step="0.001" placeholder="min" value="${r[0] === '' ? '' : (+r[0]).toFixed(3)}">
+          <span>–</span><input class="field" id="rmax-${k}" type="number" inputmode="decimal" step="0.001" placeholder="max" value="${r[1] === '' ? '' : (+r[1]).toFixed(3)}"></div>`; }).join('')}
+      <button class="secondary" data-act="save-range" style="width:100%">Save weight range</button></div>` : ''}
   </div>`;
 }
 const fmtV = v => v == null ? '–' : fmt(v);
@@ -1981,15 +1991,18 @@ function askConfirm() {
   const v = parseW(S.draft);
   if (v === null) { bad(); toast('0.0000 g'); return; }
   const b = B().bad, k = S.test, w = sample(S.code).tests[k].w.slice(); w[S.step - 1] = v;
-  const icon = vesselIcon(k), max = S.tests[k].maxSample;
+  const icon = vesselIcon(k), rg = rangeFor(k), d = isNum(w[0]) && isNum(w[1]) ? w[1] - w[0] : null;
   let why = '', msg = '';
   if (isNum(w[0]) && isNum(w[1]) && w[1] <= w[0]) { why = S.step === 1 ? 'w1ge' : 'w2le'; msg = S.step === 1 ? b.w1ge : b.w2le; }
-  else if (max && S.step <= 2 && isNum(w[0]) && isNum(w[1]) && overMax(w[1] - w[0], max)) { why = 'tooMuch'; msg = b.tooMuch; }
+  else if (rg && S.step <= 2 && d != null && overMax(d, rg[1])) { why = 'tooMuch'; msg = b.tooMuch; }
+  else if (rg && S.step <= 2 && d != null && overMax(rg[0], d)) { why = 'tooLittle'; msg = b.tooLittle; }
   else if (S.step === 3 && ((isNum(w[1]) && v > w[1]) || (isNum(w[0]) && v < w[0]))) { why = 'swap'; msg = b.swap; }
   else if (S.step === 3 && unheated(k, w, v)) { why = 'unheated'; msg = b.unheated; }
   if (why) {
     logWarn(why, { value: v });
+    const range = why === 'tooMuch' || why === 'tooLittle';   // the sample weight, big, and the range it must be in
     redScreen(msg, { icon: why === 'swap' ? ICON.swap : why === 'unheated' ? (S.tests[k].heat === 'oven' ? ICON.oven : ICON.furnace) : icon,
+      num: range ? fmt(d) : undefined, sub: range ? `${rg[0].toFixed(3)} – ${rg[1].toFixed(3)} g` : undefined,
       again: true, override: why === 'swap' || why === 'unheated', value: v, why });
     return;
   }
@@ -2098,6 +2111,12 @@ document.addEventListener('click', e => {
       render(); break;
     }
     case 'worker-del': if (confirmTap(el)) { const ws = (settings().workers || []).slice(); ws.splice(+el.dataset.i, 1); enqueue({ action: 'setWorkers', workers: ws, worker: S.worker }); render(); } break;
+    case 'save-range': {
+      const range = {};
+      ['MC', 'VM', 'ASH', 'TM'].forEach(k => { const a = parseFloat(document.getElementById('rmin-' + k).value), b = parseFloat(document.getElementById('rmax-' + k).value);
+        range[k] = b > 0 && !(a > b) ? [a > 0 ? a : 0, b] : null; });
+      enqueue({ action: 'setRange', range, worker: S.worker }); toast('Saved.', true); render(); break;
+    }
     case 'save-mins': {
       const mins = {}; ['MC', 'VM', 'ASH'].forEach(k => { const v = +document.getElementById('mins-' + k).value; if (v > 0) mins[k] = v; });
       enqueue({ action: 'setMins', mins, worker: S.worker }); toast('Saved.', true); render(); break;
