@@ -2236,6 +2236,23 @@ setTimeout(syncTs, 1500); setTimeout(syncLog, 2500); setTimeout(uploadPhotos, 35
 if (S.file && S.file.codes) rebuild();
 if (S.worker) { if (S.data) render(); else renderNotReady(); load(); sync(); } else { render(); load(); }
 showSync();
+
+// The phone's back button goes back one step inside the app instead of closing it:
+// one extra history entry is kept, and each back press does what the screen's own back does.
+function goBack() {
+  if (SCAN) { closeScanner(); return; }
+  if (S.modal) {
+    const b = app.querySelector('.modal [data-act=red-ok], .modal [data-act=red-again], .modal [data-act=after], .modal [data-act=cancel]');
+    if (b) b.click(); else { S.modal = null; render(); }
+    return;
+  }
+  if (S.view === 'home' || S.view === 'who' && !S.worker) return;          // first screen: stay in the app
+  const b = app.querySelector('header.tbar .iconbtn');
+  if (b && (S.view === 'step' || S.view === 'sample' || S.view === 'run' || S.view === 'load')) { b.click(); return; }
+  S.view = 'home'; render();
+}
+try { history.pushState({ app: 1 }, ''); } catch (e) {}
+window.addEventListener('popstate', () => { goBack(); try { history.pushState({ app: 1 }, ''); } catch (e) {} });
 </script>
 </body>
 </html>
