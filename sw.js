@@ -1,6 +1,6 @@
 // Service worker for the weighing app.
 // Change VERSION whenever you upload a new index.html so phones pick it up.
-const VERSION = 'lab-v9';
+const VERSION = 'lab-v10';
 const SHELL = ['./', './index.html', './bench.js', './lib/jsQR.js', './manifest.json',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png'];
 

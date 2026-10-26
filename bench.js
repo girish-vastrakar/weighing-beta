@@ -707,10 +707,13 @@ function openTestB(k) {
       good();
     } else if (st.done === 2) {
       const r = runOf(S.code, k), h = holdOf(s, k);
-      if (!r) { redScreen(t.bad.notIn, { icon: k === 'MC' ? ICON.oven : ICON.furnace }); return; }
-      if (runPhase(r) === 'heat') { redScreen(t.bad.heating, { icon: ICON.hour, num: String(minsLeft(r)) }); return; }
-      if (k === 'MC') { redScreen(t.bad.wrongThing, { icon: ICON.dish, num: h ? hBig(h) : '' }); return; }   // W3: scan the dish
-      if (r.tray) { startWalk(r); return; }
+      // W1/W2 from before the bench flow (or merged from the old app) have no dish / spot to scan: W3 straight away
+      if (h) {
+        if (!r) { redScreen(t.bad.notIn, { icon: k === 'MC' ? ICON.oven : ICON.furnace }); return; }
+        if (runPhase(r) === 'heat') { redScreen(t.bad.heating, { icon: ICON.hour, num: String(minsLeft(r)) }); return; }
+        if (k === 'MC') { redScreen(t.bad.wrongThing, { icon: ICON.dish, num: hBig(h) }); return; }   // W3: scan the dish
+        if (r.tray) { startWalk(r); return; }
+      }
     }
   }
   S.test = k; S.editing = false; S.draft = ''; S.modal = null;
