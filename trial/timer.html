@@ -693,9 +693,9 @@ function sheetHTML() {
       <div class="readout" id="sheet-cd" style="margin:10px 0">${countdown(b.warm ? b.planned * 60000 : b.end - Date.now())}</div>
       <div class="goin"><b>${esc(t.inside)} (${b.samples.length} / ${sec.tests[b.test]})</b>
         <div class="codes" style="margin-top:6px">${b.samples.map((c, i) => `<span class="code ${stateOf(c, b.test) !== 'w2' ? 'done' : ''}">${i + 1}. ${esc(c)}</span>`).join('')}</div></div>
-      ${b.warm ? '<p class="meta" style="color:var(--err);font-weight:700">🌡 Heating up: the timer starts when a worker scans the furnace at temperature, or here.</p>' : ''}
+      ${b.warm ? '<p class="meta" style="color:var(--err);font-weight:700">🌡 Heating up: the timer starts when a worker scans the oven / furnace at temperature, or here.</p>' : ''}
       <p style="font-weight:700;margin:14px 0 6px">Supervisor</p>
-      ${b.warm ? `<div class="btnrow" style="margin-top:0"><button class="primary" data-act="sup-go" data-rid="${esc(b.id.slice(4))}">Furnace is hot: start the timer now</button></div>` : ''}
+      ${b.warm ? `<div class="btnrow" style="margin-top:0"><button class="primary" data-act="sup-go" data-rid="${esc(b.id.slice(4))}">It is hot: start the timer now</button></div>` : ''}
       <div class="btnrow" style="margin-top:0"><button class="secondary" data-act="sup-open" data-rid="${esc(b.id.slice(4))}">${esc(S.armed === 'open' + b.id ? 'Tap again: open the door now' : 'Open the door now (early)')}</button></div>
       <button class="secondary" style="width:100%;margin-top:8px;${S.armed === 'cancel' + b.id ? 'border-color:var(--err);color:var(--err)' : ''}" data-act="sup-cancel" data-rid="${esc(b.id.slice(4))}">${esc(S.armed === 'cancel' + b.id ? 'Tap again: cancel this load' : 'Cancel this load (loaded by mistake)')}</button>
       <p class="meta" style="margin:6px 0 0">Opening early lets the workers weigh W3 now. Cancelling puts the samples back to waiting; it stays in the trail on the results page.</p>

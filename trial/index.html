@@ -1582,8 +1582,8 @@ function supervisorHTML() {
     <div class="row" style="display:block"><b>Heating times (minutes)</b>
       <p class="sub" style="margin:4px 0 8px">Used for every new load. Workers never see these. The lab timer can change them too.</p>
       <div class="typerow">${['MC', 'VM', 'ASH'].map(k => `<label style="flex:1;font-weight:700">${esc(lbl(k))}<input class="field" id="mins-${k}" type="number" inputmode="numeric" min="1" value="${esc(String(m[k] || DEF_MINS[k]))}"></label>`).join('')}</div>
-      <p class="sub" style="margin:8px 0 4px">Furnace temperature (°C). After door closed the worker sees this number and scans the furnace when its display reaches it; only then the minutes start.</p>
-      <div class="typerow">${['VM', 'ASH'].map(k => `<label style="flex:1;font-weight:700">${esc(lbl(k))} °C<input class="field" id="temp-${k}" type="number" inputmode="numeric" min="0" value="${esc(String(tempFor(k) || ''))}"></label>`).join('')}</div>
+      <p class="sub" style="margin:8px 0 4px">Oven / furnace temperature (°C). After door closed the worker sees this number and scans the oven / furnace when its display reaches it; only then the minutes start.</p>
+      <div class="typerow">${['MC', 'VM', 'ASH'].map(k => `<label style="flex:1;font-weight:700">${esc(lbl(k))} °C<input class="field" id="temp-${k}" type="number" inputmode="numeric" min="0" value="${esc(String(tempFor(k) || ''))}"></label>`).join('')}</div>
       <button class="secondary" data-act="save-mins" style="width:100%">Save heating times</button></div>
     <div class="row" style="display:block"><b>Sample weight range (g)</b>
       <p class="sub" style="margin:4px 0 8px">W2 − W1 must be inside this range, or the worker gets a red screen and weighs again. Leave TM empty to not check it.</p>
@@ -2128,7 +2128,7 @@ document.addEventListener('click', e => {
     case 'save-mins': {
       const mins = {}; ['MC', 'VM', 'ASH'].forEach(k => { const v = +document.getElementById('mins-' + k).value; if (v > 0) mins[k] = v; });
       enqueue({ action: 'setMins', mins, worker: S.worker });
-      const temp = {}; ['VM', 'ASH'].forEach(k => { const v = +document.getElementById('temp-' + k).value; temp[k] = v > 0 ? v : null; });
+      const temp = {}; ['MC', 'VM', 'ASH'].forEach(k => { const v = +document.getElementById('temp-' + k).value; temp[k] = v > 0 ? v : null; });
       enqueue({ action: 'setTemp', temp, worker: S.worker }); toast('Saved.', true); render(); break;
     }
     case 'after': afterSaved(); render(); break;

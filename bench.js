@@ -34,7 +34,7 @@ const BL = {
   en: {
     scan: 'Scan', bal: 'Balance', who: 'Who are you?', whoType: 'No list yet. Type your name.',
     pickBal: 'Which balance is this phone at?', free: 'Free', left: 'min',
-    doorClosed: 'Door closed', doorOpen: 'Door open', warm: 'Heating up: scan the furnace when it shows',  startWalk: 'Weigh W3',
+    doorClosed: 'Door closed', doorOpen: 'Door open', warm: 'Heating up: scan it when it shows',  startWalk: 'Weigh W3',
     allIn: 'All', w: n => 'W' + n, next: 'Next', undo: 'Undo', again: 'Weigh again',
     override: 'Supervisor: save anyway', ok: 'OK', close: 'Close',
     dish: 'Dish', spot: 'Spot', board: 'Board', oven: 'Oven', furnace: 'Furnace',
@@ -62,7 +62,7 @@ const BL = {
   gu: {
     scan: 'સ્કેન', bal: 'કાંટો', who: 'તમે કોણ છો?', whoType: 'હજી યાદી નથી. તમારું નામ લખો.',
     pickBal: 'આ ફોન કયા કાંટા પર છે?', free: 'ખાલી', left: 'મિનિટ',
-    doorClosed: 'દરવાજો બંધ', doorOpen: 'દરવાજો ખોલો', warm: 'ગરમ થાય છે: આ તાપમાન દેખાય ત્યારે ફર્નેસ સ્કેન કરો',  startWalk: 'W3 વજન',
+    doorClosed: 'દરવાજો બંધ', doorOpen: 'દરવાજો ખોલો', warm: 'ગરમ થાય છે: આ તાપમાન દેખાય ત્યારે સ્કેન કરો',  startWalk: 'W3 વજન',
     allIn: 'બધી', w: n => 'W' + n, next: 'આગળ', undo: 'પાછું', again: 'ફરી વજન',
     override: 'સુપરવાઇઝર: તો પણ સેવ કરો', ok: 'બરાબર', close: 'બંધ',
     dish: 'ડિશ', spot: 'ખાનું', board: 'બોર્ડ', oven: 'ઓવન', furnace: 'ફર્નેસ',
@@ -242,7 +242,7 @@ function batchApply(f, j) {
 /* ---------- what the app works out from the data ---------- */
 const runs = () => ((S.data && S.data.runs) || []).filter(r => !r.cancelled);
 const runBy = rid => runs().find(r => r.rid === rid);
-// a furnace load counts its minutes from when it was hot again (go), an oven load from door closed
+// a load counts its minutes from when the oven / furnace was hot again (go); loads from before that change, from door closed
 const runEnd = r => r.reheat ? (r.go ? r.go + r.mins * 60000 : Infinity) : r.start + r.mins * 60000;
 const tempFor = k => { const t = (settings().temp || {})[k]; return +t > 0 ? +t : 0; };
 const minsLeft = r => isFinite(runEnd(r)) ? Math.max(0, Math.ceil((runEnd(r) - Date.now()) / 60000)) : r.mins;
@@ -509,7 +509,7 @@ function startRun() {
   if (its.length > CAP[k]) { redScreen(B().bad.full, { icon: placeIcon(L.place), num: String(CAP[k]) }); return; }
   const rid = `${new Date().toISOString().slice(0, 10)}-${L.place}-${Date.now().toString(36)}`;
   enqueue({ action: 'runStart', rid, place: L.place, test: k, tray: L.tray, items: its, mins: minsFor(k), bal: balNo(), worker: S.worker,
-            reheat: PLACES[L.place].kind === 'furnace' || undefined });
+            reheat: true });   // oven and furnace: the minutes start once it is back at temperature
   good();
   S.load = null; S.rid = rid; S.view = 'run'; render();
 }
