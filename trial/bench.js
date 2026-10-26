@@ -47,7 +47,7 @@ const BL = {
       tooMuch: 'Too much sample. Take some out.', inOven: 'Already in the oven. It cannot change now.',
       wrongPlace: 'This oven / furnace is not for this test.', full: 'Full.', notWaiting: 'Not waiting to go in.',
       nothing: 'Nothing is waiting to go in.', empty: 'Nothing is on this.', notSample: 'Not in the sample list.',
-      locked: 'Only the supervisor can change this now.', otherLoad: 'This load belongs to another balance.'
+      locked: 'Only the supervisor can change this now.', otherLoad: 'This load belongs to another balance.', wrongPlace: 'Wrong oven / furnace. Scan this one:'
     },
     small: {
       scanSub: 'bag · dish · oven · furnace', scanDish: 'scan an empty dish', start: 'start',
@@ -75,7 +75,7 @@ const BL = {
       tooMuch: 'સેમ્પલ વધારે છે. થોડું કાઢો.', inOven: 'ઓવનમાં છે. હવે બદલાય નહીં.',
       wrongPlace: 'આ ઓવન / ફર્નેસ આ ટેસ્ટ માટે નથી.', full: 'ભરાઈ ગયું.', notWaiting: 'અંદર જવાની રાહમાં નથી.',
       nothing: 'અંદર જવા માટે કંઈ નથી.', empty: 'આના પર કંઈ નથી.', notSample: 'સેમ્પલ યાદીમાં નથી.',
-      locked: 'હવે ફક્ત સુપરવાઇઝર બદલી શકે.', otherLoad: 'આ લોડ બીજા કાંટાનો છે.'
+      locked: 'હવે ફક્ત સુપરવાઇઝર બદલી શકે.', otherLoad: 'આ લોડ બીજા કાંટાનો છે.', wrongPlace: 'ખોટું ઓવન / ફર્નેસ. આ સ્કેન કરો:'
     },
     small: {
       scanSub: 'બેગ · ડિશ · ઓવન · ફર્નેસ', scanDish: 'ખાલી ડિશ સ્કેન કરો', start: 'શરૂ',
@@ -493,7 +493,11 @@ function renderRun() {
   else if (ph === 'out') act = r.tray
     ? `<button class="primary doorbtn" data-act="walk">${ICON.balance}<small>${esc(t.startWalk)}</small></button>`
     : `<button class="primary doorbtn" data-act="scan">${ICON.scan}<small>W3 · ${esc(t.dish)}</small></button>`;
-  else act = `<div class="bigtime ok">${ICON.check}</div>`;
+  else {
+    act = `<button class="primary doorbtn okbtn" data-act="home">${ICON.check}</button>`;
+    clearTimeout(S.doneTimer);
+    S.doneTimer = setTimeout(() => { if (S.view === 'run' && S.rid === r.rid && !S.modal && !SCAN) { S.view = 'home'; render(); } }, 5000);
+  }
   return `<div style="${cvar(k)}">${topBar(true)}
     <div class="placehead">${placeIcon(p)}<b>${placeNo(p)}</b><span class="ti">${ICON[k]}</span>
       ${r.tray ? `<span class="bnum">${esc(String(hInfo(r.tray).bal || ''))}<i>${esc(hInfo(r.tray).letter)}</i></span>` : ''}</div>
@@ -536,7 +540,8 @@ function scanEl() {
   if (!el) { el = document.createElement('div'); el.id = 'scanner'; document.body.appendChild(el); }
   return el;
 }
-const SCAN_PIC = { dish: () => ICON.dish, redish: () => ICON.dish, load: () => ICON.dish, any: () => ICON.bag };
+const SCAN_PIC = { dish: () => ICON.dish, redish: () => ICON.dish, load: () => ICON.dish, any: () => ICON.bag,
+  door: () => S.door ? `${placeIcon(S.door.place)}<b class="scannum">${placeNo(S.door.place)}</b>` : ICON.furnace };
 async function openScanner(purpose) {
   closeScanner();
   const t = B(), el = scanEl();
@@ -594,6 +599,7 @@ function scanTyped() {
 function onScan(txt, purpose) {
   const t = B(), p = placeFromText(txt), h = holderFromText(txt);
   if (purpose === 'load' && S.view === 'load') return loadScan(h);
+  if (purpose === 'door') return doorScan(p);
   if (purpose === 'dish' || purpose === 'redish') {
     if (!h || !h.id || h.test !== 'MC') { redScreen(t.bad.wrongThing, { icon: ICON.dish }); return; }
     return purpose === 'dish' ? pairDish(h) : changeDish(h);
@@ -615,6 +621,16 @@ function onPlace(p) {
   if (o && !waitingFor(PLACES[p].kind === 'oven' ? 'MC' : 'x').length && !boardsWaiting(PLACES[p].tests).length) { S.rid = o.rid; S.view = 'run'; render(); return; }
   if (o && o.tray && (!o.bal || o.bal === balNo())) { S.rid = o.rid; S.view = 'run'; render(); return; }
   openLoad(p);
+}
+// Door closed / door open: the worker scans the oven or furnace first, so the right door is the one opened
+function doorScan(p) {
+  const d = S.door; if (!d) return;
+  if (p !== d.place) { redScreen(B().bad.wrongPlace, { icon: placeIcon(d.place), num: placeNo(d.place) }); return; }
+  S.door = null;
+  if (d.act === 'start') { startRun(); return; }
+  const r = runBy(d.rid);
+  if (r && runPhase(r) === 'up') enqueue({ action: 'runOut', rid: r.rid, worker: S.worker });
+  good(); S.rid = d.rid; S.view = 'run'; render();
 }
 function goTest(code, k) { S.code = code; S.via = code + '|' + k; openTestB(k); }
 // Moisture: the dish scanned from the sample screen
@@ -650,7 +666,7 @@ function onHolder(h) {
   if (ph === 'heat') { redScreen(t.bad.heating, { icon: ICON.hour, num: String(minsLeft(r)) }); return; }
   const b = (s.holdBal || {})[k] || r.bal;
   if (b && balNo() && b !== balNo()) { redScreen(t.bad.otherBal, { icon: ICON.balance, num: String(b) }); return; }
-  if (ph === 'up') enqueue({ action: 'runOut', rid: r.rid, worker: S.worker });   // first W3 after the time is up = door opened
+  if (ph === 'up') { S.rid = r.rid; S.view = 'run'; S.door = { act: 'out', place: r.place, rid: r.rid }; bad(); render(); openScanner('door'); return; }
   good(); S.rid = r.rid; goTest(s.code, k);
 }
 
@@ -783,10 +799,10 @@ function batchAct(el) {
     case 'type-open': { const v = (document.getElementById('typecode') || {}).value; if (v && v.trim()) onScan(v.trim(), 'any'); return true; }
     case 'place': onPlace(el.dataset.place); return true;
     case 'r-out':
-      if (r && runPhase(r) === 'up') { enqueue({ action: 'runOut', rid: r.rid, worker: S.worker }); good(); render(); }
+      if (r && runPhase(r) === 'up') { S.door = { act: 'out', place: r.place, rid: r.rid }; openScanner('door'); }
       return true;
     case 'walk': if (r) startWalk(r); return true;
-    case 'r-start': startRun(); return true;
+    case 'r-start': if (S.load && loadItems().length) { S.door = { act: 'start', place: S.load.place }; openScanner('door'); } return true;
     case 'l-scan': openScanner('load'); return true;
     case 'l-all': S.load.items = waitingFor('MC').map(x => x.h).slice(0, CAP.MC); good(); render(); return true;
     case 'l-drop': S.load.items = S.load.items.filter(x => x !== el.dataset.h); render(); return true;
