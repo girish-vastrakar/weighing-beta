@@ -360,7 +360,9 @@ function appBatches() {
   return appAll().filter(r => r.start && r.mins && SECTIONS.some(x => x.id === r.place))
     .map(r => {
       const samples = r.items.filter(it => itemLive(r, it)).map(it => it.code);
-      return { id: 'app-' + r.rid, app: true, no: runLabel(r), section: r.place, test: r.test, samples, start: r.start, end: r.start + r.mins * 60000,
+      // furnace loads count from when the furnace was hot again (go); until then the full time stays on the clock
+      const warm = r.reheat && !r.go, t0 = r.reheat ? r.go : r.start;
+      return { id: 'app-' + r.rid, app: true, warm, no: runLabel(r), section: r.place, test: r.test, samples, start: warm ? r.start : t0, end: warm ? r.start + 1e12 : t0 + r.mins * 60000,
                planned: r.mins, snoozes: 0, snoozeMin: 0, state: r.outAt ? 'out' : 'run', events: [],
                left: samples.filter(c => stateOf(c, r.test) === 'w2') };
     })
@@ -645,14 +647,14 @@ function tileHTML(sec) {
   if (!b) return `<button class="tile free" data-act="open" data-sec="${sec.id}">
       <span class="name">${esc(secName(sec.id))}</span><span class="what">${esc(accepts)}</span>
       <span class="state">${esc(t.free)}</span><span class="startcue">${esc(t.tapStart)}</span></button>`;
-  const left = b.end - now, ringing = left <= 0;
-  const pct = Math.min(100, Math.max(0, (now - b.start) / (b.end - b.start) * 100));
+  const left = b.warm ? b.planned * 60000 : b.end - now, ringing = left <= 0;   // heating up: the full time waits
+  const pct = b.warm ? 0 : Math.min(100, Math.max(0, (now - b.start) / (b.end - b.start) * 100));
   return `<button class="tile run ${ringing ? 'ring' : ''}" style="${cvar(b.test)}" data-act="open" data-sec="${sec.id}">
       <span class="name">${esc(secName(sec.id))}</span>
       <span class="tag">${esc(t.test[b.test])} · ${esc(t.samples(b.samples.length))}</span>
       <span class="readout">${ringing ? '+' + countdown(-left) : countdown(left)}</span>
       <span class="bar"><i style="width:${pct}%"></i></span>
-      <span class="meta">${esc(t.readyAt(hm(b.end)))}${b.snoozes ? ' · ' + esc(t.snoozed(b.snoozes, b.snoozeMin)) : ''}${b.app ? ' · ' + esc(t.fromApp(b.no)) : ''}</span></button>`;
+      <span class="meta">${b.warm ? '🌡 Heating up, not counting yet' : esc(t.readyAt(hm(b.end)))}${b.snoozes ? ' · ' + esc(t.snoozed(b.snoozes, b.snoozeMin)) : ''}${b.app ? ' · ' + esc(t.fromApp(b.no)) : ''}</span></button>`;
 }
 
 function nextFree(k) {
@@ -687,11 +689,13 @@ function sheetHTML() {
   if (b && b.app) {   // a weighing-app batch: details only, the weighing app runs it
     return `<div class="modal" data-act="close-bg"><div class="sheet" style="${cvar(b.test)}" role="dialog" aria-modal="true">
       <h3>${esc(secName(sec.id))} · ${esc(t.test[b.test])}</h3>
-      <p class="meta">${esc(t.fromApp(b.no))} · ${esc(t.started(hm(b.start)))} · ${esc(t.readyAt(hm(b.end)))}</p>
-      <div class="readout" id="sheet-cd" style="margin:10px 0">${countdown(b.end - Date.now())}</div>
+      <p class="meta">${esc(t.fromApp(b.no))} · ${esc(t.started(hm(b.start)))}${b.warm ? '' : ' · ' + esc(t.readyAt(hm(b.end)))}</p>
+      <div class="readout" id="sheet-cd" style="margin:10px 0">${countdown(b.warm ? b.planned * 60000 : b.end - Date.now())}</div>
       <div class="goin"><b>${esc(t.inside)} (${b.samples.length} / ${sec.tests[b.test]})</b>
         <div class="codes" style="margin-top:6px">${b.samples.map((c, i) => `<span class="code ${stateOf(c, b.test) !== 'w2' ? 'done' : ''}">${i + 1}. ${esc(c)}</span>`).join('')}</div></div>
+      ${b.warm ? '<p class="meta" style="color:var(--err);font-weight:700">🌡 Heating up: the timer starts when a worker scans the furnace at temperature, or here.</p>' : ''}
       <p style="font-weight:700;margin:14px 0 6px">Supervisor</p>
+      ${b.warm ? `<div class="btnrow" style="margin-top:0"><button class="primary" data-act="sup-go" data-rid="${esc(b.id.slice(4))}">Furnace is hot: start the timer now</button></div>` : ''}
       <div class="btnrow" style="margin-top:0"><button class="secondary" data-act="sup-open" data-rid="${esc(b.id.slice(4))}">${esc(S.armed === 'open' + b.id ? 'Tap again: open the door now' : 'Open the door now (early)')}</button></div>
       <button class="secondary" style="width:100%;margin-top:8px;${S.armed === 'cancel' + b.id ? 'border-color:var(--err);color:var(--err)' : ''}" data-act="sup-cancel" data-rid="${esc(b.id.slice(4))}">${esc(S.armed === 'cancel' + b.id ? 'Tap again: cancel this load' : 'Cancel this load (loaded by mistake)')}</button>
       <p class="meta" style="margin:6px 0 0">Opening early lets the workers weigh W3 now. Cancelling puts the samples back to waiting; it stays in the trail on the results page.</p>
@@ -800,12 +804,13 @@ function tick() {
   document.getElementById('clock') && (document.getElementById('clock').textContent = hm(now));
   document.querySelectorAll('.tile.run').forEach(el => {
     const b = sectionBatch(el.dataset.sec); if (!b) return;
+    if (b.warm) return;
     const left = b.end - now;
     el.querySelector('.readout').textContent = left <= 0 ? '+' + countdown(-left) : countdown(left);
     el.querySelector('.bar i').style.width = Math.min(100, Math.max(0, (now - b.start) / (b.end - b.start) * 100)) + '%';
   });
   const cd = document.getElementById('sheet-cd');
-  if (cd && S.sheet) { const b = sectionBatch(S.sheet.sec); if (b) cd.textContent = countdown(b.end - now); }
+  if (cd && S.sheet) { const b = sectionBatch(S.sheet.sec); if (b && !b.warm) cd.textContent = countdown(b.end - now); }
 }
 
 /* ---------- adding a code by hand ---------- */
@@ -859,9 +864,15 @@ document.addEventListener('click', e => {
       const now = Date.now(), cancel = el.dataset.act === 'sup-cancel';
       dataEdit(f => { const r = f.runs && f.runs[rid]; if (!r) return false;
         if (cancel) r.cancelled = { at: now, by: 'Supervisor (timer)' };
-        else if (!r.outAt) { r.outAt = now; r.outBy = 'Supervisor (timer)'; if (now < r.start + r.mins * 60000) r.early = true; }
+        else if (!r.outAt) { r.outAt = now; r.outBy = 'Supervisor (timer)'; const end = r.reheat ? (r.go ? r.go + r.mins * 60000 : Infinity) : r.start + r.mins * 60000; if (now < end) r.early = true; }
         return true; }, `${cancel ? 'cancel' : 'open early'} ${rid}`).then(ok => toast(ok ? (cancel ? 'Load cancelled.' : 'Door open: W3 can be weighed now.') : 'Could not save. Check the internet.'));
       S.sheet = null; S.armed = null; render(); break;
+    }
+    case 'sup-go': {
+      const rid = el.dataset.rid, now = Date.now();
+      dataEdit(f => { const r = f.runs && f.runs[rid]; if (!r || !r.reheat || r.go) return false; r.go = now; r.goBy = 'Supervisor (timer)'; return true; }, `start timer ${rid}`)
+        .then(ok => toast(ok ? 'Timer started.' : 'Could not save. Check the internet.'));
+      S.sheet = null; render(); break;
     }
     case 'sup-mins': {
       const mins = {}; ['MC', 'VM', 'ASH'].forEach(k => { const v = +document.getElementById('smin-' + k).value; if (v > 0) mins[k] = v; });

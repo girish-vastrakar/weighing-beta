@@ -34,7 +34,7 @@ const BL = {
   en: {
     scan: 'Scan', bal: 'Balance', who: 'Who are you?', whoType: 'No list yet. Type your name.',
     pickBal: 'Which balance is this phone at?', free: 'Free', left: 'min',
-    doorClosed: 'Door closed', doorOpen: 'Door open', startWalk: 'Weigh W3',
+    doorClosed: 'Door closed', doorOpen: 'Door open', warm: 'Heating up: scan the furnace when it shows',  startWalk: 'Weigh W3',
     allIn: 'All', w: n => 'W' + n, next: 'Next', undo: 'Undo', again: 'Weigh again',
     override: 'Supervisor: save anyway', ok: 'OK', close: 'Close',
     dish: 'Dish', spot: 'Spot', board: 'Board', oven: 'Oven', furnace: 'Furnace',
@@ -62,7 +62,7 @@ const BL = {
   gu: {
     scan: 'સ્કેન', bal: 'કાંટો', who: 'તમે કોણ છો?', whoType: 'હજી યાદી નથી. તમારું નામ લખો.',
     pickBal: 'આ ફોન કયા કાંટા પર છે?', free: 'ખાલી', left: 'મિનિટ',
-    doorClosed: 'દરવાજો બંધ', doorOpen: 'દરવાજો ખોલો', startWalk: 'W3 વજન',
+    doorClosed: 'દરવાજો બંધ', doorOpen: 'દરવાજો ખોલો', warm: 'ગરમ થાય છે: આ તાપમાન દેખાય ત્યારે ફર્નેસ સ્કેન કરો',  startWalk: 'W3 વજન',
     allIn: 'બધી', w: n => 'W' + n, next: 'આગળ', undo: 'પાછું', again: 'ફરી વજન',
     override: 'સુપરવાઇઝર: તો પણ સેવ કરો', ok: 'બરાબર', close: 'બંધ',
     dish: 'ડિશ', spot: 'ખાનું', board: 'બોર્ડ', oven: 'ઓવન', furnace: 'ફર્નેસ',
@@ -117,6 +117,7 @@ const ICON = {
   cross: svgI('<path d="M13 13l22 22M35 13L13 35" stroke-width="5"/>'),
   edit: svgI('<path d="M30 8l10 10-22 22H8V30z"/>'),
   swap: svgI('<path d="M8 16h30l-6-6M40 32H10l6 6"/>'),
+  thermo: svgI('<path d="M20 30V9a4 4 0 0 1 8 0v21a8 8 0 1 1-8 0z"/><circle cx="24" cy="36" r="3" fill="currentColor"/><path d="M24 33V16"/>'),
   hour: svgI('<path d="M14 6h20M14 42h20M16 6c0 10 16 12 16 18S16 32 16 42M32 6c0 10-16 12-16 18s16 8 16 18"/>'),
   arrow: svgI('<path d="M8 24h30M28 14l10 10-10 10" stroke-width="4"/>'),
   MC: svgI('<path d="M24 6c8 10 12 16 12 22a12 12 0 01-24 0c0-6 4-12 12-22z"/>'),
@@ -194,6 +195,7 @@ function batchApply(f, j) {
   }
   if (j.action === 'warn') { trailAdd(f, j.code, j, { a: 'warn', k: j.key, s: j.step, v: j.value, x: j.kind, b: j.bal || 0 }); return true; }
   if (j.action === 'setRange') { f.settings = f.settings || {}; f.settings.range = Object.assign({}, f.settings.range, j.range); return true; }
+  if (j.action === 'setTemp') { f.settings = f.settings || {}; f.settings.temp = Object.assign({}, f.settings.temp, j.temp); return true; }
   if (j.action === 'setMins') { f.settings = f.settings || {}; f.settings.mins = Object.assign({}, f.settings.mins, j.mins); return true; }
   if (j.action === 'setWorkers') { f.settings = f.settings || {}; f.settings.workers = j.workers; return true; }
   if (!/^run/.test(j.action)) return false;
@@ -202,10 +204,14 @@ function batchApply(f, j) {
     // keep data.json small: loads older than 3 days are dropped
     Object.keys(all).forEach(r => { if (j.at - all[r].start > 3 * 86400000) delete all[r]; });
     if (!all[j.rid]) all[j.rid] = { rid: j.rid, place: j.place, test: j.test, tray: j.tray || null, items: j.items, bal: j.bal || 0,
-                                    start: j.at, mins: j.mins, by: j.worker || '', outAt: null };
+                                    start: j.at, mins: j.mins, by: j.worker || '', outAt: null,
+                                    ...(j.reheat ? { reheat: true, go: null } : {}) };   // furnace: the timer waits until it is hot again
+  } else if (j.action === 'runGo') {
+    const r = all[j.rid];
+    if (r && r.reheat && !r.go) { r.go = j.at; r.goBy = j.worker || ''; }
   } else if (j.action === 'runOut') {
     const r = all[j.rid];
-    if (r && !r.outAt) { r.outAt = j.at; r.outBy = j.worker || ''; if (j.at < r.start + r.mins * 60000) r.early = true; }
+    if (r && !r.outAt) { r.outAt = j.at; r.outBy = j.worker || ''; if (j.at < runEnd(r)) r.early = true; }
   } else if (j.action === 'runCancel') {
     if (all[j.rid]) all[j.rid].cancelled = { at: j.at, by: j.worker || '' };   // kept for the trail, ignored everywhere else
   }
@@ -215,8 +221,10 @@ function batchApply(f, j) {
 /* ---------- what the app works out from the data ---------- */
 const runs = () => ((S.data && S.data.runs) || []).filter(r => !r.cancelled);
 const runBy = rid => runs().find(r => r.rid === rid);
-const runEnd = r => r.start + r.mins * 60000;
-const minsLeft = r => Math.max(0, Math.ceil((runEnd(r) - Date.now()) / 60000));
+// a furnace load counts its minutes from when it was hot again (go), an oven load from door closed
+const runEnd = r => r.reheat ? (r.go ? r.go + r.mins * 60000 : Infinity) : r.start + r.mins * 60000;
+const tempFor = k => { const t = (settings().temp || {})[k]; return +t > 0 ? +t : 0; };
+const minsLeft = r => isFinite(runEnd(r)) ? Math.max(0, Math.ceil((runEnd(r) - Date.now()) / 60000)) : r.mins;
 const holdOf = (s, k) => (s && s.hold && s.hold[k]) || null;
 // 'wait' (W3 to do), 'w3' (W3 saved) or 'gone' (reset, or put on another dish / spot since it went in)
 function itemState(r, it) {
@@ -228,6 +236,7 @@ function itemState(r, it) {
 function runPhase(r) {
   if (!r.items.some(it => itemState(r, it) === 'wait')) return 'done';
   if (r.outAt) return 'out';
+  if (r.reheat && !r.go) return 'warm';
   return Date.now() < runEnd(r) ? 'heat' : 'up';
 }
 const waitCount = r => r.items.filter(it => itemState(r, it) === 'wait').length;
@@ -302,6 +311,7 @@ function testTile(s, k) {
     big = h ? hBig(h) : '';
     const r = HELD.includes(k) ? runOf(s.code, k) : null, ph = r && runPhase(r);
     if (!r) { icon = k === 'MC' ? ICON.oven : ICON.furnace; note = sm.wait; }
+    else if (ph === 'warm') { icon = ICON.thermo; note = tempFor(k) ? tempFor(k) + ' °C' : '🌡'; }
     else if (ph === 'heat') { icon = ICON.hour; note = `${minsLeft(r)} ${t.left}`; }
     else { icon = ICON.balance; note = sm.w3; }
     if (!HELD.includes(k)) { icon = ICON.balance; note = 'W3'; }
@@ -375,7 +385,8 @@ function placeTile(p) {
   let cls = 'free', big = '', small = t.free, ic = '';
   if (r) {
     const ph = runPhase(r);
-    if (ph === 'heat') { cls = 'heat'; big = String(minsLeft(r)); small = t.left; ic = ICON.hour; }
+    if (ph === 'warm') { cls = 'heat'; big = tempFor(r.test) ? tempFor(r.test) + '°' : ''; small = '🌡'; ic = ICON.thermo; }
+    else if (ph === 'heat') { cls = 'heat'; big = String(minsLeft(r)); small = t.left; ic = ICON.hour; }
     else { cls = 'up'; ic = ICON.doorOpen; small = t.doorOpen; }
   } else if (out) { cls = 'out'; big = String(waitCount(out)); ic = ICON.balance; small = 'W3'; }
   const k = (r || out) ? (r || out).test : null;
@@ -476,7 +487,8 @@ function startRun() {
   const k = PLACES[L.place].kind === 'oven' ? 'MC' : hInfo(L.tray).test;
   if (its.length > CAP[k]) { redScreen(B().bad.full, { icon: placeIcon(L.place), num: String(CAP[k]) }); return; }
   const rid = `${new Date().toISOString().slice(0, 10)}-${L.place}-${Date.now().toString(36)}`;
-  enqueue({ action: 'runStart', rid, place: L.place, test: k, tray: L.tray, items: its, mins: minsFor(k), bal: balNo(), worker: S.worker });
+  enqueue({ action: 'runStart', rid, place: L.place, test: k, tray: L.tray, items: its, mins: minsFor(k), bal: balNo(), worker: S.worker,
+            reheat: PLACES[L.place].kind === 'furnace' || undefined });
   good();
   S.load = null; S.rid = rid; S.view = 'run'; render();
 }
@@ -492,7 +504,9 @@ function renderRun() {
     : `<div class="dishes">${r.items.map(it => { const st = itemState(r, it);
         return `<span class="dslot ${st}"><span>${ICON.dish}</span><b>${esc(String(hInfo(it.h).n))}</b>${st === 'w3' ? '<em>✓</em>' : ''}</span>`; }).join('')}</div>`;
   let act = '';
-  if (ph === 'heat') act = `<div class="bigtime">${ICON.hour}<b>${minsLeft(r)}</b><small>${esc(t.left)}</small></div>
+  if (ph === 'warm') act = `<div class="bigtime">${ICON.thermo}<b>${tempFor(k) ? tempFor(k) + '°' : '…'}</b><small>°C</small></div>
+      <button class="primary doorbtn" data-act="r-go">${ICON.scan}<small>${esc(t.warm)} ${tempFor(k) ? tempFor(k) + ' °C' : ''}</small></button>`;
+  else if (ph === 'heat') act = `<div class="bigtime">${ICON.hour}<b>${minsLeft(r)}</b><small>${esc(t.left)}</small></div>
       <button class="primary doorbtn" disabled>${ICON.lock}<small>${esc(t.doorOpen)}</small></button>`;
   else if (ph === 'up') act = `<button class="primary doorbtn blink" data-act="r-out">${ICON.doorOpen}<small>${esc(t.doorOpen)}</small></button>`;
   else if (ph === 'out') act = r.tray
@@ -636,6 +650,7 @@ function doorScan(p) {
   S.door = null; S.placeScan = { place: p, at: Date.now() };
   if (d.act === 'start') { startRun(); return; }
   const r = runBy(d.rid);
+  if (d.act === 'go') { if (r && runPhase(r) === 'warm') enqueue({ action: 'runGo', rid: r.rid, worker: S.worker }); good(); S.rid = d.rid; S.view = 'run'; render(); return; }
   if (r && runPhase(r) === 'up') enqueue({ action: 'runOut', rid: r.rid, worker: S.worker });
   good(); S.rid = d.rid; S.view = 'run'; render();
 }
@@ -670,6 +685,7 @@ function onHolder(h) {
   const r = runOf(s.code, k);
   if (!r) { S.code = s.code; redScreen(t.bad.notIn, { icon: placeIcon(k === 'MC' ? 'O1' : 'F1') }); return; }
   const ph = runPhase(r);
+  if (ph === 'warm') { redScreen(t.bad.heating, { icon: ICON.thermo, num: tempFor(k) ? tempFor(k) + '°' : '' }); return; }
   if (ph === 'heat') { redScreen(t.bad.heating, { icon: ICON.hour, num: String(minsLeft(r)) }); return; }
   const b = (s.holdBal || {})[k] || r.bal;
   if (b && balNo() && b !== balNo()) { redScreen(t.bad.otherBal, { icon: ICON.balance, num: String(b) }); return; }
@@ -809,6 +825,7 @@ function batchAct(el) {
       if (r && runPhase(r) === 'up') { S.door = { act: 'out', place: r.place, rid: r.rid }; atPlace(r.place) ? doorScan(r.place) : openScanner('door'); }
       return true;
     case 'walk': if (r) startWalk(r); return true;
+    case 'r-go': if (r && runPhase(r) === 'warm') { S.door = { act: 'go', place: r.place, rid: r.rid }; openScanner('door'); } return true;   // always a fresh scan: they read the display there
     case 'r-start': if (S.load && loadItems().length) { S.door = { act: 'start', place: S.load.place }; atPlace(S.load.place) ? doorScan(S.load.place) : openScanner('door'); } return true;
     case 'l-scan': openScanner('load'); return true;
     case 'l-all': S.load.items = waitingFor('MC').map(x => x.h).slice(0, CAP.MC); good(); render(); return true;

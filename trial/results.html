@@ -315,7 +315,7 @@ function compute(code, s, src) {
     if (!complete(w[k])) return;
     // the bench app knows the load: judge by its door closed / door open times
     const run = runsOf(D, code).filter(x => x.test === k && x.outAt).pop();
-    if (run) { if (run.early) chk(k, `${TNAME[k]} door opened early, after ${Math.round((run.outAt - run.start) / 6e4)} min (heating is ${run.mins} min)`); return; }
+    if (run) { if (run.early) chk(k, `${TNAME[k]} door opened early, after ${Math.round((run.outAt - (run.go || run.start)) / 6e4)} min (heating is ${run.mins} min)`); return; }
     const t = tsS[TSKEY[k]] || {}; if (!t.W2 || !t.W3) return;
     const gap = (Date.parse(t.W3.at) - Date.parse(t.W2.at)) / 6e4;
     if (gap >= 0 && gap < mins * 0.9) chk(k, `${TNAME[k]} W3 only ${Math.round(gap)} min after W2 (heating is ${mins} min)`);
@@ -530,7 +530,8 @@ function trailHTML(r) {
   r.runs.forEach(x => {
     const p = PL[x.place] || x.place, n = (x.items || []).length;
     items.push({ t: x.start, by: x.by, b: x.bal, txt: `${TNAME[x.test]}: door closed, ${p} (${n} in, ${x.mins} min)` });
-    if (x.outAt) items.push({ t: x.outAt, by: x.outBy, bad: !!x.early, txt: `${TNAME[x.test]}: door open, ${p}${x.early ? ` EARLY after ${Math.round((x.outAt - x.start) / 6e4)} min` : ''}` });
+    if (x.go) items.push({ t: x.go, by: x.goBy, txt: `${TNAME[x.test]}: furnace hot again, timer started (reheat ${Math.round((x.go - x.start) / 6e4)} min)` });
+    if (x.outAt) items.push({ t: x.outAt, by: x.outBy, bad: !!x.early, txt: `${TNAME[x.test]}: door open, ${p}${x.early ? ` EARLY after ${Math.round((x.outAt - (x.go || x.start)) / 6e4)} min` : ''}` });
     if (x.cancelled) items.push({ t: x.cancelled.at, by: x.cancelled.by, bad: true, txt: `${TNAME[x.test]}: load cancelled, ${p}` });
   });
   if (!items.length) return '';
