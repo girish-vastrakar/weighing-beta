@@ -2159,6 +2159,9 @@ document.addEventListener('click', e => {
 document.addEventListener('input', e => {
   if (loadInput(e.target)) return;
   if (e.target.id === 'w') {
+    // the balance reads 0.0001 g: a 5th decimal is a typing slip, so it is not taken
+    const m = e.target.value.match(/^(\d*[.,]\d{4})\d+/);
+    if (m) { e.target.value = m[1]; bad(); }
     S.draft = e.target.value;
     document.getElementById('live').innerHTML = liveText();
   } else if (e.target.dataset.input === 'logq') {
