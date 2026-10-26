@@ -379,10 +379,11 @@ function placeTile(p) {
     else { cls = 'up'; ic = ICON.doorOpen; small = t.doorOpen; }
   } else if (out) { cls = 'out'; big = String(waitCount(out)); ic = ICON.balance; small = 'W3'; }
   const k = (r || out) ? (r || out).test : null;
-  return `<button class="ptile ${cls}" ${k ? `style="${cvar(k)}"` : ''} data-act="place" data-place="${p}">
+  // status only: the worker opens an oven / furnace by scanning its QR there, not by tapping here
+  return `<div class="ptile ${cls}" ${k ? `style="${cvar(k)}"` : ''}>
     <span class="pi">${placeIcon(p)}<em>${placeNo(p)}</em></span>
     ${k ? `<span class="pk">${ICON[k]}</span>` : ''}
-    <span class="pb">${ic ? `<span class="pic">${ic}</span>` : ''}${big ? `<b>${esc(big)}</b>` : ''}<small>${esc(small)}</small></span></button>`;
+    <span class="pb">${ic ? `<span class="pic">${ic}</span>` : ''}${big ? `<b>${esc(big)}</b>` : ''}<small>${esc(small)}</small></span></div>`;
 }
 function renderHomeB() {
   const t = B(), mc = waitingFor('MC'), boards = boardsWaiting(['VM', 'ASH']);
@@ -618,7 +619,7 @@ function onScan(txt, purpose) {
   good(); S.code = code; S.view = 'sample'; S.via = null; S.walk = null; render();
 }
 function onPlace(p) {
-  good();
+  good(); S.placeScan = { place: p, at: Date.now() };
   const r = placeRun(p);
   if (r) { S.rid = r.rid; S.view = 'run'; render(); return; }
   const o = placeOut(p);
@@ -626,11 +627,13 @@ function onPlace(p) {
   if (o && o.tray && (!o.bal || o.bal === balNo())) { S.rid = o.rid; S.view = 'run'; render(); return; }
   openLoad(p);
 }
+// This oven / furnace was scanned in the last 3 minutes: the worker is standing at it, no second scan needed
+const atPlace = p => !!S.placeScan && S.placeScan.place === p && Date.now() - S.placeScan.at < 3 * 60000;
 // Door closed / door open: the worker scans the oven or furnace first, so the right door is the one opened
 function doorScan(p) {
   const d = S.door; if (!d) return;
   if (p !== d.place) { redScreen(B().bad.wrongPlace, { icon: placeIcon(d.place), num: placeNo(d.place) }); return; }
-  S.door = null;
+  S.door = null; S.placeScan = { place: p, at: Date.now() };
   if (d.act === 'start') { startRun(); return; }
   const r = runBy(d.rid);
   if (r && runPhase(r) === 'up') enqueue({ action: 'runOut', rid: r.rid, worker: S.worker });
@@ -803,10 +806,10 @@ function batchAct(el) {
     case 'type-open': { const v = (document.getElementById('typecode') || {}).value; if (v && v.trim()) onScan(v.trim(), 'any'); return true; }
     case 'place': onPlace(el.dataset.place); return true;
     case 'r-out':
-      if (r && runPhase(r) === 'up') { S.door = { act: 'out', place: r.place, rid: r.rid }; openScanner('door'); }
+      if (r && runPhase(r) === 'up') { S.door = { act: 'out', place: r.place, rid: r.rid }; atPlace(r.place) ? doorScan(r.place) : openScanner('door'); }
       return true;
     case 'walk': if (r) startWalk(r); return true;
-    case 'r-start': if (S.load && loadItems().length) { S.door = { act: 'start', place: S.load.place }; openScanner('door'); } return true;
+    case 'r-start': if (S.load && loadItems().length) { S.door = { act: 'start', place: S.load.place }; atPlace(S.load.place) ? doorScan(S.load.place) : openScanner('door'); } return true;
     case 'l-scan': openScanner('load'); return true;
     case 'l-all': S.load.items = waitingFor('MC').map(x => x.h).slice(0, CAP.MC); good(); render(); return true;
     case 'l-drop': S.load.items = S.load.items.filter(x => x !== el.dataset.h); render(); return true;
