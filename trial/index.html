@@ -412,8 +412,8 @@ const L = {
     vmWait: 'Shows after Moisture is done',
     flagState: (p, lim) => `⚠ High: ${p} (limit ${lim})`,
     flagNeg: p => `⚠ Negative: ${p} (not possible, check the weights)`,
-    flagLow: (p, lim) => `⚠ Too low: ${p}. Lower limit is ${lim} %. Check the weights.`,
-    flagSavedLow: (n, p, lim) => `⚠ ${n} is low: ${p}. Lower limit is ${lim} %. Tell the supervisor.`,
+    flagLow: (p, lim) => `⚠ Too low: ${p}. Lower limit is ${lim}. Check the weights.`,
+    flagSavedLow: (n, p, lim) => `⚠ ${n} is low: ${p}. Lower limit is ${lim}. Tell the supervisor.`,
     flagNote: (names) => `⚠ Out of range: ${names}`,
     flagSaved: (n, p, lim) => `⚠ ${n} is high: ${p}. Limit is ${lim}. Tell the supervisor.`,
     flagSavedNeg: (n, p) => `⚠ ${n} is negative: ${p}. Check the weights and tell the supervisor.`,
@@ -471,7 +471,7 @@ const L = {
     errW3hi: 'Weight after heating cannot be more than W2.',
     errW3lo: v => `Weight after heating cannot be less than the empty ${v} (W1).`,
     chipStep2: 'step 2', chipIn: h => `ready for ${h}`,
-    label: { MC: 'MT', VM: 'VM', ASH: 'Ash', TM: 'TM' },   // short names: workers read these at a glance
+    label: { MC: 'MT', VM: 'VM', ASH: 'Ash', TM: 'TM', FC: 'FC' },   // short names: workers read these at a glance
     short: { MC: 'Moisture', VM: 'VM', ASH: 'Ash', TM: 'Total moisture' },
     vessel: { MC: 'petri dish', VM: 'VM crucible', ASH: 'ash crucible', TM: 'petri dish' },
     heat: { oven: 'oven', furnace: 'furnace' }
@@ -497,8 +497,8 @@ const L = {
     vmWait: 'ભેજ પૂરું થયા પછી દેખાશે',
     flagState: (p, lim) => `⚠ વધારે: ${p} (મર્યાદા ${lim})`,
     flagNeg: p => `⚠ નેગેટિવ: ${p} (શક્ય નથી, વજન તપાસો)`,
-    flagLow: (p, lim) => `⚠ ખૂબ ઓછું: ${p}. નીચી મર્યાદા ${lim} % છે. વજન તપાસો.`,
-    flagSavedLow: (n, p, lim) => `⚠ ${n} ઓછું છે: ${p}. નીચી મર્યાદા ${lim} % છે. સુપરવાઇઝરને જણાવો.`,
+    flagLow: (p, lim) => `⚠ ખૂબ ઓછું: ${p}. નીચી મર્યાદા ${lim} છે. વજન તપાસો.`,
+    flagSavedLow: (n, p, lim) => `⚠ ${n} ઓછું છે: ${p}. નીચી મર્યાદા ${lim} છે. સુપરવાઇઝરને જણાવો.`,
     flagNote: (names) => `⚠ મર્યાદા બહાર: ${names}`,
     flagSaved: (n, p, lim) => `⚠ ${n} વધારે છે: ${p}. મર્યાદા ${lim} છે. સુપરવાઇઝરને જણાવો.`,
     flagSavedNeg: (n, p) => `⚠ ${n} નેગેટિવ છે: ${p}. વજન તપાસો અને સુપરવાઇઝરને જણાવો.`,
@@ -556,7 +556,7 @@ const L = {
     errW3hi: 'ગરમ કર્યા પછીનું વજન W2 કરતાં વધારે ન હોઈ શકે.',
     errW3lo: v => `ગરમ કર્યા પછીનું વજન ખાલી ${v} (W1) કરતાં ઓછું ન હોઈ શકે.`,
     chipStep2: 'પગલું 2', chipIn: h => `${h} માટે તૈયાર`,
-    label: { MC: 'MT', VM: 'VM', ASH: 'Ash', TM: 'TM' },   // short names: workers read these at a glance
+    label: { MC: 'MT', VM: 'VM', ASH: 'Ash', TM: 'TM', FC: 'FC' },   // short names: workers read these at a glance
     short: { MC: 'ભેજ', VM: 'VM', ASH: 'રાખ', TM: 'કુલ ભેજ' },
     vessel: { MC: 'પેટ્રી ડિશ', VM: 'VM ક્રુસિબલ', ASH: 'રાખની ક્રુસિબલ', TM: 'પેટ્રી ડિશ' },
     heat: { oven: 'ઓવન', furnace: 'ફર્નેસ' }
@@ -955,9 +955,9 @@ async function setApproval(s, approve) {
   try {
     for (let attempt = 0; ; attempt++) {
       const { file, sha } = await ghRead(GH.apprPath);
-      const f = file || { app: 'proximate-approvals', version: 1, limits: FLAG, approvals: {} };
-      f.approvals = f.approvals || {}; f.limits = FLAG;
-      if (approve) f.approvals[s.code] = { by: S.worker, at: isoLocal(), flags: flagsOf(s).map(k => `${k} ${s.tests[k].pct.toFixed(2)} %`).join(', '), w: wSnap(s) };
+      const f = file || { app: 'proximate-approvals', version: 1, limits: limits(), approvals: {} };
+      f.approvals = f.approvals || {}; f.limits = limits();
+      if (approve) f.approvals[s.code] = { by: S.worker, at: isoLocal(), flags: flagsOf(s).map(k => `${k} ${(LIM_DB[k] ? stOf(s, k).db : stOf(s, k).pct).toFixed(2)} %${LIM_DB[k] ? ' db' : ''}`).join(', '), w: wSnap(s) };
       else delete f.approvals[s.code];
       f.updated = isoLocal();
       try { await ghWrite(f, sha, `approvals: ${s.code} ${approve ? 'approved' : 'unapproved'} by ${S.worker}`, GH.apprPath); APPR = f.approvals; store.set('approvals', JSON.stringify(f)); break; }
@@ -1132,6 +1132,8 @@ function recompute(s) {
     t.done = isNum(t.pct) ? 3 : done;
     t.required = !S.tests[k].optional || s.tmRequired;
   });
+  const vmDb = s.tests.VM && s.tests.VM.db, ashDb = s.tests.ASH && s.tests.ASH.db;
+  s.fcSt = isNum(vmDb) && isNum(ashDb) ? { pct: r2(100 - vmDb - ashDb), db: r2(100 - vmDb - ashDb), done: 3, required: true } : null;
   const req = S.order.filter(k => s.tests[k].required);
   s.status = req.every(k => isNum(s.tests[k].pct) || (k === 'VM' && s.tests[k].done === 3)) ? 'Complete'
            : S.order.some(k => s.tests[k].done > 0) ? 'In progress' : 'Pending';
@@ -1225,18 +1227,25 @@ function parseW(str) {
   const v = Number(s);
   return v > 0 ? v : null;
 }
-// Results above these limits (%), or below zero (not possible), are flagged red.
-// Upper limits: VM and Ash on dry basis (FLAG_DB), the others as received. Lower limits are as received.
-// Keep in step with LIMITS/DB_LIMITS/LOWER in weighing-data compute_results.py
-const FLAG = { MC: 17.5, VM: 17.5, ASH: 12, TM: 60 }, FLAG_DB = { VM: true, ASH: true }, FLAG_LOW = { MC: 1.5, VM: 5, ASH: 1.5, TM: 1.5 };
-function isNeg(k, st) { return FLAG[k] != null && st && isNum(st.pct) && st.pct < 0; }
-function isLow(k, st) { return FLAG[k] != null && st && isNum(st.pct) && st.pct >= 0 && st.pct < FLAG_LOW[k]; }
-function isHigh(k, st) { if (!st || FLAG[k] == null) return false; const v = FLAG_DB[k] ? st.db : st.pct; return isNum(v) && v > FLAG[k]; }
+// Results outside these limits (%), or below zero (not possible), are flagged red.
+// [lower, upper]: MT as received, VM / Ash / FC on dry basis. The supervisor sets them (Setup, or the results page),
+// saved in data.json settings.limits; these are the defaults. results.html and compute_results.py read the same settings.
+const DEF_LIMITS = { MC: [1.5, 17.5], VM: [5, 17.5], ASH: [1.5, 12], FC: [null, null], TM: [1.5, 60] };
+const LIM_DB = { VM: true, ASH: true, FC: true };
+const limits = () => Object.assign({}, DEF_LIMITS, (S.data && S.data.settings && S.data.settings.limits) || {});
+const limOf = k => limits()[k] || [null, null];
+const limVal = (k, st) => st ? (LIM_DB[k] ? st.db : st.pct) : null;
+function isNeg(k, st) { return !!st && isNum(st.pct) && st.pct < 0; }
+function isLow(k, st) { const v = limVal(k, st), m = limOf(k)[0]; return !isNeg(k, st) && isNum(v) && isNum(m) && v < m; }
+function isHigh(k, st) { const v = limVal(k, st), m = limOf(k)[1]; return isNum(v) && isNum(m) && v > m; }
 function isFlag(k, st) { return isHigh(k, st) || isLow(k, st) || isNeg(k, st); }
-function highLine(k, st) { return FLAG_DB[k] && isNum(st.db) ? `${pctLine(k, st)} · db ${st.db.toFixed(2)} %` : pctLine(k, st); }
-function limLine(k) { return FLAG_DB[k] ? `${FLAG[k]} % db` : `${FLAG[k]} %`; }
-function flagText(k, st) { return isNeg(k, st) ? T().flagNeg(pctLine(k, st)) : isLow(k, st) ? T().flagLow(pctLine(k, st), FLAG_LOW[k]) : T().flagState(highLine(k, st), limLine(k)); }
-function flagsOf(s) { return ORDER.filter(k => s.tests[k].required && isFlag(k, s.tests[k])); }
+function highLine(k, st) { return LIM_DB[k] && isNum(st.db) && k !== 'FC' ? `${pctLine(k, st)} · db ${st.db.toFixed(2)} %` : pctLine(k, st); }
+function limLine(k) { return `${limOf(k)[1]} %${LIM_DB[k] ? ' db' : ''}`; }
+function lowLine(k) { return `${limOf(k)[0]} %${LIM_DB[k] ? ' db' : ''}`; }
+function flagText(k, st) { return isNeg(k, st) ? T().flagNeg(pctLine(k, st)) : isLow(k, st) ? T().flagLow(highLine(k, st), lowLine(k)) : T().flagState(highLine(k, st), limLine(k)); }
+// Fixed carbon (dry basis, by difference) is checked like a test once moisture, VM and ash are done
+const stOf = (s, k) => k === 'FC' ? s.fcSt : s.tests[k];
+function flagsOf(s) { return ORDER.filter(k => s.tests[k].required && isFlag(k, s.tests[k])).concat(s.fcSt && isFlag('FC', s.fcSt) ? ['FC'] : []); }
 function pctLine(k, st) {
   if (isNum(st.pct)) return `${st.pct.toFixed(2)} %`;
   return k === 'VM' ? T().vmWait : '';
@@ -1585,7 +1594,14 @@ function supervisorHTML() {
         return `<div class="typerow" style="align-items:center"><b style="flex:0 0 3em">${esc(lbl(k))}</b>
           <input class="field" id="rmin-${k}" type="number" inputmode="decimal" step="0.001" placeholder="min" value="${r[0] === '' ? '' : (+r[0]).toFixed(3)}">
           <span>–</span><input class="field" id="rmax-${k}" type="number" inputmode="decimal" step="0.001" placeholder="max" value="${r[1] === '' ? '' : (+r[1]).toFixed(3)}"></div>`; }).join('')}
-      <button class="secondary" data-act="save-range" style="width:100%">Save weight range</button></div>` : ''}
+      <button class="secondary" data-act="save-range" style="width:100%">Save weight range</button></div>
+    <div class="row" style="display:block"><b>Result limits (%)</b>
+      <p class="sub" style="margin:4px 0 8px">A result outside these is flagged red and needs approval. MT as received; VM, Ash and FC on dry basis. Leave a box empty for no limit. The results page uses the same limits.</p>
+      ${['MC', 'VM', 'ASH', 'FC'].map(k => { const l = limOf(k);
+        return `<div class="typerow" style="align-items:center"><b style="flex:0 0 4.5em">${esc(lbl(k))}${LIM_DB[k] ? ' db' : ''}</b>
+          <input class="field" id="lmin-${k}" type="number" inputmode="decimal" step="0.1" placeholder="min" value="${isNum(l[0]) ? l[0] : ''}">
+          <span>–</span><input class="field" id="lmax-${k}" type="number" inputmode="decimal" step="0.1" placeholder="max" value="${isNum(l[1]) ? l[1] : ''}"></div>`; }).join('')}
+      <button class="secondary" data-act="save-limits" style="width:100%">Save result limits</button></div>` : ''}
   </div>`;
 }
 const fmtV = v => v == null ? '–' : fmt(v);
@@ -1678,7 +1694,7 @@ function resultsTable() {
       ...ORDER.flatMap(k => { const t = s.tests[k];
         return [...t.w.map(v => ({ v: isNum(v) ? v : '' })), { v: isNum(t.pct) ? t.pct : '', flag: isFlag(k, t) }]; }),
       { v: s.tmRequired ? 'Y' : '' }, { v: s.status }, { v: s.last || '' },
-      { v: fl.map(k => isNeg(k, s.tests[k]) ? `${TESTS[k].label} negative` : isLow(k, s.tests[k]) ? `${TESTS[k].label} < ${FLAG_LOW[k]}%` : `${TESTS[k].label} > ${limLine(k)}`).join('; '), flag: fl.length > 0 }];
+      { v: fl.map(k => isNeg(k, stOf(s, k)) ? `${lbl(k)} negative` : isLow(k, stOf(s, k)) ? `${lbl(k)} < ${lowLine(k)}` : `${lbl(k)} > ${limLine(k)}`).join('; '), flag: fl.length > 0 }];
   });
   return { groups, head2, rows };
 }
@@ -1851,7 +1867,7 @@ function askPhoto(m) { return (m.kind === 's3' || m.kind === 'corrected') && nee
 function flagMsg(m) {
   if (m.kind !== 's3' && m.kind !== 'corrected') return '';
   const st = sample(S.code) && sample(S.code).tests[S.test];
-  return isFlag(S.test, st) ? `<p class="flagnote" style="font-size:1.05rem">${esc(isNeg(S.test, st) ? T().flagSavedNeg(lbl(S.test), pctLine(S.test, st)) : isLow(S.test, st) ? T().flagSavedLow(lbl(S.test), pctLine(S.test, st), FLAG_LOW[S.test]) : T().flagSaved(lbl(S.test), highLine(S.test, st), limLine(S.test)))}</p>` : '';
+  return isFlag(S.test, st) ? `<p class="flagnote" style="font-size:1.05rem">${esc(isNeg(S.test, st) ? T().flagSavedNeg(lbl(S.test), pctLine(S.test, st)) : isLow(S.test, st) ? T().flagSavedLow(lbl(S.test), highLine(S.test, st), lowLine(S.test)) : T().flagSaved(lbl(S.test), highLine(S.test, st), limLine(S.test)))}</p>` : '';
 }
 // Built at display time so it follows the language switch
 function savedMsg(m) {
@@ -2113,6 +2129,11 @@ document.addEventListener('click', e => {
       render(); break;
     }
     case 'worker-del': if (confirmTap(el)) { const ws = (settings().workers || []).slice(); ws.splice(+el.dataset.i, 1); enqueue({ action: 'setWorkers', workers: ws, worker: S.worker }); render(); } break;
+    case 'save-limits': {
+      const lim = {}, num = id => { const v = document.getElementById(id).value.trim(); return v === '' || !isFinite(+v) ? null : +v; };
+      ['MC', 'VM', 'ASH', 'FC'].forEach(k => { lim[k] = [num('lmin-' + k), num('lmax-' + k)]; });
+      enqueue({ action: 'setLimits', limits: lim, worker: S.worker }); toast('Saved.', true); render(); break;
+    }
     case 'save-range': {
       const range = {};
       ['MC', 'VM', 'ASH', 'TM'].forEach(k => { const a = parseFloat(document.getElementById('rmin-' + k).value), b = parseFloat(document.getElementById('rmax-' + k).value);

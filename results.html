@@ -126,6 +126,10 @@
   ol.trail .tt { color: var(--muted); font-variant-numeric: tabular-nums; } ol.trail li.bad .tt { color: inherit; }
   ol.trail .tw { color: var(--muted); font-size: .8rem; text-align: right; }
   @media (max-width: 560px) { ol.trail li { grid-template-columns: 1fr; gap: 0; } ol.trail .tw { text-align: left; } }
+  .limcard summary { cursor: pointer; padding: 0 16px; list-style: none; } .limcard summary::-webkit-details-marker { display: none; }
+  .limgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 8px 16px; margin: 0 16px; }
+  .limgrid label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .limgrid input { width: 4.5em; font: inherit; padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
   table.mist tbody tr { cursor: default; } .wrapcell { white-space: normal !important; min-width: 12em; }
 </style>
 </head>
@@ -138,15 +142,17 @@
 /* Supervisor results page. Reads the lab data straight from girish-vastrakar/weighing_data_QR
    (public, so no key is needed), plus the old app's girish-vastrakar/weighing-data (private: only with a key
    that can open it), and works the results out live, with the same formulas and
-   limits as scripts/compute_results.py and the weighing app. Keep LIMITS/LOWER in step with FLAG in index.html. */
+   limits as scripts/compute_results.py and the weighing app: the supervisor's data.json settings.limits, else DEF_LIMITS
+   (keep DEF_LIMITS in step with index.html and compute_results.py). */
 const GH = { owner: 'girish-vastrakar', branch: 'main' };
 const SRC = { qr: { repo: 'weighing_data_QR', label: 'QR app', open: true }, old: { repo: 'weighing-data', label: 'Old app' } };
-const LIMITS = { MC: 17.5, VM: 17.5, ASH: 12, TM: 60 };
-const DB_LIMITS = { VM: true, ASH: true };  // these upper limits are on dry basis
-const LOWER = { MC: 1.5, VM: 5, ASH: 1.5, TM: 1.5 };
+// [lower, upper] %: moisture as received, VM / Ash / FC on dry basis; null = no limit
+const DEF_LIMITS = { MC: [1.5, 17.5], VM: [5, 17.5], ASH: [1.5, 12], FC: [null, null], TM: [1.5, 60] };
+const LIM_DB = { VM: true, ASH: true, FC: true };
+const LIM = () => Object.assign({}, DEF_LIMITS, (SD.qr && SD.qr.settings && SD.qr.settings.limits) || {});
 const TESTS = ['MC', 'VM', 'ASH', 'TM'];
 const MINS = { MC: 60, VM: 7, ASH: 60 };  // default heating times, as in bench.js (the supervisor can change them: data.json settings.mins)
-const TNAME = { MC: 'Moisture', VM: 'VM', ASH: 'Ash', TM: 'Total moisture' };
+const TNAME = { MC: 'Moisture', VM: 'VM', ASH: 'Ash', TM: 'Total moisture', FC: 'Fixed carbon' };
 const TSKEY = { MC: 'Moisture', VM: 'VM', ASH: 'Ash', TM: 'Total Moisture' };  // test names in timestamps.json
 
 const store = { get: k => { try { return localStorage.getItem('lab:' + k) || ''; } catch (e) { return ''; } },
@@ -240,7 +246,7 @@ async function setApproval(r, approve) {
       if (g.ok) { const meta = await g.json(); sha = meta.sha; f = JSON.parse(unb64(meta.content)); }
       else if (g.status !== 404) throw new Error('GitHub error ' + g.status);
       f = f || { app: 'proximate-approvals', version: 1, approvals: {} };
-      f.approvals = f.approvals || {}; f.limits = LIMITS;
+      f.approvals = f.approvals || {}; f.limits = LIM();
       if (approve) f.approvals[r.code] = { by: who, at: isoLocal(), flags: r.flags.join(', '), w: wSnap(r.w),
         ...(note && note.value.trim() ? { note: note.value.trim() } : {}), via: 'results page' };
       else delete f.approvals[r.code];
@@ -321,11 +327,14 @@ function compute(code, s, src) {
   const app = { MC: r2(mc), VM: vml != null && mc != null ? r2(vml - r2(mc)) : null, ASH: r2(ashAr), TM: r2(tm) };
   const appDb = k => app[k] != null && app.MC != null && app.MC < 100 ? r2(app[k] / (100 - app.MC) * 100) : null;
   const flags = [], flagTests = new Set();
-  Object.entries(LIMITS).forEach(([k, lim]) => {
-    const v = app[k], hi = DB_LIMITS[k] ? appDb(k) : v;
-    if (v != null && v < 0) { flags.push(`${TNAME[k]} ${v.toFixed(2)} % negative`); flagTests.add(k); }
-    else if (hi != null && hi > lim) { flags.push(`${TNAME[k]} ${hi.toFixed(2)} %${DB_LIMITS[k] ? ' db' : ''} above ${lim} %`); flagTests.add(k); }
-    else if (v != null && v < LOWER[k]) { flags.push(`${TNAME[k]} ${v.toFixed(2)} % below ${LOWER[k]} %`); flagTests.add(k); }
+  const cmp = { MC: app.MC, VM: appDb('VM'), ASH: appDb('ASH'), TM: s.tm ? app.TM : null };
+  cmp.FC = cmp.VM != null && cmp.ASH != null ? r2(100 - cmp.VM - cmp.ASH) : null;
+  Object.entries(LIM()).forEach(([k, [lo, hi]]) => {
+    const v = cmp[k], db = LIM_DB[k] ? ' db' : '';
+    if (k !== 'FC' && app[k] != null && app[k] < 0) { flags.push(`${TNAME[k]} ${app[k].toFixed(2)} % negative`); flagTests.add(k); }
+    else if (v == null) return;
+    else if (isNum(hi) && v > hi) { flags.push(`${TNAME[k]} ${v.toFixed(2)} %${db} above ${hi} %`); flagTests.add(k); }
+    else if (isNum(lo) && v < lo) { flags.push(`${TNAME[k]} ${v.toFixed(2)} %${db} below ${lo} %`); flagTests.add(k); }
   });
 
   let appr = D.appr[code] || null, stale = false;
@@ -476,12 +485,13 @@ function render() {
       <button class="tile${checks.length ? ' alert' : ''}" data-status="checks"><b>${checks.length}</b><span>possible errors, retest</span></button>
       ${COLS.map(c => avgTile(c, c.basisFree ? 'moisture (as received)' : `${c.label} (${b})`)).join('')}
     </div>
+    ${limitsHTML()}
     ${mistakesHTML(list)}
     ${attentionHTML(list)}
     ${stripsHTML(list)}
     <div class="card">
       <h2>Results</h2>
-      <p class="sub">${list.length} sample${list.length === 1 ? '' : 's'} · VM, Ash and fixed carbon on ${b}, moisture as received · tap a row for the weights · red = outside limits (moisture ${LIMITS.MC} %, VM ${LIMITS.VM} % db, ash ${LIMITS.ASH} % db)</p>
+      <p class="sub">${list.length} sample${list.length === 1 ? '' : 's'} · VM, Ash and fixed carbon on ${b}, moisture as received · tap a row for the weights · red = outside limits (${limText()})</p>
       ${list.length ? tableHTML(list, anyTm) : `<div class="empty">No samples in this view.${V.range !== 'all' ? ' Try a longer time range.' : ''}</div>`}
     </div>`;
   wire();
@@ -537,6 +547,50 @@ function trailHTML(r) {
     <ol class="trail">${items.map(i => `<li class="${i.bad ? 'bad' : ''}"><span class="tt">${when(i.t)}</span><span>${i.txt}</span>
       <span class="tw">${esc(i.by || '?')}${i.b ? ' · balance ' + i.b : ''}</span></li>`).join('')}</ol>`;
 }
+/* ---------- result limits: shown to everyone, changed by the supervisor (PIN from the weighing app) ---------- */
+const LIM_KEYS = ['MC', 'VM', 'ASH', 'FC'];
+const limRange = k => { const [lo, hi] = LIM()[k]; return isNum(lo) && isNum(hi) ? `${lo}–${hi}` : isNum(hi) ? `≤ ${hi}` : isNum(lo) ? `≥ ${lo}` : 'no limit'; };
+const limText = () => LIM_KEYS.map(k => `${TNAME[k]} ${limRange(k)} %${LIM_DB[k] ? ' db' : ''}`).join(', ');
+function limitsHTML() {
+  if (!SD.qr) return '';
+  return `<details class="card limcard"${V.limOpen ? ' open' : ''}><summary><h2 style="display:inline">Result limits</h2> <span class="sub" style="margin:0">${esc(limText())}</span></summary>
+    <p class="sub">A result outside these is flagged and needs approval, here, in the weighing app and in results.json. Moisture as received; VM, Ash and fixed carbon on dry basis. Empty = no limit.</p>
+    <div class="limgrid">${LIM_KEYS.map(k => { const [lo, hi] = LIM()[k];
+      return `<label><b>${TNAME[k]}${LIM_DB[k] ? ' (db)' : ''}</b><span><input id="lo-${k}" inputmode="decimal" placeholder="min" value="${isNum(lo) ? lo : ''}"> – <input id="hi-${k}" inputmode="decimal" placeholder="max" value="${isNum(hi) ? hi : ''}"> %</span></label>`; }).join('')}</div>
+    <div class="apprrow" style="margin:8px 16px"><button class="btn primary" id="savelim">Save limits (supervisor PIN)</button><span class="sub" id="limmsg" style="margin:0"></span></div></details>`;
+}
+async function pinHash(pin) {
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('lab-pin:' + pin));
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+async function saveLimits() {
+  const msg = document.getElementById('limmsg'), num = id => { const v = document.getElementById(id).value.trim(); return v === '' || !isFinite(+v) ? null : +v; };
+  const lim = Object.fromEntries(LIM_KEYS.map(k => [k, [num('lo-' + k), num('hi-' + k)]]));
+  if (LIM_KEYS.some(k => isNum(lim[k][0]) && isNum(lim[k][1]) && lim[k][0] > lim[k][1])) { msg.textContent = 'A lower limit is above its upper limit.'; return; }
+  const set = SD.qr.settings && SD.qr.settings.pin;
+  if (!set) { msg.textContent = 'Set the supervisor PIN in the weighing app first (Setup → Supervisor on).'; return; }
+  const p = prompt('Supervisor PIN'); if (p == null) return;
+  if (await pinHash(p.trim()) !== set) { msg.textContent = '⚠ Wrong PIN.'; return; }
+  if (!KEY) { KEY = (prompt('Saving needs the lab GitHub key (the same one the phones use). It is saved on this device.') || '').trim(); if (!KEY) return; store.set('ghkey', KEY); }
+  msg.textContent = 'Saving…';
+  const url = `https://api.github.com/repos/${GH.owner}/${SRC.qr.repo}/contents/data.json`, H = { Authorization: 'Bearer ' + KEY, Accept: 'application/vnd.github+json' };
+  try {
+    for (let attempt = 0; ; attempt++) {
+      const g = await fetch(url + '?ref=' + GH.branch, { cache: 'no-store', headers: H });
+      if (!g.ok) throw new Error(g.status === 401 || g.status === 403 ? 'The key was not accepted.' : 'GitHub error ' + g.status);
+      const meta = await g.json();
+      const f = meta.content ? JSON.parse(unb64(meta.content)) : await (await fetch(url + '?ref=' + GH.branch, { cache: 'no-store', headers: { ...H, Accept: 'application/vnd.github.raw+json' } })).json();
+      f.settings = f.settings || {}; f.settings.limits = Object.assign({}, f.settings.limits, lim);
+      const put = await fetch(url, { method: 'PUT', headers: H, body: JSON.stringify({ message: 'settings: result limits (results page)', branch: GH.branch, sha: meta.sha, content: b64(JSON.stringify(f, null, 1)) }) });
+      if (put.ok) { SD.qr.settings = f.settings; break; }
+      if ((put.status !== 409 && put.status !== 422) || attempt >= 4) throw new Error('GitHub error ' + put.status);
+    }
+    ROWS = Object.keys(SD).flatMap(src => Object.entries(SD[src].samples).map(([c, s]) => compute(c, s, src)));
+    markOutliers(ROWS); V.limOpen = true; render();
+    document.getElementById('limmsg').textContent = '✓ Saved. Phones use the new limits on their next sync.';
+  } catch (e) { msg.textContent = '⚠ ' + (e.message === 'Failed to fetch' ? 'No internet connection.' : e.message); }
+}
+
 function mistakesHTML(list) {
   const [a, b] = rangeBounds(), codes = new Set(list.map(r => r.id)), per = {}, kinds = {};
   ROWS.filter(r => codes.has(r.id)).forEach(r => {
@@ -579,10 +633,10 @@ function attentionHTML(list) {
 // One dot per sample on a 0–max line, with the limit marked: shows spread and outliers at a glance
 function stripsHTML(list) {
   const defs = [
-    { k: 'MC', label: 'Moisture', unit: 'as received', val: r => r.mc, lim: LIMITS.MC, low: LOWER.MC },
-    { k: 'VM', label: 'VM', unit: 'dry basis', val: r => r.vmDb, lim: LIMITS.VM },
-    { k: 'ASH', label: 'Ash', unit: 'dry basis', val: r => r.ashDb, lim: LIMITS.ASH },
-    { k: 'FC', label: 'Fixed carbon', unit: 'dry basis', val: r => r.fcDb },
+    { k: 'MC', label: 'Moisture', unit: 'as received', val: r => r.mc, lim: LIM().MC[1], low: LIM().MC[0] },
+    { k: 'VM', label: 'VM', unit: 'dry basis', val: r => r.vmDb, lim: LIM().VM[1], low: LIM().VM[0] },
+    { k: 'ASH', label: 'Ash', unit: 'dry basis', val: r => r.ashDb, lim: LIM().ASH[1], low: LIM().ASH[0] },
+    { k: 'FC', label: 'Fixed carbon', unit: 'dry basis', val: r => r.fcDb, lim: LIM().FC[1], low: LIM().FC[0] },
   ];
   const any = defs.some(d => list.some(r => isNum(d.val(r))));
   if (!any) return '';
@@ -710,6 +764,8 @@ function wire() {
   const q = document.getElementById('q');
   q.oninput = () => { V.q = q.value; const pos = q.selectionStart; render(); const n = document.getElementById('q'); n.focus(); n.setSelectionRange(pos, pos); };
   document.getElementById('csv').onclick = () => csv(sorted(filtered()));
+  const sl = document.getElementById('savelim'); if (sl) sl.onclick = saveLimits;
+  const lc = root.querySelector('.limcard'); if (lc) lc.ontoggle = () => { V.limOpen = lc.open; };
   document.getElementById('refresh').onclick = load;
 }
 
