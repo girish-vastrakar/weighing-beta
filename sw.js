@@ -1,6 +1,6 @@
 // Service worker for the weighing app.
 // Change VERSION whenever you upload a new index.html so phones pick it up.
-const VERSION = 'lab-v17';
+const VERSION = 'lab-v18';
 const SHELL = ['./', './index.html', './bench.js', './lib/jsQR.js', './manifest.json',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png'];
 
@@ -39,5 +39,15 @@ self.addEventListener('fetch', e => {
       return res;
     }).catch(() => hit);
     return hit || net;
+  }));
+});
+
+// Tapping the time-up notification brings the weighing app back to the screen (or opens it)
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    const app = list.find(c => !/timer|results|labels|dashboard/.test(c.url));
+    if (app) { app.postMessage({ alarm: e.notification.data && e.notification.data.rid }); return app.focus(); }
+    return self.clients.openWindow('./');
   }));
 });
