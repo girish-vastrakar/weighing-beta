@@ -929,7 +929,7 @@ function renderReviewB() {
 
 /* ---------- time-up alarm: a load of this balance is ready to take out ----------
    Loud repeating beeps, strong vibration and a flashing full screen with the oven / furnace and its number,
-   on every phone of the balance that loaded it. One big tap stops it and opens that load (door open).
+   only on the phone(s) of the balance that loaded it. One big tap stops it and opens that load (door open).
    Door still not opened 3 minutes later: it rings again. App in the background or the screen off:
    a phone notification with its own sound and vibration. While a load is heating the screen is kept on. */
 const ALARM_AGAIN = 3 * 60000, ALARM_STALE = 12 * 3600000;
@@ -940,7 +940,8 @@ function ackRun(rid) {
   Object.keys(a).forEach(k => { if (a[k] < now - 86400000) delete a[k]; });
   store.set('alarm-ack', JSON.stringify(a));
 }
-const myRun = r => !r.bal || !balNo() || r.bal === balNo();
+// only the balance that loaded it (W1 loaded Oven 1 → only W1's phone); the timer app rings for every load
+const myRun = r => !!r.bal && r.bal === balNo();
 // loads of this balance whose time is up, door not opened, not stopped in the last 3 minutes
 const dueRuns = () => !S.data ? [] : runs().filter(r => myRun(r) && runPhase(r) === 'up' && Date.now() - runEnd(r) < ALARM_STALE
   && !(Date.now() - (ackAll()[r.rid] || 0) < ALARM_AGAIN)).sort((a, b) => runEnd(a) - runEnd(b));
