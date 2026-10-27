@@ -866,7 +866,7 @@ function toData(f) {
     recompute(s);
     return s;
   });
-  return { samples, tests: TESTS, order: ORDER, runs: Object.values(f.runs || {}).sort((a, b) => a.start - b.start), settings: f.settings || {} };
+  return { samples, tests: TESTS, order: ORDER, runs: Object.values(f.runs || {}).sort((a, b) => a.start - b.start), settings: f.settings || {}, jobs: f.jobs || {} };
 }
 // What the worker sees = last copy from GitHub + this phone's unsent changes
 function rebuild() {

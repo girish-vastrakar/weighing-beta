@@ -301,8 +301,18 @@ function boardsWaiting(tests) {
   }));
   return Object.values(m).sort((a, b2) => a.tray.localeCompare(b2.tray));
 }
+// Job cards: data.json jobs["ASH 2C"] = { test, bal, letter, codes } → T687 on spot 1, T688 on spot 2…
+function jobSpot(code, k, b) {
+  const jobs = (S.data && S.data.jobs) || {};
+  for (const tray in jobs) {
+    const j = jobs[tray], i = (j.codes || []).indexOf(code);
+    if (j.test === k && +j.bal === b && i >= 0 && i < CAP[k]) return { tray, pos: i + 1, id: `${tray}-${i + 1}` };
+  }
+  return null;
+}
 // Ash / VM: the next free spot on this balance's boards. Keep filling the board that is being filled
 // (none of its crucibles in a furnace), else take an empty board. Spots go down each column like the job card.
+// A sample on a job card goes to its spot on that card first.
 function pickSpot(k) {
   const b = balNo(); if (!b) return null;
   const use = {};
@@ -313,6 +323,9 @@ function pickSpot(k) {
     o.used[i.pos] = true;
     if (s.tests[k].done === 2 && runOf(s.code, k)) o.busy = true;
   });
+  // A job card printed for this sample (Boards and labels → Job cards): its spot, if that spot is free
+  const job = jobSpot(S.code, k, b);
+  if (job && !(use[job.tray] && use[job.tray].used[job.pos])) return job.id;
   const freePos = t => { for (let p = 1; p <= CAP[k]; p++) if (!use[t] || !use[t].used[p]) return p; return 0; };
   const boards = BOARDS.map(L => `${k} ${b}${L}`);
   const t = boards.find(x => use[x] && !use[x].busy && freePos(x)) || boards.find(x => !use[x]);
