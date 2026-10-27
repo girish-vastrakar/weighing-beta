@@ -58,10 +58,6 @@
   .jobbox select, .jobbox input[type=text] { font: inherit; padding: 10px; border: 1px solid var(--line); border-radius: 10px; width: 100%; box-sizing: border-box; margin-top: 4px; }
   .jobbox .ticks label { font-weight: 400; margin-right: 14px; }
   #jobmsg { font-weight: 700; }
-  .joblist { list-style: none; padding: 0; margin: 8px 0 0; }
-  .joblist li { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-top: 1px solid var(--line); }
-  .joblist li span { flex: 1; }
-  .joblist button { padding: 6px 10px; font-size: .9rem; }
   .bd.job .cell { justify-content: flex-start; gap: 4mm; min-height: 34mm; border: .4mm solid #ccc; border-radius: 3mm; padding: 2mm; }
   .bd.job .ring { flex: 0 0 auto; width: 26mm; height: 26mm; font-size: 13mm; }
   .bd.job .jc { display: flex; flex-direction: column; gap: 2mm; min-width: 0; }
@@ -95,18 +91,14 @@
     <p class="sub">Stick an oven or furnace label next to each door. Sample labels hold just the sample code, which is what the app reads.</p>
     <div class="jobbox">
       <h2 style="margin-top:0">Job cards</h2>
-      <p class="sub">Give each worker an Ash card and a VM card for their job. Each spot shows the sample code; the worker puts that crucible there and ticks it with a pen. Saving the job tells the app the same spots, so the phone shows exactly what the card shows.</p>
+      <p class="sub">Type the machine and the codes from your job sheet. Each spot on the card shows a sample code; the worker puts that crucible there and ticks it with a pen. The phones are told the same spots, so the phone and the card always match.</p>
       <div class="opts">
         <div><label for="jbal">Weighing machine</label><select id="jbal"><option value="1">W1</option><option value="2">W2</option><option value="3">W3</option><option value="4">W4</option></select></div>
         <div><label for="jcodes">Sample codes</label><input type="text" id="jcodes" placeholder="T687-T696"></div>
       </div>
       <div class="ticks"><label><input type="checkbox" id="jash" checked> Ash card</label><label><input type="checkbox" id="jvm" checked> VM card</label></div>
-      <div class="row" style="margin-bottom:6px">
-        <button class="primary" id="jsave">Save job and make cards (supervisor PIN)</button>
-        <button id="jprint">Print job cards</button>
-      </div>
+      <div class="row" style="margin-bottom:6px"><button class="primary" id="jprint">Print job cards</button></div>
       <div class="sub" id="jobmsg"></div>
-      <ul class="joblist" id="joblist"></ul>
     </div>
     <div class="alllabels">
     <label for="codes"><b>Sample codes</b></label>
@@ -192,12 +184,8 @@ const store = { get: k => { try { return localStorage.getItem('lab:' + k) || '';
                 set: (k, v) => { try { localStorage.setItem('lab:' + k, v); } catch (e) {} } };
 const b64 = str => btoa(unescape(encodeURIComponent(str)));
 const unb64 = str => decodeURIComponent(escape(atob(str.replace(/\n/g, ''))));
-async function pinHash(pin) {
-  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('lab-pin:' + pin));
-  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
-}
 const LETTERS = 'CDEFGHIJKLMNOPQRSTUVWXYZ'.split('');   // A and B are the permanent boards
-let JOBS = {}, SHOWN = [];
+let JOBS = {};
 const jmsg = t => { document.getElementById('jobmsg').textContent = t; };
 const fileUrl = () => `https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${GH.path}`;
 const hdr = () => Object.assign({ Accept: 'application/vnd.github+json' }, store.get('ghkey') ? { Authorization: 'Bearer ' + store.get('ghkey') } : {});
@@ -228,28 +216,6 @@ function addJob(f, k, bal, codes, by) {
   }
   return made;
 }
-async function saveJob() {
-  const bal = +document.getElementById('jbal').value, codes = parseCodes(document.getElementById('jcodes').value);
-  const tests = [['ASH', 'jash'], ['VM', 'jvm']].filter(x => document.getElementById(x[1]).checked).map(x => x[0]);
-  if (!codes.length) { jmsg('Type the sample codes first, for example T687-T696.'); return; }
-  if (!tests.length) { jmsg('Tick Ash card, VM card or both.'); return; }
-  try {
-    jmsg('Checking…');
-    const pin = ((await readFile()).f.settings || {}).pin;
-    if (!pin) { jmsg('Set the supervisor PIN in the weighing app first (Setup → Supervisor on).'); return; }
-    const p = prompt('Supervisor PIN'); if (p == null) { jmsg(''); return; }
-    if (await pinHash(p.trim()) !== pin) { jmsg('⚠ Wrong PIN.'); return; }
-    if (!store.get('ghkey')) { const k = (prompt('Saving needs the lab GitHub key (the same one the phones use). It is saved on this device.') || '').trim(); if (!k) { jmsg(''); return; } store.set('ghkey', k); }
-    jmsg('Saving…');
-    for (let attempt = 0; ; attempt++) {
-      const { f, sha } = await readFile();
-      const made = tests.flatMap(k => addJob(f, k, bal, codes, 'labels page'));
-      const put = await fetch(fileUrl(), { method: 'PUT', headers: hdr(), body: JSON.stringify({ message: `job cards: W${bal} ${codes[0]}${codes.length > 1 ? '–' + codes[codes.length - 1] : ''} (${made.join(', ')})`, branch: GH.branch, sha, content: b64(JSON.stringify(f, null, 1)) }) });
-      if (put.ok) { JOBS = f.jobs; showCards(made); jmsg(`✓ Saved ${made.join(', ')}. Phones use these spots on their next sync. Press Print job cards.`); break; }
-      if ((put.status !== 409 && put.status !== 422) || attempt >= 4) throw new Error('GitHub error ' + put.status);
-    }
-  } catch (e) { jmsg('⚠ ' + (e.message === 'Failed to fetch' ? 'No internet connection.' : e.message)); }
-}
 const fmtDay = ms => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
 const rangeOf = codes => { const c = codes.filter(Boolean); return c.length > 1 ? `${c[0]} – ${c[c.length - 1]}` : (c[0] || ''); };
 // Same board as the permanent one, with the sample code and pen boxes on every spot
@@ -261,23 +227,37 @@ function jobCard(tray) {
     <div class="bt">${esc(TNAME[k])}<small>W${esc(j.bal)} · card ${esc(j.letter)} · ${esc(rangeOf(j.codes))}<br>${fmtDay(j.at)} · ${j.codes.filter(Boolean).length} samples</small></div></div>
     <div class="cells" style="grid-template-columns:repeat(${COLS[k]},1fr);grid-template-rows:repeat(${rows},auto)">${cells}</div></div>`;
 }
-function showCards(trays) {
-  SHOWN = trays.filter(t => JOBS[t]);
-  document.getElementById('jobcards').innerHTML = SHOWN.map(jobCard).join('');
-  listJobs();
-}
-function listJobs() {
-  const ts = Object.keys(JOBS).sort((a, b) => JOBS[b].at - JOBS[a].at);
-  document.getElementById('joblist').innerHTML = ts.length ? ts.map(t => `<li><span><b>W${esc(JOBS[t].bal)} · ${esc(TNAME[JOBS[t].test])} card ${esc(JOBS[t].letter)}</b> · ${esc(rangeOf(JOBS[t].codes))} · ${fmtDay(JOBS[t].at)}</span><button data-show="${esc(t)}">${SHOWN.includes(t) ? 'Shown' : 'Show'}</button></li>`).join('') : '';
-}
-document.getElementById('joblist').addEventListener('click', e => { const t = e.target.dataset.show; if (t) showCards(SHOWN.includes(t) ? SHOWN.filter(x => x !== t) : SHOWN.concat(t)); });
-document.getElementById('jsave').addEventListener('click', saveJob);
-document.getElementById('jprint').addEventListener('click', () => {
-  if (!SHOWN.length) { jmsg('Save a job or press Show on a saved job first.'); return; }
+// Print = put the codes on cards (data.json jobs, so the phones use the same spots) and print them.
+// No key on this computer or no internet: the cards still print, the phones just pick their own spots.
+async function printJob() {
+  const bal = +document.getElementById('jbal').value, codes = parseCodes(document.getElementById('jcodes').value);
+  const tests = [['ASH', 'jash'], ['VM', 'jvm']].filter(x => document.getElementById(x[1]).checked).map(x => x[0]);
+  if (!codes.length) { jmsg('Type the sample codes first, for example T687-T696.'); return; }
+  if (!tests.length) { jmsg('Tick Ash card, VM card or both.'); return; }
+  const btn = document.getElementById('jprint'); btn.disabled = true; jmsg('Making the cards…');
+  let made = [], note = '';
+  try {
+    for (let attempt = 0; ; attempt++) {
+      const { f, sha } = await readFile();
+      made = tests.flatMap(k => addJob(f, k, bal, codes, 'labels page')); JOBS = f.jobs;
+      if (!store.get('ghkey')) { note = 'Not sent to the phones: this computer has no lab key (open the weighing app setup link here once).'; break; }
+      const put = await fetch(fileUrl(), { method: 'PUT', headers: hdr(), body: JSON.stringify({ message: `job cards: W${bal} ${codes[0]}${codes.length > 1 ? '–' + codes[codes.length - 1] : ''} (${made.join(', ')})`, branch: GH.branch, sha, content: b64(JSON.stringify(f, null, 1)) }) });
+      if (put.ok) break;
+      if ((put.status !== 409 && put.status !== 422) || attempt >= 4) { note = 'Not sent to the phones (GitHub error ' + put.status + ').'; break; }
+    }
+  } catch (e) {
+    if (!made.length) {   // could not even read the jobs: number the cards C, D… on this computer only
+      JOBS = {}; const f = { jobs: JOBS }; made = tests.flatMap(k => addJob(f, k, bal, codes, 'labels page'));
+    }
+    note = 'Not sent to the phones (' + (e.message === 'Failed to fetch' ? 'no internet' : e.message) + ').';
+  }
+  btn.disabled = false;
+  document.getElementById('jobcards').innerHTML = made.map(jobCard).join('');
+  jmsg(note ? '⚠ ' + note + ' The phones may show other spots than the card.' : `✓ ${made.join(', ')}: phones use these spots on their next sync.`);
   document.body.classList.add('onlyjobs'); window.print();
-});
+}
+document.getElementById('jprint').addEventListener('click', printJob);
 window.addEventListener('afterprint', () => document.body.classList.remove('onlyjobs', 'nojobs'));
-readFile().then(({ f }) => { JOBS = f.jobs || {}; listJobs(); }).catch(() => {});
 
 document.getElementById('places').innerHTML = PLACES.map(p => label(p)).join('');
 document.getElementById('codes').value = '';
