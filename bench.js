@@ -34,7 +34,7 @@ const BL = {
   en: {
     scan: 'Scan', bal: 'Balance', who: 'Who are you?', whoType: 'No list yet. Type your name.',
     pickBal: 'Which balance is this phone at?', free: 'Free', left: 'min',
-    doorClosed: 'Door closed', doorOpen: 'Door open', warm: 'Heating up: scan it when it shows',  startWalk: 'Weigh W3',
+    doorClosed: 'Door closed', doorOpen: 'Door open', timeUp: 'Time up: take it out', warm: 'Heating up: scan it when it shows',  startWalk: 'Weigh W3',
     allIn: 'All', w: n => 'W' + n, next: 'Next', undo: 'Undo', again: 'Weigh again',
     override: 'Supervisor: save anyway', ok: 'OK', close: 'Close',
     dish: 'Dish', spot: 'Spot', board: 'Board', oven: 'Oven', furnace: 'Furnace',
@@ -62,7 +62,7 @@ const BL = {
   gu: {
     scan: 'સ્કેન', bal: 'કાંટો', who: 'તમે કોણ છો?', whoType: 'હજી યાદી નથી. તમારું નામ લખો.',
     pickBal: 'આ ફોન કયા કાંટા પર છે?', free: 'ખાલી', left: 'મિનિટ',
-    doorClosed: 'દરવાજો બંધ', doorOpen: 'દરવાજો ખોલો', warm: 'ગરમ થાય છે: આ તાપમાન દેખાય ત્યારે સ્કેન કરો',  startWalk: 'W3 વજન',
+    doorClosed: 'દરવાજો બંધ', doorOpen: 'દરવાજો ખોલો', timeUp: 'સમય પૂરો: બહાર કાઢો', warm: 'ગરમ થાય છે: આ તાપમાન દેખાય ત્યારે સ્કેન કરો',  startWalk: 'W3 વજન',
     allIn: 'બધી', w: n => 'W' + n, next: 'આગળ', undo: 'પાછું', again: 'ફરી વજન',
     override: 'સુપરવાઇઝર: તો પણ સેવ કરો', ok: 'બરાબર', close: 'બંધ',
     dish: 'ડિશ', spot: 'ખાનું', board: 'બોર્ડ', oven: 'ઓવન', furnace: 'ફર્નેસ',
@@ -875,8 +875,8 @@ function batchAct(el) {
       if (r && runPhase(r) === 'up') { S.door = { act: 'out', place: r.place, rid: r.rid }; atPlace(r.place) ? doorScan(r.place) : openScanner('door'); }
       return true;
     case 'walk': if (r) startWalk(r); return true;
-    case 'r-go': if (r && runPhase(r) === 'warm') { S.door = { act: 'go', place: r.place, rid: r.rid }; openScanner('door'); } return true;   // always a fresh scan: they read the display there
-    case 'r-start': if (S.load && loadItems().length) { S.door = { act: 'start', place: S.load.place }; atPlace(S.load.place) ? doorScan(S.load.place) : openScanner('door'); } return true;
+    case 'r-go': askNotify(); if (r && runPhase(r) === 'warm') { S.door = { act: 'go', place: r.place, rid: r.rid }; openScanner('door'); } return true;   // always a fresh scan: they read the display there
+    case 'r-start': askNotify(); if (S.load && loadItems().length) { S.door = { act: 'start', place: S.load.place }; atPlace(S.load.place) ? doorScan(S.load.place) : openScanner('door'); } return true;
     case 'l-scan': openScanner('load'); return true;
     case 'l-all': S.load.items = waitingFor('MC').map(x => x.h).slice(0, CAP.MC); good(); render(); return true;
     case 'l-drop': S.load.items = S.load.items.filter(x => x !== el.dataset.h); render(); return true;
@@ -926,3 +926,102 @@ function renderReviewB() {
     ${superOn() ? `<button class="secondary wide" data-act="fix" data-test="${k}">${ICON.edit} ${esc(B().small.supervisor)}</button>` : `<p class="sub center-t" style="margin-top:16px">${ICON.lock} ${esc(B().bad.locked)}</p>`}
   </div>`;
 }
+
+/* ---------- time-up alarm: a load of this balance is ready to take out ----------
+   Loud repeating beeps, strong vibration and a flashing full screen with the oven / furnace and its number,
+   on every phone of the balance that loaded it. One big tap stops it and opens that load (door open).
+   Door still not opened 3 minutes later: it rings again. App in the background or the screen off:
+   a phone notification with its own sound and vibration. While a load is heating the screen is kept on. */
+const ALARM_AGAIN = 3 * 60000, ALARM_STALE = 12 * 3600000;
+let ACK = null, alarmRid = null, alarmSnd = null, alarmWake = null;
+const ackAll = () => { if (!ACK) { try { ACK = JSON.parse(store.get('alarm-ack')) || {}; } catch (e) { ACK = {}; } } return ACK; };
+function ackRun(rid) {
+  const a = ackAll(), now = Date.now(); a[rid] = now;
+  Object.keys(a).forEach(k => { if (a[k] < now - 86400000) delete a[k]; });
+  store.set('alarm-ack', JSON.stringify(a));
+}
+const myRun = r => !r.bal || !balNo() || r.bal === balNo();
+// loads of this balance whose time is up, door not opened, not stopped in the last 3 minutes
+const dueRuns = () => !S.data ? [] : runs().filter(r => myRun(r) && runPhase(r) === 'up' && Date.now() - runEnd(r) < ALARM_STALE
+  && !(Date.now() - (ackAll()[r.rid] || 0) < ALARM_AGAIN)).sort((a, b) => runEnd(a) - runEnd(b));
+const heatingMine = () => !!S.data && runs().some(r => myRun(r) && ['heat', 'warm'].includes(runPhase(r)));
+
+function alarmPlay() {
+  try {
+    AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === 'suspended') AC.resume();
+    const t = AC.currentTime;
+    [0, .3, .6, 1.2, 1.5, 1.8].forEach((o, i) => {
+      const os = AC.createOscillator(), g = AC.createGain();
+      os.type = 'square'; os.frequency.value = i % 2 ? 1318 : 988; os.connect(g); g.connect(AC.destination);
+      g.gain.setValueAtTime(0.0001, t + o); g.gain.exponentialRampToValueAtTime(0.5, t + o + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + o + 0.25);
+      os.start(t + o); os.stop(t + o + 0.27);
+    });
+  } catch (e) { /* no sound on this phone */ }
+  if (navigator.vibrate) navigator.vibrate([600, 200, 600, 200, 900]);
+}
+function alarmShow(r) {
+  if (alarmRid === r.rid && document.getElementById('alarm')) return;
+  alarmRid = r.rid;
+  let el = document.getElementById('alarm');
+  if (!el) { el = document.createElement('div'); el.id = 'alarm'; document.body.appendChild(el); }
+  el.setAttribute('role', 'alertdialog'); el.setAttribute('aria-label', B().timeUp);
+  el.innerHTML = `<button class="alarmbox" data-rid="${esc(r.rid)}" style="${cvar(r.test)}">
+    <span class="al-bell">⏰</span>
+    <span class="al-place">${placeIcon(r.place)}<b>${placeNo(r.place)}</b><span class="al-test">${ICON[r.test]}</span></span>
+    <span class="al-door">${ICON.doorOpen}</span>
+    <small>${esc(placeName(r.place))} · ${esc(B().timeUp)}</small></button>`;
+  el.querySelector('button').onclick = () => alarmStop(r.rid);
+  clearInterval(alarmSnd); alarmPlay(); alarmSnd = setInterval(alarmPlay, 2600);
+}
+function alarmHide() {
+  clearInterval(alarmSnd); alarmSnd = null; alarmRid = null;
+  if (navigator.vibrate) navigator.vibrate(0);
+  const el = document.getElementById('alarm'); if (el) el.remove();
+}
+// the tap: alarm off, and that load opens with its blinking door-open button
+function alarmStop(rid) {
+  ackRun(rid); alarmHide(); closeNote(rid);
+  if (SCAN) closeScanner();
+  S.modal = null; S.rid = rid; S.view = 'run'; render();
+  setTimeout(alarmCheck, 300);   // another load whose time is also up rings next
+}
+function askNotify() {
+  try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); } catch (e) {}
+}
+function note(r) {
+  if (!('Notification' in window) || Notification.permission !== 'granted' || !navigator.serviceWorker) return;
+  navigator.serviceWorker.ready.then(reg => reg.showNotification(`⏰ ${placeName(r.place)} · ${r.test === 'ASH' ? 'Ash' : r.test}`, {
+    body: B().timeUp, tag: 'alarm-' + r.rid, renotify: true, requireInteraction: true,
+    vibrate: [600, 200, 600, 200, 900, 200, 600], icon: 'icon-192.png', badge: 'icon-192.png', data: { rid: r.rid }
+  })).catch(() => {});
+}
+function closeNote(rid) {
+  if (!navigator.serviceWorker) return;
+  navigator.serviceWorker.ready.then(reg => reg.getNotifications({ tag: 'alarm-' + rid })).then(ns => ns.forEach(n => n.close())).catch(() => {});
+}
+const NOTED = {};
+function alarmCheck() {
+  if (typeof S === 'undefined' || !S.data || !S.worker) return;
+  const due = dueRuns();
+  if (document.visibilityState === 'visible') {
+    if (due.length) alarmShow(due.find(r => r.rid === alarmRid) || due[0]);
+    else if (alarmRid) alarmHide();
+    if (heatingMine() || due.length) keepOn(); else letOff();
+  } else {
+    // hidden or locked: a notification once per ring (again after 3 minutes if the door stays shut)
+    due.forEach(r => { const k = r.rid + ':' + (ackAll()[r.rid] || 0); if (!NOTED[k]) { NOTED[k] = 1; note(r); } });
+  }
+}
+async function keepOn() {
+  if (!('wakeLock' in navigator) || alarmWake) return;
+  try { alarmWake = await navigator.wakeLock.request('screen'); alarmWake.addEventListener('release', () => { alarmWake = null; }); } catch (e) {}
+}
+function letOff() { if (alarmWake) { alarmWake.release().catch(() => {}); alarmWake = null; } }
+// the sound needs one tap on the page first: any tap wakes it up
+document.addEventListener('pointerdown', () => { try { if (AC && AC.state === 'suspended') AC.resume(); } catch (e) {} }, true);
+document.addEventListener('visibilitychange', () => setTimeout(alarmCheck, 200));
+// a tap on the notification brings the app back: open the load straight away
+if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', e => {
+  if (e.data && e.data.alarm) setTimeout(alarmCheck, 300);
+});
+setInterval(alarmCheck, 5000);

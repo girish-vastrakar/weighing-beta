@@ -344,6 +344,19 @@
   .doorbtn.okbtn { background: #2e7d32; border-color: #2e7d32; color: #fff; font-size: 5rem; padding: 22px; }
   .scanwhat .scannum { font-size: 3.4rem; line-height: 1; }
   @keyframes blink2 { 50% { background: #7a1a14; } }
+  /* time-up alarm: whole screen flashes red / yellow, one big button */
+  #alarm { position: fixed; inset: 0; z-index: 100; background: var(--err); animation: alarmbg .6s steps(2, start) infinite; display: flex; padding: 14px; }
+  @keyframes alarmbg { 50% { background: #f5b800; } }
+  #alarm .alarmbox { flex: 1; border: 6px solid #fff; border-radius: 26px; background: rgba(0,0,0,.18); color: #fff; font: inherit;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; }
+  #alarm .al-bell { font-size: 5rem; line-height: 1; animation: ring .3s ease-in-out infinite alternate; }
+  @keyframes ring { from { transform: rotate(-18deg); } to { transform: rotate(18deg); } }
+  #alarm .al-place { display: flex; align-items: center; gap: 12px; font-size: 6rem; line-height: 1; }
+  #alarm .al-place svg, #alarm .al-door svg { width: 1em; height: 1em; }
+  #alarm .al-place b { font-size: 7rem; }
+  #alarm .al-test { font-size: 3.5rem; background: #fff; color: var(--c); border-radius: 50%; padding: 10px; display: flex; }
+  #alarm .al-door { font-size: 7rem; background: #fff; color: var(--err); border-radius: 24px; padding: 14px 30px; display: flex; }
+  #alarm small { font-size: 1.1rem; font-weight: 700; }
   .bigtime { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 3rem; } .bigtime b { font-size: 4rem; } .bigtime small { font-size: 1rem; color: var(--muted); }
   .bigtime.ok { color: var(--ok); font-size: 5rem; }
   .scanwhat { display: flex; justify-content: center; gap: 14px; font-size: 3rem; margin-bottom: 8px; }
