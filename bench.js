@@ -255,6 +255,10 @@ const runBy = rid => runs().find(r => r.rid === rid);
 // a load counts its minutes from when the oven / furnace was hot again (go); loads from before that change, from door closed
 const runEnd = r => r.reheat ? (r.go ? r.go + r.mins * 60000 : Infinity) : r.start + r.mins * 60000;
 const tempFor = k => { const t = (settings().temp || {})[k]; return +t > 0 ? +t : 0; };
+// running countdown "39:12" (or "1:05:12"): a <b class="cd" data-end> that the 1 s ticker below keeps current
+const cdText = end => { const t = Math.max(0, Math.ceil((end - Date.now()) / 1000)), h = Math.floor(t / 3600), m = Math.floor(t / 60) % 60, sec = String(t % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`; };
+const cdHTML = r => `<b class="cd" data-end="${runEnd(r)}">${cdText(runEnd(r))}</b>`;
 const minsLeft = r => isFinite(runEnd(r)) ? Math.max(0, Math.ceil((runEnd(r) - Date.now()) / 60000)) : r.mins;
 const holdOf = (s, k) => (s && s.hold && s.hold[k]) || null;
 // 'wait' (W3 to do), 'w3' (W3 saved) or 'gone' (reset, or put on another dish / spot since it went in)
@@ -430,7 +434,7 @@ function placeTile(p) {
   if (r) {
     const ph = runPhase(r);
     if (ph === 'warm') { cls = 'heat'; big = tempFor(r.test) ? tempFor(r.test) + '°' : ''; small = '🌡'; ic = ICON.thermo; }
-    else if (ph === 'heat') { cls = 'heat'; big = String(minsLeft(r)); small = t.left; ic = ICON.hour; }
+    else if (ph === 'heat') { cls = 'heat'; big = ''; small = ''; ic = ICON.hour + cdHTML(r); }
     else { cls = 'up'; ic = ICON.doorOpen; small = t.doorOpen; }
   } else if (out) { cls = 'out'; big = String(waitCount(out)); ic = ICON.balance; small = 'W3'; }
   const k = (r || out) ? (r || out).test : null;
@@ -550,7 +554,7 @@ function renderRun() {
   let act = '';
   if (ph === 'warm') act = `<div class="bigtime">${ICON.thermo}<b>${tempFor(k) ? tempFor(k) + '°' : '…'}</b><small>°C</small></div>
       <button class="primary doorbtn" data-act="r-go">${ICON.scan}<small>${esc(t.warm)} ${tempFor(k) ? tempFor(k) + ' °C' : ''}</small></button>`;
-  else if (ph === 'heat') act = `<div class="bigtime">${ICON.hour}<b>${minsLeft(r)}</b><small>${esc(t.left)}</small></div>
+  else if (ph === 'heat') act = `<div class="bigtime">${ICON.hour}${cdHTML(r)}</div>
       <button class="primary doorbtn" disabled>${ICON.lock}<small>${esc(t.doorOpen)}</small></button>`;
   else if (ph === 'up') act = `<button class="primary doorbtn blink" data-act="r-out">${ICON.doorOpen}<small>${esc(t.doorOpen)}</small></button>`;
   else if (ph === 'out') act = r.tray
@@ -1026,3 +1030,15 @@ if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message',
   if (e.data && e.data.alarm) setTimeout(alarmCheck, 300);
 });
 setInterval(alarmCheck, 5000);
+
+// the countdowns tick every second without redrawing the screen; at 0:00 the screen and the alarm catch up
+setInterval(() => {
+  if (document.visibilityState !== 'visible') return;
+  let ended = false;
+  document.querySelectorAll('b.cd[data-end]').forEach(el => { const end = +el.dataset.end; el.textContent = cdText(end); if (end <= Date.now()) ended = true; });
+  if (ended) {
+    alarmCheck();
+    const typing = document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
+    if (!S.modal && !S.busy && !SCAN && !typing) render();
+  }
+}, 1000);
