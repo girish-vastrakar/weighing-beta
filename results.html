@@ -118,6 +118,8 @@
   .apprrow input { flex: 1 1 160px; border: 1px solid var(--line); background: var(--bg); border-radius: 10px; padding: 7px 10px; }
   .btn.primary { background: var(--ok); color: #fff; border-color: var(--ok); font-weight: 700; }
   .btn:disabled { opacity: .5; }
+  .btn.danger { color: var(--bad); border-color: var(--bad); font-weight: 700; }
+  .resetbox summary { cursor: pointer; }
   @media (max-width: 640px) { input[type=search] { min-width: 0; width: 100%; } }
   .trh { font-size: .95rem; margin: 6px 0 6px; } .trh .sub { font-weight: 400; color: var(--muted); font-size: .82rem; }
   ol.trail { list-style: none; margin: 0 0 12px; padding: 0; font-size: .86rem; border-left: 2px solid var(--line); }
@@ -526,7 +528,7 @@ function evLine(e) {
     case 'restore': return `${t}${st} put back ${g4(e.v)} g`;
     case 'override': return `${t}${st} = ${g4(e.v)} g saved after red screen${e.x ? ': ' + esc(warnText(e.x)) : ''}`;
     case 'reset': { const o = e.o || [], p = e.k === 'ASH' ? residuePct(o) : lossPct(o);
-      return `${t} retest: cleared W1 ${g4(o[0])} · W2 ${g4(o[1])} · W3 ${g4(o[2])} g${p == null ? '' : ` = <b>${p.toFixed(2)} %</b> ${e.k === 'ASH' ? 'residue' : 'loss'}`}`; }
+      return `${t} retest: cleared W1 ${g4(o[0])} · W2 ${g4(o[1])} · W3 ${g4(o[2])} g${p == null ? '' : ` = <b>${p.toFixed(2)} %</b> ${e.k === 'ASH' ? 'residue' : 'loss'}`}${e.via ? ' (supervisor, results page)' : ''}${e.n ? ': ' + esc(e.n) : ''}`; }
     case 'warn': return `${t}${st} red screen: ${esc(warnText(e.x))}${isNum(e.v) ? ' (' + g4(e.v) + ' g)' : ''}`;
   }
   return esc(e.a);
@@ -725,10 +727,93 @@ function detail(id) {
     if (a) a.onclick = () => go(true);
     if (u) u.onclick = () => go(false);
   }
+  const resettable = r.src === 'qr' ? tests.filter(k => (r.w[k] || []).some(isNum)) : [];
+  if (resettable.length) {
+    dlg.querySelector('.dlg').insertAdjacentHTML('beforeend', `<details class="apprbox resetbox"><summary><b>↺ Reset a test for retest</b></summary>
+      <p class="sub" style="margin:4px 0 8px">Clears W1, W2 and W3 of that test only, so the sample goes back to the bench and the test is done again from step 1.
+        The old weights stay in the trail above and in corrections.json. Needs the supervisor PIN.</p>
+      <div class="apprrow"><input id="rsby" placeholder="Your name" value="${esc(store.get('supervisor'))}" aria-label="Your name">
+        <input id="rsnote" placeholder="Why (e.g. ash not burnt)" aria-label="Why"></div>
+      <div class="apprrow" style="margin-top:8px">${resettable.map(k => `<button class="btn danger" data-reset="${k}">↺ Reset ${TNAME[k]}</button>`).join('')}</div>
+      <p class="sub" id="rsmsg" style="margin:6px 0 0"></p></details>`);
+    dlg.querySelectorAll('[data-reset]').forEach(b => b.onclick = () => resetTest(r, b.dataset.reset));
+  }
   if (!dlg.open) dlg.showModal();
   document.getElementById('dclose').onclick = () => dlg.close();
 }
 dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+
+/* ---------- supervisor reset: the same change as the weighing app's ↺ Reset (resetTest), written straight to GitHub ----------
+   data.json: the test's W1–W3 cleared, a 'reset' line on the sample's trail (with who, why and via) ·
+   timestamps.json: that test's W1–W3 times removed · corrections.json: the old weights, so they can be put back from the app */
+async function ghEdit(path, change, message) {
+  const url = `https://api.github.com/repos/${GH.owner}/${SRC.qr.repo}/contents/${path}`, H = { Authorization: 'Bearer ' + KEY, Accept: 'application/vnd.github+json' };
+  for (let attempt = 0; ; attempt++) {
+    const g = await fetch(url + '?ref=' + GH.branch, { cache: 'no-store', headers: H });
+    if (g.status === 401 || g.status === 403) throw new Error('The key was not accepted.');
+    let f = null, sha = null;
+    if (g.ok) { const meta = await g.json(); sha = meta.sha;
+      f = meta.content ? JSON.parse(unb64(meta.content)) : await (await fetch(url + '?ref=' + GH.branch, { cache: 'no-store', headers: { ...H, Accept: 'application/vnd.github.raw+json' } })).json(); }
+    else if (g.status !== 404) throw new Error('GitHub error ' + g.status);
+    f = change(f);
+    if (!f) return null;
+    const put = await fetch(url, { method: 'PUT', headers: H, body: JSON.stringify({ message, branch: GH.branch, content: b64(JSON.stringify(f, null, 1)), ...(sha ? { sha } : {}) }) });
+    if (put.ok) return f;
+    if (put.status === 404 || put.status === 403) throw new Error('This key cannot save to ' + SRC.qr.repo + ' (needs Contents: Read and write).');
+    if ((put.status !== 409 && put.status !== 422) || attempt >= 4) throw new Error('GitHub error ' + put.status);
+  }
+}
+// "27-Oct-2026 15:40", as the weighing app writes samples[code].last
+const stamp = d => { const x = new Date(d || Date.now()), p = n => String(n).padStart(2, '0');
+  return `${p(x.getDate())}-${x.toLocaleString('en', { month: 'short' })}-${x.getFullYear()} ${p(x.getHours())}:${p(x.getMinutes())}`; };
+async function resetTest(r, k) {
+  const msg = document.getElementById('rsmsg'), who = document.getElementById('rsby').value.trim(), why = document.getElementById('rsnote').value.trim();
+  if (!who) { msg.textContent = 'Type your name first.'; document.getElementById('rsby').focus(); return; }
+  const set = SD.qr.settings && SD.qr.settings.pin;
+  if (!set) { msg.textContent = 'Set the supervisor PIN in the weighing app first (Setup → Supervisor on).'; return; }
+  if (!confirm(`Reset ${TNAME[k]} for ${r.code}?\n\nW1, W2 and W3 of ${TNAME[k]} are cleared and the worker does this test again from step 1.`)) return;
+  const p = prompt('Supervisor PIN'); if (p == null) return;
+  if (await pinHash(p.trim()) !== set) { msg.textContent = '⚠ Wrong PIN.'; return; }
+  if (!KEY) { KEY = (prompt('Saving needs the lab GitHub key (the same one the phones use). It is saved on this device.') || '').trim(); if (!KEY) return; store.set('ghkey', KEY); }
+  store.set('supervisor', who);
+  dlg.querySelectorAll('.resetbox button').forEach(b => b.disabled = true);
+  msg.textContent = 'Saving…';
+  const at = Date.now(), id = at + '-rs' + Math.random().toString(36).slice(2, 6), LABEL = { MC: 'Moisture', VM: 'Volatile Matter', ASH: 'Ash', TM: 'Total Moisture' };
+  let old = null, pct = null, saved = null;
+  try {
+    const f = await ghEdit('data.json', f => {
+      const s = f && f.samples && f.samples[r.code], w = s && s.w && s.w[k];
+      if (!w || !w.some(v => v != null)) return null;   // already empty (reset on a phone meanwhile)
+      old = w.slice(); pct = s.pct ? s.pct[k] : null;
+      s.ev = s.ev || [];
+      s.ev.push({ id, t: at, by: who, a: 'reset', k, o: old, h: (s.h || {})[k] || '', via: 'results', ...(why ? { n: why } : {}) });
+      if (s.ev.length > 120) s.ev.splice(0, s.ev.length - 120);
+      s.w[k] = [null, null, null]; if (s.pct) delete s.pct[k];
+      s.last = `${who} | ${LABEL[k]} reset (results page) | ${stamp(at)}`;
+      return f;
+    }, `${r.code} ${LABEL[k]} reset by ${who} (results page)${why ? ': ' + why : ''}`);
+    if (!f) { msg.textContent = 'Nothing to reset: this test is already empty.'; await load(); detail(r.id); return; }
+    SD.qr.samples = f.samples; SD.qr.runs = Object.values(f.runs || {});
+    await ghEdit('timestamps.json', t => {
+      const c = t && t[r.code]; if (!c || !c[TSKEY[k]]) return null;
+      saved = c[TSKEY[k]]; delete c[TSKEY[k]]; if (!Object.keys(c).length) delete t[r.code];
+      return t;
+    }, `${r.code} ${LABEL[k]} reset (results page)`).then(t => { if (t) SD.qr.ts = t; });
+    await ghEdit('corrections.json', c => {
+      c = c || { about: 'Every weight that was overwritten or reset in the weighing app. Restore from the app: Setup → Corrections and resets.', entries: [] };
+      c.entries = c.entries || [];
+      c.entries.push({ id, at: isoLocal(at), by: who, action: 'reset', code: r.code, test: LABEL[k], key: k, step: null, old, new: [null, null, null],
+        saved, ...(pct != null ? { oldResult: pct } : {}), via: 'results page', ...(why ? { note: why } : {}) });
+      return c;
+    }, `corrections: ${r.code} ${LABEL[k]} reset (results page)`);
+    ROWS = Object.keys(SD).flatMap(src => Object.entries(SD[src].samples).map(([c, s]) => compute(c, s, src)));
+    markOutliers(ROWS); render(); detail(r.id);
+    dlg.querySelector('.dlg h2').insertAdjacentHTML('afterend', `<div class="note ok">✓ ${esc(TNAME[k])} reset. The phones show it as not started on their next sync; weigh it again from W1.</div>`);
+  } catch (e) {
+    msg.textContent = '⚠ ' + (e.message === 'Failed to fetch' ? 'No internet connection.' : e.message);
+    dlg.querySelectorAll('.resetbox button').forEach(b => b.disabled = false);
+  }
+}
 
 function csv(list) {
   const head = ['App', 'Code', 'Sample name', 'Supplier', 'Sample date', 'Machine', 'Status', 'Waiting for', 'Moisture % (ar)', 'Total moisture %',
