@@ -11,13 +11,13 @@
 <style>
   :root {
     --bg: #eef2f4; --surface: #ffffff; --ink: #1f2a33; --ink2: #4a5964; --muted: #6b7a85; --line: #d3dbe0; --grid: #e9eef1;
-    --now: #c0392b; --weigh: #b9c4cc;
+    --now: #c0392b; --weigh: #b9c4cc; --warm: #c27c0e; --late: #c0392b; --idle: #9aa7b0;
     --MC: #a8426b; --VM: #3c7a2a; --ASH: #574a9c; --TM: #b0432d;
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) {
       --bg: #12191e; --surface: #1b242b; --ink: #e6edf1; --ink2: #b6c3cc; --muted: #8a9aa5; --line: #2e3a43; --grid: #243038;
-      --now: #ff6b5b; --weigh: #4a5862;
+      --now: #ff6b5b; --weigh: #4a5862; --warm: #e8a83e; --late: #ff6b5b; --idle: #5d6c77;
       --MC: #e07aa0; --VM: #79bb63; --ASH: #a497e6; --TM: #ee8466;
     }
   }
@@ -105,7 +105,7 @@ let KEY = store.get('ghkey');                      // shared with the app on the
 })();
 
 const V = { range: store.get('dash-range') || 'today', group: store.get('dash-group') || 'equip', stage: store.get('dash-stage') || 'both', hidden: new Set(), view: 'chart' };
-let RAW = null, BLOG = null, LOADED = 0, ERR = null;
+let RAW = null, BLOG = null, DATA = null, LOADED = 0, ERR = null;
 /* weighing machine (W1–W4) of each sample, from names.json (the Machine column of the sheet).
    Shared with the weighing app on the same site, and read again at most every 10 min (the sheet syncs every 15). */
 const MACHINES = ['W1', 'W2', 'W3', 'W4'];
@@ -133,7 +133,7 @@ async function load() {
   if (!KEY) { renderKey(); return; }
   const names = V.group === 'machine' && Date.now() - namesAt > 10 * 6e4;
   try {
-    let nf; [RAW, BLOG, nf] = await Promise.all([fetchLog(), fetchLog('timerlog.json'), names ? fetchLog('names.json').catch(() => null) : null]);
+    let nf; [RAW, BLOG, DATA, nf] = await Promise.all([fetchLog(), fetchLog('timerlog.json'), fetchLog('data.json'), names ? fetchLog('names.json').catch(() => null) : null]);
     if (nf && nf.names) { NAMES = nf.names; namesAt = Date.now(); store.set('names', JSON.stringify(nf)); }
     ERR = null; LOADED = Date.now();
   }
@@ -227,11 +227,12 @@ function render() {
       <div class="tile"><b>${done.length}</b><span>tests finished in this range</span></div>
       <div class="tile"><b>${peak('Oven')} / ${peak('Furnace')}</b><span>most at once: oven / furnace</span></div>
       ${TESTS.filter(t => !V.hidden.has(t.key) && heat(t.key) != null).map(t =>
-        `<div class="tile"><b>${dur(heat(t.key))}</b><span>typical ${esc(t.key)} time in ${t.eq.toLowerCase()} ${timer ? '(timer start → taken out)' : '(W2→W3)'}</span></div>`).join('')}
+        `<div class="tile"><b>${dur(heat(t.key))}</b><span>typical ${esc(t.key)} time in ${t.eq.toLowerCase()} ${timer ? '(in → taken out)' : '(W2→W3)'}</span></div>`).join('')}
     </div>
+    ${placesHTML(a, b, now)}
     ${!list.length ? `<div class="card"><div class="empty">No weighing in this time range${RAW && !Object.keys(RAW).length ? ' yet. Timestamps start from the first weight saved after the app update' : ''}.</div></div>`
       : (V.group === 'machine' ? machineHTML(list) : '') + (V.view === 'table' ? tableHTML(list) : chartHTML(list, a, b, now)) + weighHTML(list)}
-    ${batchesHTML(a, b, now)}`;
+    ${BLOG && BLOG.batches && Object.keys(BLOG.batches).length || !loads().length ? batchesHTML(a, b, now) : ''}`;
   wire();
 }
 
@@ -459,6 +460,14 @@ const SECS = [['O1', 'Oven 1'], ['O2', 'Oven 2'], ['F1', 'Furnace 1'], ['F2', 'F
 // Which samples were really in each batch is decided by the W3 log:
 // a sample belongs to the batch of its test that was taken out last before its W3 was weighed
 // (and that started after its W2). The timer's expected list only breaks ties between batches taken out within 15 min.
+/* Loads from the weighing app (data.json runs, door closed → door open) are read as batches too,
+   so the chart, the tiles and this card split W2 → W3 the same way as for the Lab Timer. */
+function allBatches() {
+  const t = Object.values((BLOG && BLOG.batches) || {}).filter(e => !e.cancelled);
+  return t.concat(loads().filter(L => !L.lost).map(L => ({ id: 'run:' + L.rid, started: new Date(L.closed).toISOString(),
+    takenOut: L.open ? new Date(L.open).toISOString() : null, test: L.test, expected: L.codes, sectionId: L.place,
+    section: L.placeName, capacity: L.cap, plannedMin: (L.timeUp - L.closed) / 6e4, events: [] })));
+}
 function confirmBatches(all) {
   const conf = {}; all.forEach(q => { conf[q.id] = []; });
   const done = all.filter(q => !q.running);
@@ -479,7 +488,7 @@ function confirmBatches(all) {
   return conf;
 }
 function batchList(a, b, now) {
-  const all = Object.values((BLOG && BLOG.batches) || {}).filter(e => !e.cancelled).map(e => {
+  const all = allBatches().map(e => {
     const start = Date.parse(e.started), end = e.takenOut ? Date.parse(e.takenOut) : now;
     const expected = e.expected || e.samples || [];
     return Object.assign({}, e, { start, end, running: !e.takenOut, testKey: e.test, test: TEST_OF[e.test] || TESTS[0], expected,
@@ -576,6 +585,220 @@ function batchesHTML(a, b, now) {
         <td>${q.w3n ? `${hm(q.w3first)}${q.w3last !== q.w3first ? '–' + hm(q.w3last) : ''} · <b>${dur(q.outMs)}</b>${q.missing.length ? ` · <span style="color:var(--warn)">${q.missing.length} expected not weighed</span>` : ''}${q.extra.length ? ` · ${q.extra.length} not expected` : ''}` : (q.running ? '–' : 'not yet')}</td></tr>`).join('')}</tbody></table></div>
   </div>`;
 }
+/* ---------- ovens & furnaces: loads from the weighing app (data.json runs) ----------
+   start = DOOR CLOSED scan, go = scanned at the set temperature (the timer starts), outAt = DOOR OPEN scan.
+   W2 / W3 times come from each sample's trail (ev). Loads saved before the temperature scan have no go. */
+const PLACE_NAME = { O1: 'Oven 1', O2: 'Oven 2', F1: 'Furnace 1', F2: 'Furnace 2' };
+const RUN_CAP = { MC: 12, VM: 18, ASH: 10 };
+let LOADS = null, loadsOf = null, loadsAt = 0;
+function loads() {
+  const now = Date.now();
+  if (LOADS && loadsOf === DATA && now - loadsAt < 15000) return LOADS;
+  const samples = (DATA && DATA.samples) || {};
+  const wt = (code, k, s) => ((samples[code] || {}).ev || []).filter(e => e.a === 'w' && e.k === k && e.s === s && e.v != null).map(e => e.t);
+  LOADS = Object.values((DATA && DATA.runs) || {})
+    .filter(r => !r.cancelled && r.mins > 0 && PLACE_NAME[r.place] && TEST_OF[r.test] && (r.items || []).length).map(r => {
+      const L = { rid: r.rid, place: r.place, placeName: PLACE_NAME[r.place], test: r.test, testObj: TEST_OF[r.test],
+        cap: RUN_CAP[r.test] || r.items.length, codes: r.items.map(i => i.code), n: r.items.length, bal: r.bal || 0,
+        by: r.by || '', outBy: r.outBy || '', closed: r.start, reheat: !!r.reheat, hot: r.reheat ? (r.go || null) : null,
+        setMs: r.mins * 6e4, open: r.outAt || null };
+      L.timerStart = r.reheat ? L.hot : r.start;
+      L.timeUp = L.timerStart != null ? L.timerStart + L.setMs : L.closed + L.setMs;
+      L.reheatMs = L.hot != null ? L.hot - L.closed : null;
+      // never opened in the app and older than 12 h: the door-open scan was missed
+      L.lost = !L.open && now - L.closed > 12 * 36e5;
+      L.running = !L.open && !L.lost;
+      const end = L.open || now;
+      L.insideMs = L.lost ? null : end - L.closed;
+      L.heatMs = L.timerStart != null && !L.lost ? end - L.timerStart : null;
+      L.lateMs = L.open && L.timerStart != null ? L.open - L.timeUp : null;           // + opened after time up, − before
+      // W3: the first W3 of each sample saved after the door was opened
+      const w3 = L.open ? L.codes.map(c => wt(c, r.test, 3).filter(t => t >= L.open - 6e4)).filter(x => x.length).map(x => Math.min(...x)).sort((x, y) => x - y) : [];
+      L.w3n = w3.length; L.w3first = w3[0] || null; L.w3last = w3[w3.length - 1] || null;
+      L.coolMs = L.w3first ? L.w3first - L.open : null;
+      L.outMs = L.w3n ? L.w3last - L.w3first : null;
+      // W2: the last W2 of each sample saved before the door was closed
+      const w2 = L.codes.map(c => wt(c, r.test, 2).filter(t => t <= L.closed + 6e4)).filter(x => x.length).map(x => Math.max(...x));
+      L.lastW2 = w2.length ? Math.max(...w2) : null;
+      L.waitInMs = L.lastW2 != null ? Math.max(0, L.closed - L.lastW2) : null;
+      L.phase = L.lost ? 'lost' : L.open ? (L.w3n < L.n ? 'w3' : 'done') : (L.reheat && L.hot == null ? 'warm' : now < L.timeUp ? 'heat' : 'up');
+      return L;
+    }).sort((x, y) => x.closed - y.closed);
+  loadsOf = DATA; loadsAt = now;
+  return LOADS;
+}
+const tempOf = k => { const t = ((DATA && DATA.settings && DATA.settings.temp) || {})[k]; return +t > 0 ? +t : 0; };
+const signed = ms => ms >= 0 ? `${fmtMin(ms)} late` : `${fmtMin(-ms)} early`;
+const range_ = v => { const s = v.slice().sort((x, y) => x - y); return s.length > 1 ? `${fmtMin(s[0])}–${fmtMin(s[s.length - 1])}` : ''; };
+// empty spells of each oven / furnace: door open of one load → door closed of the next (and since the last one, up to now)
+function emptySpells(place, a, b, now) {
+  const L = loads().filter(q => q.place === place && !q.lost), out = [];
+  for (let i = 1; i < L.length; i++) {
+    const s = Math.max(...L.slice(0, i).map(q => q.open || Infinity)), e = L[i].closed;
+    if (isFinite(s) && e > s) out.push({ s, e, now: false });
+  }
+  if (L.length && !L.some(q => q.running)) out.push({ s: Math.max(...L.map(q => q.open || 0)), e: now, now: true });
+  // a spell that began before the range (e.g. overnight) is not counted: only gaps between loads of this range
+  return out.filter(z => z.s >= a).map(z => ({ ...z, e: Math.min(z.e, b, now) })).filter(z => z.e - z.s > 0);
+}
+const phaseTxt = q => ({ warm: 'heating up', heat: 'timer running', up: 'time up, door still shut' })[q.phase] || '';
+function placesHTML(a, b, now) {
+  const all = loads();
+  if (!all.length) return '';
+  const L = all.filter(q => !q.lost && (q.w3last || q.open || now) >= a && q.closed < b && !V.hidden.has(q.testObj.key));
+  if (!L.length) return `<div class="card"><h2>Ovens &amp; furnaces</h2><p class="sub">No oven or furnace load in this time range.</p></div>`;
+  const fin = L.filter(q => q.open);
+  const places = SECS.filter(([id]) => all.some(q => q.place === id));
+
+  /* --- what stands out --- */
+  const tips = [];
+  const pairs = []; places.forEach(([id, name]) => Object.keys(TEST_OF).forEach(k => {
+    const q = L.filter(z => z.place === id && z.test === k); if (q.length) pairs.push({ id, name, k, q }); }));
+  pairs.forEach(({ name, k, q }) => {
+    const rh = q.filter(z => z.reheatMs != null).map(z => z.reheatMs);
+    if (rh.length) tips.push(`<b>${name}</b> gets back to ${tempOf(k) ? tempOf(k) + ' °C' : 'temperature'} for ${esc(TEST_OF[k].key)} in <b>${fmtMin(median(rh))}</b> after the door is closed${rh.length > 1 ? ` (${rh.length} loads, ${range_(rh)})` : ''}.`);
+  });
+  const quick = L.filter(z => z.reheatMs != null && z.reheatMs < 30000);
+  if (quick.length) tips.push(`${quick.length} “at temperature” scan${quick.length > 1 ? 's came' : ' came'} less than 30 s after the door was closed (${quick.map(z => `${z.placeName} ${hm(z.closed)}: ${fmtMin(z.reheatMs)}`).join(', ')}). The worker may not have waited for the display, so ${quick.length > 1 ? 'these' : 'this'} reheat time${quick.length > 1 ? 's are' : ' is'} not reliable.`);
+  const late = fin.filter(z => z.lateMs != null && z.lateMs > 2 * 6e4);
+  if (late.length) {
+    const worst = late.reduce((x, y) => (y.lateMs > x.lateMs ? y : x));
+    tips.push(`The door was opened more than 2 min after time up for <b>${late.length} of ${fin.filter(z => z.lateMs != null).length}</b> loads, <b>${fmtMin(late.reduce((s, z) => s + z.lateMs, 0))}</b> extra in all. Longest: ${worst.placeName} ${esc(worst.testObj.key)} closed at ${hm(worst.closed)}, ${fmtMin(worst.lateMs)} late.`);
+  } else if (fin.some(z => z.lateMs != null)) tips.push('Every door was opened within 2 min of time up.');
+  const vmOff = fin.filter(z => z.test === 'VM' && z.lateMs != null && Math.abs(z.lateMs) > 30000);
+  if (vmOff.length) tips.push(`<b>VM is timed to the minute:</b> ${vmOff.length} VM load${vmOff.length > 1 ? 's were' : ' was'} taken out more than 30 s off the set ${fmtMin(vmOff[0].setMs)} (${vmOff.map(z => `${z.placeName} ${hm(z.closed)}: ${signed(z.lateMs)}`).join(', ')}). Check those VM results.`);
+  Object.keys(TEST_OF).forEach(k => {
+    const c = fin.filter(z => z.test === k && z.coolMs != null).map(z => z.coolMs);
+    if (c.length) tips.push(`${esc(TEST_OF[k].key)}: <b>${fmtMin(median(c))}</b> from door open to the first W3 (cooling)${c.length > 1 ? `, ${range_(c)}` : ''}.`);
+  });
+  places.forEach(([id, name]) => {
+    const sp = emptySpells(id, a, b, now); if (!sp.length) return;
+    const tot = sp.reduce((s, z) => s + z.e - z.s, 0), lng = sp.reduce((x, y) => (y.e - y.s > x.e - x.s ? y : x));
+    const cur = sp.find(z => z.now);
+    tips.push(`<b>${name}</b> stood empty <b>${dur(tot)}</b> in this range${sp.length > 1 ? `, longest ${dur(lng.e - lng.s)} (${hm(lng.s)}–${lng.now ? 'now' : hm(lng.e)})` : ''}${cur ? `; empty now since ${hm(cur.s)}` : ''}.`);
+  });
+  const wi = L.filter(z => z.waitInMs != null && z.waitInMs > 30 * 6e4);
+  if (wi.length) tips.push(`${wi.length} load${wi.length > 1 ? 's' : ''} went in more than 30 min after the last W2 (crucibles waiting on the bench): ${wi.map(z => `${z.placeName} ${esc(z.testObj.short)} ${hm(z.closed)} (${dur(z.waitInMs)})`).join(', ')}.`);
+  const lost = all.filter(q => q.lost && q.closed >= a && q.closed < b);
+  if (lost.length) tips.push(`${lost.length} load${lost.length > 1 ? 's have' : ' has'} no door-open scan, so ${lost.length > 1 ? 'they are' : 'it is'} left out of these numbers.`);
+
+  /* --- lanes: one per oven / furnace --- */
+  let t0 = Math.min(...L.map(q => q.closed)), t1 = Math.max(...L.map(q => q.w3last || q.open || now), L.some(q => !q.open || q.w3n < q.n) ? now : 0);
+  if (isFinite(a)) { t0 = Math.max(t0, a); t1 = Math.min(Math.max(t1, t0 + 36e5), b); }
+  const span = Math.max(t1 - t0, 36e5); t0 -= span * .02; t1 += span * .02;
+  const LW = 110, RP = 20, RH = 58, AX = 26, W = Math.max(760, (document.querySelector('.wrap').clientWidth || 1000) - 2), pw = W - LW - RP;
+  const x = t => LW + (Math.min(Math.max(t, t0), t1) - t0) / (t1 - t0) * pw;
+  const stepH = [1, 2, 3, 6, 12, 24].find(h => span / (h * 36e5) <= 12) || 24;
+  let grid = ''; const s0 = new Date(t0); s0.setMinutes(0, 0, 0);
+  for (let t = s0.getTime(); t <= t1; t += 36e5) { const d = new Date(t); if (d.getHours() % stepH || t < t0) continue;
+    grid += `<line x1="${x(t)}" x2="${x(t)}" y1="${AX - 6}" y2="${AX + places.length * RH}" stroke="var(--grid)"/>
+             <text x="${x(t)}" y="${AX - 12}" text-anchor="middle">${d.getHours() === 0 || stepH >= 24 ? dayLabel(t) : hm(t)}</text>`; }
+  const bar = (s, e, y, h, fill, extra = '') => e > s ? `<rect x="${x(s)}" y="${y}" width="${Math.max(2, x(e) - x(s))}" height="${h}" rx="3" fill="${fill}" ${extra}/>` : '';
+  let lanes = '';
+  places.forEach(([id, name], i) => {
+    const y = AX + i * RH, yc = y + RH / 2 - 4;
+    lanes += `<text x="${LW - 10}" y="${yc + 4}" text-anchor="end" class="grp">${name}</text>
+              <line x1="${LW}" x2="${LW + pw}" y1="${y + RH}" y2="${y + RH}" stroke="var(--grid)"/>`;
+    emptySpells(id, t0, t1, now).forEach(z => {
+      const w = x(z.e) - x(z.s), lbl = `empty ${dur(z.e - z.s)}`;
+      lanes += `<line x1="${x(z.s)}" x2="${x(z.e)}" y1="${yc}" y2="${yc}" stroke="var(--idle)" stroke-width="1.5" stroke-dasharray="2 3"/>
+        ${w > lbl.length * 6 + 8 ? `<text x="${(x(z.s) + x(z.e)) / 2}" y="${yc - 6}" text-anchor="middle" font-size="11" style="fill:var(--muted)">${lbl}</text>` : ''}`;
+    });
+    L.filter(q => q.place === id).forEach(q => {
+      const end = q.open || now, c = q.testObj.color;
+      let m = bar(q.closed, q.hot != null ? q.hot : (q.reheat ? end : q.closed), yc - 11, 22, 'var(--warm)');            // door closed → back at temperature
+      if (q.timerStart != null) {
+        m += bar(q.timerStart, Math.min(q.timeUp, end), yc - 11, 22, c, q.running ? 'fill-opacity=".6"' : '');      // at temperature, timer running
+        m += bar(q.timeUp, end, yc - 11, 22, 'var(--late)');                                                       // time up, door still shut
+      }
+      if (q.open) m += bar(q.open, q.w3n === q.n ? q.w3last : now, yc + 14, 7, c, `fill-opacity=".35" stroke="${c}" stroke-width="1"${q.w3n < q.n ? ' stroke-dasharray="3 2"' : ''}`);
+      const lbl = `${q.testObj.short} ${q.n}/${q.cap}`;
+      if (x(end) - x(q.closed) > lbl.length * 6.6 + 10) m += `<text x="${x(q.closed) + 6}" y="${yc + 4}" style="fill:#fff;font-weight:700">${esc(lbl)}</text>`;
+      lanes += `<g class="hit" tabindex="0" data-l="${esc(q.rid)}"><rect x="${x(q.closed)}" y="${y + 2}" width="${Math.max(6, x(q.w3last || end) - x(q.closed))}" height="${RH - 4}" fill="transparent"/>${m}</g>`;
+    });
+  });
+  const nowLine = now > t0 && now < t1 ? `<line x1="${x(now)}" x2="${x(now)}" y1="${AX - 6}" y2="${AX + places.length * RH}" stroke="var(--now)" stroke-width="1.5" stroke-dasharray="4 3"/>` : '';
+
+  /* --- each oven / furnace: busy and empty time --- */
+  const stat = places.map(([id, name]) => {
+    const q = L.filter(z => z.place === id); if (!q.length) return '';
+    const sp = emptySpells(id, a, b, now), s = Math.max(a, q[0].closed), e = Math.min(b, now);
+    const busy = q.reduce((t, z) => t + Math.max(0, Math.min(z.open || now, e) - Math.max(z.closed, s)), 0);
+    const empty = sp.filter(z => z.s >= s).reduce((t, z) => t + z.e - z.s, 0), lng = sp.length ? Math.max(...sp.map(z => z.e - z.s)) : 0;
+    const run = q.find(z => z.running), cur = sp.find(z => z.now);
+    return `<tr><td><b>${name}</b></td><td>${q.length}</td><td>${hm(s)}–${e >= now ? 'now' : hm(e)}</td><td><b>${dur(busy)}</b></td><td>${dur(empty)}</td><td>${lng ? dur(lng) : '–'}</td>
+      <td><b>${e > s ? Math.round(busy / (e - s) * 100) : 0}%</b></td><td>${run ? phaseTxt(run) : cur ? 'empty since ' + hm(cur.s) : '–'}</td></tr>`;
+  }).join('');
+
+  /* --- typical values per oven / furnace and test --- */
+  const td = v => v.length ? `<b>${fmtMin(median(v))}</b>${v.length > 1 ? ` <span style="color:var(--muted)">${range_(v)}</span>` : ''}` : '–';
+  const rows = pairs.map(({ name, k, q }) => {
+    const f = q.filter(z => z.open), pick = key => f.filter(z => z[key] != null).map(z => z[key]), lt = pick('lateMs');
+    return `<tr><td><b>${name}</b></td><td><i class="sw" style="width:10px;background:${TEST_OF[k].color};margin-right:6px"></i>${esc(TEST_OF[k].key)}${tempOf(k) ? ` · ${tempOf(k)} °C` : ''}</td>
+      <td>${q.length}</td><td>${td(q.filter(z => z.reheatMs != null).map(z => z.reheatMs))}</td><td>${fmtMin(median(q.map(z => z.setMs)))}</td>
+      <td>${td(pick('heatMs'))}</td><td>${lt.length ? `<b>${signed(median(lt))}</b> <span style="color:var(--muted)">${lt.filter(v => v > 2 * 6e4).length} of ${lt.length} over 2 min</span>` : '–'}</td>
+      <td>${td(pick('insideMs'))}</td><td>${td(pick('coolMs'))}</td><td>${td(pick('outMs'))}</td>
+      <td>${Math.round(median(q.map(z => z.n / z.cap)) * 100)}%</td></tr>`;
+  }).join('');
+
+  return `<div class="card">
+    <h2>Ovens &amp; furnaces: reheat, time inside, cooling and empty time</h2>
+    <p class="sub">From the weighing app scans: <b>door closed</b>, <b>at temperature</b> (the scan that starts the timer) and <b>door open</b>, joined with the W2 and W3 times of the samples in each load. Hover or tap a load for its times.</p>
+    ${tips.length ? `<ul style="margin:4px 16px 12px;padding-left:20px">${tips.map(t => `<li style="margin:3px 0">${t}</li>`).join('')}</ul>` : ''}
+    <div class="legend">
+      <span><i class="sw" style="background:var(--warm)"></i>Door closed → back at temperature</span>
+      <span><i class="sw" style="background:var(--ink2)"></i>At temperature, timer running (test colour)</span>
+      <span><i class="sw" style="background:var(--late)"></i>Time up, door still shut</span>
+      <span><i class="sw" style="height:7px;background:var(--ink2);opacity:.35"></i>Door open → last W3 (cooling + weighing)</span>
+      <span><i class="sw" style="height:0;border-top:2px dashed var(--idle)"></i>Empty</span>
+    </div>
+    <div class="scroll"><svg width="${W}" height="${AX + places.length * RH + 6}" role="img" aria-label="Each oven and furnace over time: reheating, heating, overtime, cooling and empty">
+      <g class="axis">${grid}</g>${lanes}${nowLine}</svg></div>
+    <h2 style="margin-top:14px">Each oven / furnace</h2>
+    <p class="sub">Busy = a load inside (door closed → door open). Empty = door open of one load → door closed of the next, or up to now. Counted from its first load in this range.</p>
+    <div class="scroll"><table class="list"><thead><tr><th>Oven / furnace</th><th>Loads</th><th>From – to</th><th>Busy</th><th>Empty</th><th>Longest empty</th><th>Busy %</th><th>Now</th></tr></thead>
+      <tbody>${stat}</tbody></table></div>
+    <h2 style="margin-top:14px">Typical times</h2>
+    <p class="sub">Typical (median) value in bold, fastest–slowest after it.</p>
+    <div class="scroll"><table class="list"><thead><tr><th>Oven / furnace</th><th>Test</th><th>Loads</th><th>Back to temp after door closed</th><th>Set time</th><th>At temp (timer start → door open)</th><th>Door opened vs time up</th><th>Inside in total</th><th>Cooling (door open → first W3)</th><th>Weigh-out (first → last W3)</th><th>Fill</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>
+    <h2 style="margin-top:14px">Every load</h2>
+    <div class="scroll"><table class="list"><thead><tr><th>Door closed</th><th>Oven / furnace</th><th>Test</th><th>Balance · by</th><th>Samples</th><th>Waited on bench (last W2 → in)</th><th>Back to temp</th><th>Set</th><th>Door open</th><th>Inside</th><th>Cooling → first W3</th><th>W3 weighed</th></tr></thead>
+      <tbody>${L.slice().reverse().map(q => `<tr class="hit" tabindex="0" data-l="${esc(q.rid)}"><td>${when(q.closed)}</td><td>${q.placeName}</td>
+        <td><i class="sw" style="width:10px;background:${q.testObj.color};margin-right:6px"></i>${esc(q.testObj.key)}</td>
+        <td>${q.bal ? 'W' + q.bal : '–'} · ${esc(q.by) || '–'}</td><td>${q.n}/${q.cap}</td>
+        <td>${q.waitInMs != null ? fmtMin(q.waitInMs) : '–'}</td>
+        <td>${q.reheatMs != null ? `<b>${fmtMin(q.reheatMs)}</b> <span style="color:var(--muted)">at ${hm(q.hot)}</span>` : (q.phase === 'warm' ? `heating up, ${fmtMin(now - q.closed)} so far` : '<span style="color:var(--muted)">not scanned</span>')}</td>
+        <td>${fmtMin(q.setMs)}</td>
+        <td>${q.open ? `${hm(q.open)}${q.lateMs != null ? ` · <span style="${q.lateMs > 2 * 6e4 ? 'color:var(--late);font-weight:700' : ''}">${signed(q.lateMs)}</span>` : ''}` : phaseTxt(q)}</td>
+        <td>${q.insideMs != null ? `<b>${fmtMin(q.insideMs)}</b>${q.running ? ' so far' : ''}` : '–'}</td>
+        <td>${q.coolMs != null ? fmtMin(q.coolMs) : (q.open ? `no W3 yet, ${fmtMin(now - q.open)}` : '–')}</td>
+        <td>${q.open ? `${q.w3n}/${q.n}${q.w3n > 1 ? ` · ${hm(q.w3first)}–${hm(q.w3last)}` : ''}` : '–'}</td></tr>`).join('')}</tbody></table></div>
+    <p class="sub" style="margin-top:10px"><b>Not recorded yet, so not shown:</b> the actual temperature (only the moment a worker scans at the set temperature, so “back to temp” includes how long they took to notice);
+      when the door was opened to load (only door closed is scanned), so heat lost while loading is not known; when an oven / furnace was switched on or off (“empty” may still be hot, and the first load of the day includes warming up from cold);
+      and when crucibles went into or came out of the desiccator, so “cooling” is all of door open → first W3.</p>
+  </div>`;
+}
+function showLoadTip(el, cx, cy) {
+  const q = loads().find(z => z.rid === el.dataset.l); if (!q) return;
+  const now = Date.now(), r = (l, v) => `<tr><td>${l}</td><td>${v}</td></tr>`;
+  tip.innerHTML = `<h3><i class="sw" style="width:10px;background:${q.testObj.color}"></i>${q.placeName} · ${esc(q.testObj.key)}</h3>
+    <table>${r('Door closed', `<b>${when(q.closed)}</b> · ${esc(q.by)}`)}
+      ${r('At temperature', !q.reheat ? '<span style="color:var(--muted)">not scanned (older load)</span>' : q.hot != null ? `<b>${hm(q.hot)}</b> · ${fmtMin(q.reheatMs)} after door closed` : 'not yet')}
+      ${r('Set time', `${fmtMin(q.setMs)}${q.timerStart != null ? ` · time up ${hm(q.timeUp)}` : ''}`)}
+      ${r('Door open', q.open ? `<b>${hm(q.open)}</b>${q.lateMs != null ? ' · ' + signed(q.lateMs) : ''} · ${esc(q.outBy)}` : 'not yet')}
+      ${r('Inside', q.insideMs != null ? `<b>${fmtMin(q.insideMs)}</b>${q.running ? ' so far' : ''}` : '–')}
+      ${q.open ? r('First W3', q.w3first ? `${hm(q.w3first)} · ${fmtMin(q.coolMs)} after door open` : `not yet (${fmtMin(now - q.open)})`) : ''}
+      ${q.w3n > 1 ? r('Last W3', `${hm(q.w3last)} · ${q.w3n} of ${q.n} weighed`) : ''}
+      ${q.lastW2 != null ? r('Last W2', `${hm(q.lastW2)} · ${fmtMin(q.waitInMs)} before door closed`) : ''}</table>
+    <div class="dur"><b>Samples:</b> ${esc(q.codes.join(', '))}</div>`;
+  tip.hidden = false;
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  let left = cx + 14, top = cy + 14;
+  if (left + tw > innerWidth - 8) left = cx - tw - 14;
+  if (top + th > innerHeight - 8) top = cy - th - 14;
+  tip.style.left = Math.max(8, left) + 'px'; tip.style.top = Math.max(8, top) + 'px';
+}
 // typical time for a whole batch, plus time per sample
 function batchTime(arr, msKey, nKey) {
   const v = arr.filter(z => z[msKey] != null && z[nKey] > 0);
@@ -584,7 +807,7 @@ function batchTime(arr, msKey, nKey) {
   return `<b>${dur(ms)}</b>${per != null ? ` <span style="color:var(--muted)">(~${fmtMin(per)} per sample)</span>` : ''}`;
 }
 // sample test -> its batch, for splitting W2 → W3 into: waiting, heating, after taken out
-const hasTimer = () => !!(BLOG && BLOG.batches && Object.values(BLOG.batches).some(e => !e.cancelled));
+const hasTimer = () => allBatches().length > 0;
 function sampleBatches() {
   const m = {}, now = Date.now();
   const all = batchList(-Infinity, Infinity, now);
@@ -685,6 +908,13 @@ function wire() {
     el.addEventListener('mouseleave', () => tip.hidden = true);
     el.addEventListener('click', e => showBatchTip(el, e.clientX, e.clientY));
     el.addEventListener('focus', () => { const r = el.getBoundingClientRect(); showBatchTip(el, r.left + 20, r.bottom); });
+    el.addEventListener('blur', () => tip.hidden = true);
+  });
+  root.querySelectorAll('.hit[data-l]').forEach(el => {
+    el.addEventListener('mousemove', e => showLoadTip(el, e.clientX, e.clientY));
+    el.addEventListener('mouseleave', () => tip.hidden = true);
+    el.addEventListener('click', e => showLoadTip(el, e.clientX, e.clientY));
+    el.addEventListener('focus', () => { const r = el.getBoundingClientRect(); showLoadTip(el, r.left + 20, r.bottom); });
     el.addEventListener('blur', () => tip.hidden = true);
   });
   root.querySelectorAll('.hit[data-j]').forEach(el => {
