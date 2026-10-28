@@ -283,8 +283,13 @@ function runOf(code, k) {
 }
 // The oven / furnace still holding a load (door not opened, W3 not finished)
 const placeRun = p => runs().filter(r => r.place === p && !r.outAt && runPhase(r) !== 'done').sort((a, b) => b.start - a.start)[0] || null;
-// The newest load of a place that still has W3 to do (door already opened)
-const placeOut = p => runs().filter(r => r.place === p && r.outAt && runPhase(r) === 'out').sort((a, b) => b.start - a.start)[0] || null;
+// The newest load of a place that still has W3 to do (door already opened): this balance's first.
+// Another load can already be heating in there (VM out, Ash in), so this is not only for a free place.
+const myLoad = r => !r.bal || !balNo() || r.bal === balNo();
+const placeOut = p => runs().filter(r => r.place === p && r.outAt && runPhase(r) === 'out')
+  .sort((a, b) => (myLoad(b) - myLoad(a)) || (b.start - a.start))[0] || null;
+// W3 of this balance still to do from a place that has another load in it now
+const placeOutMine = p => { const o = placeOut(p); return o && o.bal && o.bal === balNo() ? o : null; };
 // The sample test now on a dish / spot: W1 saved, W3 not yet
 function occupants(id) {
   const out = [];
@@ -425,12 +430,13 @@ function placeTile(p) {
     else if (ph === 'heat') { cls = 'heat'; big = ''; small = ''; ic = ICON.hour + cdHTML(r); }
     else { cls = 'up'; ic = ICON.doorOpen; small = t.doorOpen; }
   } else if (out) { cls = 'out'; big = String(waitCount(out)); ic = ICON.balance; small = 'W3'; }
-  const k = (r || out) ? (r || out).test : null;
+  const k = (r || out) ? (r || out).test : null, mo = r && placeOutMine(p);
   // status only: the worker opens an oven / furnace by scanning its QR there, not by tapping here
   return `<div class="ptile ${cls}" ${k ? `style="${cvar(k)}"` : ''}>
     <span class="pi">${placeIcon(p)}<em>${placeNo(p)}</em></span>
     ${k ? `<span class="pk">${ICON[k]}</span>` : ''}
-    <span class="pb">${ic ? `<span class="pic">${ic}</span>` : ''}${big ? `<b>${esc(big)}</b>` : ''}<small>${esc(small)}</small></span></div>`;
+    <span class="pb">${ic ? `<span class="pic">${ic}</span>` : ''}${big ? `<b>${esc(big)}</b>` : ''}<small>${esc(small)}</small></span>
+    ${mo ? `<span class="pw3" style="${cvar(mo.test)}">${ICON[mo.test]}${ICON.balance}<b>${waitCount(mo)}</b><small>W3</small></span>` : ''}</div>`;
 }
 function renderHomeB() {
   const t = B(), mc = waitingFor('MC'), boards = boardsWaiting(['VM', 'ASH']);
@@ -671,7 +677,10 @@ function onScan(txt, purpose) {
 }
 function onPlace(p) {
   good(); S.placeScan = { place: p, at: Date.now() };
-  const r = placeRun(p);
+  const r = placeRun(p), mo = placeOutMine(p);
+  // this balance's load already out of here comes before someone else's load now heating in it
+  // (only this balance's own load needing the door or the temperature scan comes first)
+  if (r && mo && !(r.bal === balNo() && ['up', 'warm'].includes(runPhase(r)))) { S.rid = mo.rid; S.view = 'run'; render(); return; }
   if (r) { S.rid = r.rid; S.view = 'run'; render(); return; }
   const o = placeOut(p);
   if (o && !waitingFor(PLACES[p].kind === 'oven' ? 'MC' : 'x').length && !boardsWaiting(PLACES[p].tests).length) { S.rid = o.rid; S.view = 'run'; render(); return; }
