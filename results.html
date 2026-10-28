@@ -338,11 +338,11 @@ function compute(code, s, src) {
     else if (isNum(hi) && v > hi) { flags.push(`${TNAME[k]} ${v.toFixed(2)} %${db} above ${hi} %`); flagTests.add(k); }
     else if (isNum(lo) && v < lo) { flags.push(`${TNAME[k]} ${v.toFixed(2)} %${db} below ${lo} %`); flagTests.add(k); }
   });
-  // W3 typed in later from a paper sheet (not read off the balance in the app): held back until the supervisor checks it
+  // A W3 the supervisor marked as doubtful (chk on its trail line): held back until it is approved or weighed again
   TESTS.forEach(k => {
     if (!complete(w[k])) return;
     const e = (s.ev || []).filter(e => e.k === k && e.s === 3 && ['w', 'fix', 'override', 'restore'].includes(e.a)).pop();
-    if (e && e.via === 'paper' && e.v === w[k][2]) { flags.push(`${TNAME[k]} W3 from paper sheet, check`); flagTests.add(k); }
+    if (e && e.chk && e.v === w[k][2]) { flags.push(`${TNAME[k]} W3 doubtful: ${e.chk}`); flagTests.add(k); }
   });
 
   let appr = D.appr[code] || null, stale = false;
