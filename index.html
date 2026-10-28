@@ -295,6 +295,14 @@
   .bs.w3 { background: #e4f3ea; border-color: var(--ok); color: var(--ok); }
   .bs em { position: absolute; top: -6px; right: -4px; font-style: normal; color: var(--ok); font-size: .9rem; }
   button.bs { cursor: pointer; font: inherit; font-weight: 700; }
+  .bs.code { flex-direction: column; gap: 0; line-height: 1.05; }
+  .bs.code i { font-style: normal; font-size: .7rem; opacity: .75; }
+  .bs.code b { font-size: 1rem; letter-spacing: -.02em; } .board[style*="repeat(3"] .bs.code b { font-size: .8rem; }
+  .bs.code.lit b { font-size: .9rem; }
+  .bs.half { border-color: var(--c); border-style: dashed; color: var(--c); }
+  .bs.full { background: var(--c-bg); border-color: var(--c); color: var(--ink); }
+  .cardboard .board { max-width: 240px; } .cardboard .board[style*="repeat(3"] { max-width: 360px; }
+  .greenm .board[style*="repeat(3"], .hold .board[style*="repeat(3"] { max-width: 220px; }
   .onbal { display: flex; align-items: center; justify-content: center; gap: 10px; font-size: 2.6rem; color: var(--c); margin: 6px 0 10px; }
   .onbal .plus { font-size: 1.8rem; color: var(--muted); } .onbal .v { display: flex; } .onbal b { font-size: 2.4rem; }
   .readout input { font-size: 3rem; }
@@ -881,7 +889,7 @@ function toData(f) {
     recompute(s);
     return s;
   });
-  return { samples, tests: TESTS, order: ORDER, runs: Object.values(f.runs || {}).sort((a, b) => a.start - b.start), settings: f.settings || {} };
+  return { samples, tests: TESTS, order: ORDER, runs: Object.values(f.runs || {}).sort((a, b) => a.start - b.start), cards: f.cards || {}, settings: f.settings || {} };
 }
 // What the worker sees = last copy from GitHub + this phone's unsent changes
 function rebuild() {
@@ -1975,7 +1983,7 @@ function render() {
   if (!S.worker && S.view !== 'setup' && S.view !== 'name') S.view = 'who';
   if (S.worker && !balNo() && !['setup', 'name', 'who', 'bal'].includes(S.view)) S.view = 'bal';
   if (!S.data && !['name', 'setup', 'bal', 'who'].includes(S.view)) { app.innerHTML = `<div class="empty">${esc(T().loading)}</div>`; return; }
-  const v = { home: renderHomeB, run: renderRun, load: renderLoad, sample: renderSampleB, step: renderStepB, review: renderReviewB, name: renderName, who: renderWho, bal: renderBal, setup: renderSetup }[S.view];
+  const v = { home: renderHomeB, run: renderRun, card: renderCard, sample: renderSampleB, step: renderStepB, review: renderReviewB, name: renderName, who: renderWho, bal: renderBal, setup: renderSetup }[S.view];
   const tc = document.getElementById('typecode'), typed = tc && tc.value, typing = tc && document.activeElement === tc;
   app.innerHTML = v() + renderModal();
   const tc2 = document.getElementById('typecode');      // a refresh must not wipe a half-typed code
@@ -2312,7 +2320,7 @@ setInterval(() => {
 // Batch countdowns: redraw the batch screens while nobody is typing
 setInterval(() => {
   const typing = document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
-  if (document.visibilityState === 'visible' && S.data && (S.view === 'home' || S.view === 'run' || S.view === 'sample') && !S.modal && !S.busy && !SCAN && !typing) render();
+  if (document.visibilityState === 'visible' && S.data && (S.view === 'home' || S.view === 'run' || S.view === 'card' || S.view === 'sample') && !S.modal && !S.busy && !SCAN && !typing) render();
 }, 20000);
 
 // One-time setup link: #key=...  (saved on this phone, then removed from the address bar)
@@ -2342,7 +2350,7 @@ function goBack() {
   }
   if (S.view === 'home' || S.view === 'who' && !S.worker) return;          // first screen: stay in the app
   const b = app.querySelector('header.tbar .iconbtn');
-  if (b && (S.view === 'step' || S.view === 'sample' || S.view === 'run' || S.view === 'load')) { b.click(); return; }
+  if (b && (S.view === 'step' || S.view === 'sample' || S.view === 'run' || S.view === 'card')) { b.click(); return; }
   S.view = 'home'; render();
 }
 try { history.pushState({ app: 1 }, ''); } catch (e) {}

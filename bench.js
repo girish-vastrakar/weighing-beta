@@ -2,17 +2,20 @@
    The workers on the bench cannot read, so every screen says what to do with a picture, a colour and a big number,
    and right / wrong is a sound, a vibration and a green or red screen. Words stay small, for the supervisor.
 
-   Moisture: scan the sample bag → tap Moisture → scan any empty petri dish → W1, W2.
-             Load: scan the oven → scan each dish (or "all") → DOOR CLOSED. W3: after DOOR OPEN, scan each dish.
-   Ash / VM: scan the sample bag → tap Ash or VM → the app gives the next free spot on this balance's board → W1, W2.
-             Load: scan the furnace → this balance's board, tap any spot that stayed out → DOOR CLOSED.
-             W3: DOOR OPEN once the time is up → weigh spot 1, 2, 3 … in board order (the walk).
-   Boards: two per balance per test, numbered spots, no QR (ids "ASH 2A-5" = balance 2, board A, spot 5).
-   Old paper templates ("ASH A-5", no balance) still work for samples already on them.
+   Moisture: scan the sample bag → tap Moisture → scan any empty petri dish → W1, W2. W3: scan each dish.
+   Ash / VM: scan the JOB CARD (one QR per card) → the card with the sample codes in its circles → W1, W2
+             spot 1, 2, 3 … (the walk). After heating: scan the card again → W3 spot 1, 2, 3 …
+             Job cards are printed on the labels page from the Google Sheet allotment: one Ash card (10) and
+             one VM card (18) per balance per batch (card "ASH W1-3" = Ash, balance W1, batch 3; spot "ASH W1-3-5").
+   Ovens and furnaces: the workers do nothing there in the app. The supervisor puts a card / dishes in a free
+             oven or furnace in the timer app (timer.html) and taps Taken out; only then W3 can be weighed.
+   Boards "ASH 2A-5" (balance 2, board A, spot 5) and old paper templates ("ASH A-5") still work for samples
+   already on them, and for loads started before job cards.
 
    data.json: samples[code].h[test] = dish / spot, .ha[test] = when, .hb[test] = balance at pairing.
               samples[code].ev = the trail: every weight, fix, undo, reset, pairing and red-screen warning.
               runs[rid] = { rid, place, test, tray, items: [{ h, code, w2 }], start, mins, bal, by, outAt, outBy, early, cancelled }.
+              cards[tray] = { test, bal, batch, codes: [code on spot 1, spot 2 …], at, by }   (job cards, labels page)
               settings = { mins: { MC, VM, ASH }, workers: [{ name, sym }] }   (set by the supervisor)
    Loaded before the main script: only declarations here, nothing that runs at load time. */
 
@@ -49,15 +52,17 @@ const BL = {
       tooMuch: 'Too much sample. Take some out and weigh again.', tooLittle: 'Too little sample. Add some and weigh again.', inOven: 'Already in the oven. It cannot change now.',
       wrongPlace: 'This oven / furnace is not for this test.', full: 'Full.', notWaiting: 'Not waiting to go in.',
       nothing: 'Nothing is waiting to go in.', empty: 'Nothing is on this.', notSample: 'Not in the sample list.',
-      locked: 'Only the supervisor can change this now.', otherLoad: 'This load belongs to another balance.', wrongPlace: 'Wrong oven / furnace. Scan this one:'
+      locked: 'Only the supervisor can change this now.', otherLoad: 'This load belongs to another balance.', wrongPlace: 'Wrong oven / furnace. Scan this one:',
+      noCard: 'Not on a job card. Scan the job card.', otherCard: 'This job card is for another balance.', notCard: 'Job card not found. Ask the supervisor.',
+      waitOut: 'Wait: the supervisor takes it out first.'
     },
     small: {
-      scanSub: 'bag · dish · oven · furnace', scanDish: 'scan an empty dish', start: 'start',
+      scanSub: 'bag · dish · job card', scanDish: 'scan an empty dish', start: 'start',
       onIt: 'on', wait: 'waiting to go in', inHeat: 'in', w3: 'W3 now', result: 'result',
       loadDish: 'Scan each dish as it goes in', loadTap: 'Tap a spot that stayed out', boardsWaiting: 'Waiting to go in',
       changeDish: 'Change dish', supervisor: 'Supervisor', addCode: 'Add as new sample', done: 'Done'
     },
-    labels: 'Print labels and boards'
+    labels: 'Print job cards and labels'
   },
   gu: {
     scan: 'સ્કેન', bal: 'કાંટો', who: 'તમે કોણ છો?', whoType: 'હજી યાદી નથી. તમારું નામ લખો.',
@@ -77,15 +82,17 @@ const BL = {
       tooMuch: 'સેમ્પલ વધારે છે. થોડું કાઢીને ફરી વજન કરો.', tooLittle: 'સેમ્પલ ઓછું છે. થોડું ઉમેરીને ફરી વજન કરો.', inOven: 'ઓવનમાં છે. હવે બદલાય નહીં.',
       wrongPlace: 'આ ઓવન / ફર્નેસ આ ટેસ્ટ માટે નથી.', full: 'ભરાઈ ગયું.', notWaiting: 'અંદર જવાની રાહમાં નથી.',
       nothing: 'અંદર જવા માટે કંઈ નથી.', empty: 'આના પર કંઈ નથી.', notSample: 'સેમ્પલ યાદીમાં નથી.',
-      locked: 'હવે ફક્ત સુપરવાઇઝર બદલી શકે.', otherLoad: 'આ લોડ બીજા કાંટાનો છે.', wrongPlace: 'ખોટું ઓવન / ફર્નેસ. આ સ્કેન કરો:'
+      locked: 'હવે ફક્ત સુપરવાઇઝર બદલી શકે.', otherLoad: 'આ લોડ બીજા કાંટાનો છે.', wrongPlace: 'ખોટું ઓવન / ફર્નેસ. આ સ્કેન કરો:',
+      noCard: 'જોબ કાર્ડ પર નથી. જોબ કાર્ડ સ્કેન કરો.', otherCard: 'આ જોબ કાર્ડ બીજા કાંટાનું છે.', notCard: 'જોબ કાર્ડ મળ્યું નથી. સુપરવાઇઝરને પૂછો.',
+      waitOut: 'રાહ જુઓ: પહેલા સુપરવાઇઝર બહાર કાઢે.'
     },
     small: {
-      scanSub: 'બેગ · ડિશ · ઓવન · ફર્નેસ', scanDish: 'ખાલી ડિશ સ્કેન કરો', start: 'શરૂ',
+      scanSub: 'બેગ · ડિશ · જોબ કાર્ડ', scanDish: 'ખાલી ડિશ સ્કેન કરો', start: 'શરૂ',
       onIt: 'પર', wait: 'અંદર જવાની રાહ', inHeat: 'માં', w3: 'હવે W3', result: 'પરિણામ',
       loadDish: 'દરેક ડિશ અંદર મૂકતી વખતે સ્કેન કરો', loadTap: 'બહાર રહેલું ખાનું ટેપ કરો', boardsWaiting: 'અંદર જવાની રાહ',
       changeDish: 'ડિશ બદલો', supervisor: 'સુપરવાઇઝર', addCode: 'નવા સેમ્પલ તરીકે ઉમેરો', done: 'પૂરું'
     },
-    labels: 'લેબલ અને બોર્ડ છાપો'
+    labels: 'જોબ કાર્ડ અને લેબલ છાપો'
   }
 };
 const B = () => BL[S.lang] || BL.en;
@@ -152,6 +159,7 @@ const ICON = {
   MC: svgI('<path d="M24 6c8 10 12 16 12 22a12 12 0 01-24 0c0-6 4-12 12-22z"/>'),
   VM: svgI('<path d="M24 42c-8 0-12-6-9-13 2-4 6-6 5-13 7 3 13 10 12 17 0 5-3 9-8 9z"/>'),
   ASH: svgI('<path d="M12 18h24l-4 22H16z"/><circle cx="20" cy="30" r="1.5" fill="currentColor"/><circle cx="27" cy="27" r="1.5" fill="currentColor"/><circle cx="25" cy="34" r="1.5" fill="currentColor"/>'),
+  card: svgI('<rect x="9" y="5" width="30" height="38" rx="3"/><path d="M14 10h9v9h-9zM17 13h3v3h-3z"/><circle cx="19" cy="30" r="3.5"/><circle cx="30" cy="30" r="3.5"/><circle cx="19" cy="38" r="2"/><circle cx="30" cy="38" r="2"/>'),
   TM: svgI('<path d="M16 8c5 7 8 11 8 15a8 8 0 01-16 0c0-4 3-8 8-15zM32 18c5 7 8 11 8 15a8 8 0 01-16 0c0-4 3-8 8-15z"/>')
 };
 const vesselIcon = k => k === 'MC' || k === 'TM' ? ICON.dish : ICON.crucible;
@@ -178,6 +186,13 @@ function holderFromText(txt) {
   const up = String(txt).trim().toUpperCase();
   let m = up.match(/^DISH\s*[-_ ]?\s*0*(\d{1,4})$/);
   if (m) return { id: `DISH ${+m[1]}`, test: 'MC', n: +m[1] };
+  // job card "ASH W1-3" (Ash, balance W1, batch 3) and its spot "ASH W1-3-5"
+  m = up.match(/^(ASH|VM)\s*W([1-4])\s*[-_ ]\s*0*(\d{1,4})(?:\s*[-_ ]\s*0*(\d{1,2}))?$/);
+  if (m) {
+    const bal = +m[2], batch = +m[3], tray = `${m[1]} W${bal}-${batch}`, pos = m[4] ? +m[4] : 0;
+    if (pos > CAP[m[1]]) return null;
+    return { id: pos ? `${tray}-${pos}` : null, test: m[1], bal, letter: '#' + batch, batch, pos: pos || undefined, tray, card: true };
+  }
   m = up.match(/^(ASH|VM)\s*[-_ ]?\s*([1-4]?)\s*([A-Z])\s*[-_ ]?\s*0*(\d{1,2})$/);
   if (m && +m[4] >= 1 && +m[4] <= CAP[m[1]]) {
     const bal = m[2] ? +m[2] : 0, tray = `${m[1]} ${bal || ''}${m[3]}`;
@@ -188,7 +203,7 @@ function holderFromText(txt) {
   return null;
 }
 const hInfo = id => holderFromText(id) || { id, test: 'MC', n: id };
-const trayName = tr => { const i = hInfo(tr); return B().boardName(i.test, i.bal, i.letter); };
+const trayName = tr => { const i = hInfo(tr); return i.card ? B().boardName(i.test, 'W' + i.bal, ' #' + i.batch) : B().boardName(i.test, i.bal, i.letter); };
 const hName = id => { const i = hInfo(id); return i.test === 'MC' ? `${B().dish} ${i.n}` : `${trayName(i.tray)} · ${i.pos}`; };
 const hBig = id => { const i = hInfo(id); return String(i.test === 'MC' ? i.n : i.pos); };
 
@@ -329,6 +344,76 @@ function pickSpot(k) {
   return t ? `${t}-${freePos(t)}` : null;
 }
 
+/* ---------- job cards (printed on the labels page from the Google Sheet allotment) ---------- */
+const cards = () => (S.data && S.data.cards) || {};
+// The job card a sample's Ash / VM test is on (the newest card, if it was printed twice)
+function cardSpot(code, k) {
+  let best = null; const c = cards();
+  Object.keys(c).forEach(tray => {
+    const j = c[tray], i = (j.codes || []).indexOf(code);
+    if (j.test === k && i >= 0 && i < CAP[k] && (!best || (j.at || 0) > best.at)) best = { tray, pos: i + 1, id: `${tray}-${i + 1}`, at: j.at || 0, bal: +j.bal };
+  });
+  return best;
+}
+// The newest load of a card that is still in the oven or still has W3 to do
+const cardRun = tray => runs().filter(r => r.tray === tray && runPhase(r) !== 'done').sort((a, b) => b.start - a.start)[0] || null;
+// Next spot of a card that still needs W1 or W2 (spots in order 1, 2, 3 …)
+function cardTodo(tray) {
+  const j = cards()[tray]; if (!j) return null;
+  for (let i = 0; i < j.codes.length && i < CAP[j.test]; i++) {
+    const code = j.codes[i]; if (!code) continue;
+    const s = sample(code), st = s && s.tests[j.test];
+    if (!st || st.done < 2) return { code, pos: i + 1, id: `${tray}-${i + 1}` };
+  }
+  return null;
+}
+// Scanning a job card: W1 / W2 on the next spot, or W3 once the supervisor has taken the load out
+function openCard(tray) {
+  const t = B(), j = cards()[tray], k = hInfo(tray).test;
+  if (!j) { redScreen(t.bad.notCard, { icon: ICON[k] }); return; }
+  if (!balNo()) { redScreen(t.bad.noBal, { icon: ICON.balance, toBal: true }); return; }
+  if (+j.bal !== balNo()) { redScreen(t.bad.otherCard, { icon: ICON.balance, num: String(j.bal) }); return; }
+  good(); S.card = tray; S.view = 'card'; render();
+}
+function cardNext() {
+  const tray = S.walk && S.walk.card, j = tray && cards()[tray];
+  if (!j) { S.walk = null; S.view = 'home'; render(); return; }
+  const n = cardTodo(tray);
+  if (!n) { S.walk = null; S.card = tray; S.view = 'card'; good(); render(); return; }
+  if (!sample(n.code)) enqueue({ action: 'addCodes', codes: [n.code], worker: S.worker });
+  if (holdOf(sample(n.code), j.test) !== n.id) enqueue({ action: 'hold', code: n.code, key: j.test, holder: n.id, bal: balNo(), worker: S.worker });
+  goTest(n.code, j.test);
+}
+function renderCard() {
+  const t = B(), tray = S.card, j = cards()[tray];
+  if (!j) { S.view = 'home'; return renderHomeB(); }
+  const k = j.test, i = hInfo(tray), r = cardRun(tray), ph = r && runPhase(r), todo = cardTodo(tray);
+  const cell = pos => {
+    const code = j.codes[pos - 1]; if (!code) return `<span class="bs off">${pos}</span>`;
+    const s = sample(code), st = s && s.tests[k], d = st ? st.done : 0, onIt = s && holdOf(s, k) === `${tray}-${pos}`;
+    const cls = d === 3 ? 'w3' : d === 2 && onIt ? 'full' : d === 1 && onIt ? 'half' : '';
+    return `<span class="bs code ${cls}${todo && todo.pos === pos && !r ? ' lit' : ''}"><i>${pos}</i><b>${esc(code)}</b>${d === 3 ? '<em>✓</em>' : ''}</span>`;
+  };
+  let act = '';
+  if (r && ph === 'out') act = `<button class="primary doorbtn" data-act="walk">${ICON.balance}<small>${esc(t.startWalk)}</small></button>`;
+  else if (r && ph === 'heat') act = `<div class="bigtime">${ICON.hour}${cdHTML(r)}</div><button class="primary doorbtn" disabled>${ICON.lock}<small>W3</small></button>`;
+  else if (r) act = `<div class="bigtime">${placeIcon(r.place)}<b>${placeNo(r.place)}</b></div><button class="primary doorbtn" disabled>${ICON.lock}<small>${esc(t.bad.waitOut)}</small></button>`;
+  else if (todo) act = `<button class="primary doorbtn" data-act="card-go">${ICON.balance}<small>W1 · W2 · ${todo.pos}</small></button>`;
+  else act = `<div class="bigtime">${ICON.furnace}${ICON.hour}</div>`;
+  if (r) S.rid = r.rid;
+  return `<div style="${cvar(k)}">${topBar(true)}
+    <div class="placehead"><span class="ti">${ICON[k]}</span><span class="bnum">${esc(String(i.bal))}<i>${esc(i.letter)}</i></span>
+      ${r ? `${placeIcon(r.place)}<b>${placeNo(r.place)}</b>` : ''}</div>
+    <div class="runboard cardboard">${boardMap(tray, 0, cell)}</div>
+    <div class="bact">${act}</div></div>`;
+}
+// Ash / VM on the home screen: this balance's job cards that still need W1 / W2, or W3 now
+function myCards() {
+  const c = cards(), b = balNo();
+  return Object.keys(c).filter(tray => +c[tray].bal === b && (cardTodo(tray) || cardRun(tray)))
+    .sort((x, y) => (c[x].at || 0) - (c[y].at || 0));
+}
+
 /* ---------- red and green screens ---------- */
 // A red screen: buzz, a big picture or number, a small line. opts: { big, icon, test, again, override }
 function redScreen(msg, opts = {}) {
@@ -380,7 +465,9 @@ function renderSampleB() {
 
 /* ---------- the weight screen: what goes on the balance ---------- */
 function boardMap(tray, lit, cell) {
-  const k = hInfo(tray).test, cols = COLS[k], rows = Math.ceil(CAP[k] / cols);
+  const k = hInfo(tray).test, cols = COLS[k], rows = Math.ceil(CAP[k] / cols), j = hInfo(tray).card && cards()[tray];
+  // a job card: the sample code is written in its circle, as on the paper card
+  if (j && !cell) cell = pos => `<span class="bs code${pos === lit ? ' lit' : ''}"><i>${pos}</i><b>${esc(j.codes[pos - 1] || '')}</b></span>`;
   return `<div class="board" style="${cvar(k)};grid-template-columns:repeat(${cols},1fr);grid-template-rows:repeat(${rows},auto)">
     ${Array.from({ length: CAP[k] }, (x, i) => cell ? cell(i + 1) : `<span class="bs${i + 1 === lit ? ' lit' : ''}">${i + 1}</span>`).join('')}</div>`;
 }
@@ -431,7 +518,7 @@ function placeTile(p) {
     else { cls = 'up'; ic = ICON.doorOpen; small = t.doorOpen; }
   } else if (out) { cls = 'out'; big = String(waitCount(out)); ic = ICON.balance; small = 'W3'; }
   const k = (r || out) ? (r || out).test : null, mo = r && placeOutMine(p);
-  // status only: the worker opens an oven / furnace by scanning its QR there, not by tapping here
+  // status only: the supervisor loads and unloads in the timer app
   return `<div class="ptile ${cls}" ${k ? `style="${cvar(k)}"` : ''}>
     <span class="pi">${placeIcon(p)}<em>${placeNo(p)}</em></span>
     ${k ? `<span class="pk">${ICON[k]}</span>` : ''}
@@ -441,9 +528,12 @@ function placeTile(p) {
 function renderHomeB() {
   const t = B(), mc = waitingFor('MC'), boards = boardsWaiting(['VM', 'ASH']);
   return `${topBar(true)}
-    <button class="primary scanbig" data-act="scan"><span class="qr">${ICON.scan}</span><span class="sbags">${ICON.bag}${ICON.dish}${ICON.oven}${ICON.furnace}</span><small>${esc(t.small.scanSub)}</small></button>
+    <button class="primary scanbig" data-act="scan"><span class="qr">${ICON.scan}</span><span class="sbags">${ICON.bag}${ICON.dish}${ICON.card}</span><small>${esc(t.small.scanSub)}</small></button>
     <div class="typerow"><input class="field" id="typecode" type="text" autocomplete="off" autocapitalize="characters" placeholder="${esc(T().find)}">
       <button class="secondary" data-act="type-open">→</button></div>
+    ${myCards().length ? `<div class="waits">${myCards().map(tray => { const k = hInfo(tray).test, r = cardRun(tray), ph = r && runPhase(r);
+        return `<button class="wtile" style="${cvar(k)}" data-act="card" data-tray="${esc(tray)}"><span class="wi">${ICON[k]}</span><span class="bnum">${esc(String(hInfo(tray).bal))}<i>${esc(hInfo(tray).letter)}</i></span>
+          <span class="wi">${ph === 'out' ? ICON.balance + '<b>W3</b>' : r ? ICON.hour : ICON.balance}</span></button>`; }).join('')}</div>` : ''}
     <div class="ptiles">${Object.keys(PLACES).map(placeTile).join('')}</div>
     ${mc.length || boards.length ? `<h3 class="bhead">${esc(t.small.boardsWaiting)}</h3><div class="waits">
       ${mc.length ? `<div class="wtile" style="${cvar('MC')}"><span class="wi">${ICON.dish}</span><b>${mc.length}</b></div>` : ''}
@@ -466,75 +556,6 @@ function renderBal() {
     <div class="balgrid">${[1, 2, 3, 4].map(n => `<button class="balbtn${balNo() === n ? ' on' : ''}" data-act="set-bal" data-bal="${n}">${n}</button>`).join('')}</div>`;
 }
 
-/* ---------- loading an oven / furnace ---------- */
-// S.load = { place, tray, items: [dish ids] (oven), out: { pos: true } (furnace) }
-function loadItems() {
-  const L = S.load;
-  if (PLACES[L.place].kind === 'oven') { const w = waitingFor('MC'); return L.items.map(id => w.find(x => x.h === id)).filter(Boolean); }
-  if (!L.tray) return [];
-  return waitingFor(hInfo(L.tray).test, L.tray).filter(x => !L.out[hInfo(x.h).pos]);
-}
-function openLoad(p) {
-  S.load = { place: p, tray: null, items: [], out: {} };
-  if (PLACES[p].kind === 'furnace') {
-    if (!balNo()) { redScreen(B().bad.noBal, { icon: ICON.balance, toBal: true }); return; }
-    const bw = boardsWaiting(PLACES[p].tests);
-    if (!bw.length) { redScreen(B().bad.nothing, { icon: placeIcon(p), num: placeNo(p) }); return; }
-    if (bw.length === 1) S.load.tray = bw[0].tray;
-  } else if (!waitingFor('MC').length) { redScreen(B().bad.nothing, { icon: placeIcon(p), num: placeNo(p) }); return; }
-  S.view = 'load'; render();
-}
-function doorClosedBtn(ready) {
-  return `<button class="primary doorbtn" data-act="r-start" ${ready ? '' : 'disabled'}>${ICON.doorClosed}<small>${esc(B().doorClosed)}</small></button>`;
-}
-function renderLoad() {
-  const t = B(), L = S.load, p = L.place, oven = PLACES[p].kind === 'oven';
-  const head = `${topBar(true)}<div class="placehead">${placeIcon(p)}<b>${placeNo(p)}</b><small>${esc(placeName(p))}</small></div>`;
-  if (oven) {
-    const w = waitingFor('MC'), its = loadItems();
-    return `<div style="${cvar('MC')}">${head}
-      <div class="btnrow"><button class="primary" data-act="l-scan">${ICON.scan}<small>${esc(t.small.loadDish)}</small></button>
-        ${w.length && its.length < Math.min(w.length, CAP.MC) ? `<button class="secondary" data-act="l-all">${ICON.dish}<b>${Math.min(w.length, CAP.MC)}</b><small>${esc(t.allIn)}</small></button>` : ''}</div>
-      <p class="countbig"><b>${its.length}</b> / ${CAP.MC}</p>
-      <div class="dishes">${its.map(x => `<button class="dslot" data-act="l-drop" data-h="${esc(x.h)}"><span>${ICON.dish}</span><b>${esc(String(hInfo(x.h).n))}</b><em>✕</em></button>`).join('')}</div>
-      <div class="bact">${doorClosedBtn(its.length > 0)}</div></div>`;
-  }
-  if (!L.tray) {
-    const bw = boardsWaiting(PLACES[p].tests);
-    return `${head}<div class="waits">${bw.map(x => `<button class="wtile" style="${cvar(x.test)}" data-act="l-tray" data-tray="${esc(x.tray)}">
-        <span class="wi">${ICON[x.test]}</span><span class="bnum">${esc(String(hInfo(x.tray).bal || ''))}<i>${esc(hInfo(x.tray).letter)}</i></span><b>${x.n}</b></button>`).join('')}</div>`;
-  }
-  const k = hInfo(L.tray).test, all = waitingFor(k, L.tray), n = loadItems().length;
-  return `<div style="${cvar(k)}">${head}
-    <div class="loadhead"><span class="ti">${ICON[k]}</span><span class="bnum">${esc(String(hInfo(L.tray).bal || ''))}<i>${esc(hInfo(L.tray).letter)}</i></span><b>${n}</b><span class="ti">${ICON.crucible}</span></div>
-    <p class="sub center-t">${esc(t.small.loadTap)}</p>
-    <div class="loadboard">${boardMap(L.tray, 0, pos => {
-      const x = all.find(y => hInfo(y.h).pos === pos);
-      if (!x) return `<span class="bs off">${pos}</span>`;
-      return `<button class="bs ${L.out[pos] ? 'out' : 'lit'}" data-act="l-out" data-pos="${pos}">${pos}</button>`;
-    })}</div>
-    <div class="bact">${doorClosedBtn(n > 0)}</div></div>`;
-}
-function loadScan(h) {
-  const t = B(), L = S.load;
-  if (!h || !h.id || h.test !== 'MC') { redScreen(t.bad.wrongThing, { icon: ICON.dish }); return; }
-  if (!waitingFor('MC').some(x => x.h === h.id)) { redScreen(t.bad.notWaiting, { icon: ICON.dish, num: String(h.n) }); return; }
-  if (L.items.includes(h.id)) { good(); return; }
-  if (L.items.length >= CAP.MC) { redScreen(t.bad.full, { icon: ICON.oven, num: String(CAP.MC) }); return; }
-  L.items.push(h.id); good(); render();
-  setTimeout(() => { if (S.view === 'load' && !S.modal) openScanner('load'); }, 500);    // next dish straight away
-}
-function startRun() {
-  const L = S.load, its = loadItems(); if (!its.length) return;
-  const k = PLACES[L.place].kind === 'oven' ? 'MC' : hInfo(L.tray).test;
-  if (its.length > CAP[k]) { redScreen(B().bad.full, { icon: placeIcon(L.place), num: String(CAP[k]) }); return; }
-  const rid = `${new Date().toISOString().slice(0, 10)}-${L.place}-${Date.now().toString(36)}`;
-  enqueue({ action: 'runStart', rid, place: L.place, test: k, tray: L.tray, items: its, mins: minsFor(k), bal: balNo(), worker: S.worker,
-            reheat: true });   // oven and furnace: the minutes start once it is back at temperature
-  good();
-  S.load = null; S.rid = rid; S.view = 'run'; render();
-}
-
 /* ---------- a load in an oven / furnace ---------- */
 function renderRun() {
   const t = B(), r = runBy(S.rid);
@@ -542,15 +563,18 @@ function renderRun() {
   const ph = runPhase(r), p = r.place, k = r.test;
   const items = r.tray
     ? '<div class="runboard">' + boardMap(r.tray, 0, pos => { const it = r.items.find(x => hInfo(x.h).pos === pos); if (!it) return `<span class="bs off">${pos}</span>`;
-        const st = itemState(r, it); return `<span class="bs ${st === 'w3' ? 'w3' : st === 'gone' ? 'out' : 'lit'}">${pos}${st === 'w3' ? '<em>✓</em>' : ''}</span>`; }) + '</div>'
+        const st = itemState(r, it), card = hInfo(r.tray).card;   // a job card: the code in its circle
+        return `<span class="bs ${card ? 'code ' : ''}${st === 'w3' ? 'w3' : st === 'gone' ? 'out' : 'lit'}">${card ? `<i>${pos}</i><b>${esc(it.code)}</b>` : pos}${st === 'w3' ? '<em>✓</em>' : ''}</span>`; }) + '</div>'
     : `<div class="dishes">${r.items.map(it => { const st = itemState(r, it);
         return `<span class="dslot ${st}"><span>${ICON.dish}</span><b>${esc(String(hInfo(it.h).n))}</b>${st === 'w3' ? '<em>✓</em>' : ''}</span>`; }).join('')}</div>`;
   let act = '';
+  // the supervisor starts, times and takes out every load in the timer app: the worker only waits for W3
   if (ph === 'warm') act = `<div class="bigtime">${ICON.thermo}<b>${tempFor(k) ? tempFor(k) + '°' : '…'}</b><small>°C</small></div>
-      <button class="primary doorbtn" data-act="r-go">${ICON.scan}<small>${esc(t.warm)} ${tempFor(k) ? tempFor(k) + ' °C' : ''}</small></button>`;
+      <button class="primary doorbtn" disabled>${ICON.lock}<small>W3</small></button>`;
   else if (ph === 'heat') act = `<div class="bigtime">${ICON.hour}${cdHTML(r)}</div>
-      <button class="primary doorbtn" disabled>${ICON.lock}<small>${esc(t.doorOpen)}</small></button>`;
-  else if (ph === 'up') act = `<button class="primary doorbtn blink" data-act="r-out">${ICON.doorOpen}<small>${esc(t.doorOpen)}</small></button>`;
+      <button class="primary doorbtn" disabled>${ICON.lock}<small>W3</small></button>`;
+  else if (ph === 'up') act = `<div class="bigtime">${ICON.doorOpen}</div>
+      <button class="primary doorbtn" disabled>${ICON.lock}<small>${esc(t.bad.waitOut)}</small></button>`;
   else if (ph === 'out') act = r.tray
     ? `<button class="primary doorbtn" data-act="walk">${ICON.balance}<small>${esc(t.startWalk)}</small></button>`
     : `<button class="primary doorbtn" data-act="scan">${ICON.scan}<small>W3 · ${esc(t.dish)}</small></button>`;
@@ -569,6 +593,7 @@ const fmtTime = ms => { const d = new Date(ms); return `${String(d.getHours()).p
 
 /* ---------- W3 walk: spot 1, 2, 3 … of a furnace load ---------- */
 function walkNext() {
+  if (S.walk && S.walk.card) { cardNext(); return; }
   const r = runBy(S.walk && S.walk.rid);
   if (!r) { S.walk = null; S.view = 'home'; render(); return; }
   const it = r.items.filter(x => itemState(r, x) === 'wait').sort((a, b) => hInfo(a.h).pos - hInfo(b.h).pos)[0];
@@ -601,8 +626,7 @@ function scanEl() {
   if (!el) { el = document.createElement('div'); el.id = 'scanner'; document.body.appendChild(el); }
   return el;
 }
-const SCAN_PIC = { dish: () => ICON.dish, redish: () => ICON.dish, load: () => ICON.dish, any: () => ICON.bag,
-  door: () => S.door ? `${placeIcon(S.door.place)}<b class="scannum">${placeNo(S.door.place)}</b>` : ICON.furnace };
+const SCAN_PIC = { dish: () => ICON.dish, redish: () => ICON.dish, any: () => ICON.bag };
 async function openScanner(purpose) {
   closeScanner();
   const t = B(), el = scanEl();
@@ -659,14 +683,13 @@ function scanTyped() {
 // What a scan (or a typed code) does, depending on what it was started for
 function onScan(txt, purpose) {
   const t = B(), p = placeFromText(txt), h = holderFromText(txt);
-  if (purpose === 'load' && S.view === 'load') return loadScan(h);
-  if (purpose === 'door') return doorScan(p);
   if (purpose === 'dish' || purpose === 'redish') {
     if (!h || !h.id || h.test !== 'MC') { redScreen(t.bad.wrongThing, { icon: ICON.dish }); return; }
     return purpose === 'dish' ? pairDish(h) : changeDish(h);
   }
   if (p) return onPlace(p);
   if (h && h.id) return onHolder(h);
+  if (h && h.card) return openCard(h.tray);
   if (h && h.tray) { redScreen(t.bad.wrongThing, { icon: ICON.bag }); return; }
   const code = codeFromText(txt);
   if (!code) { bad(); S.modal = { type: 'addcode', code: String(txt).trim().toUpperCase().slice(0, 20) }; render(); return; }
@@ -675,8 +698,9 @@ function onScan(txt, purpose) {
   if (!sample(code)) enqueue({ action: 'addCodes', codes: [code], worker: S.worker });
   good(); S.code = code; S.view = 'sample'; S.via = null; S.walk = null; render();
 }
+// An old oven / furnace sticker scanned: show what is in there (the supervisor loads it in the timer app)
 function onPlace(p) {
-  good(); S.placeScan = { place: p, at: Date.now() };
+  good();
   const r = placeRun(p), mo = placeOutMine(p);
   // this balance's load already out of here comes before someone else's load now heating in it
   // (only this balance's own load needing the door or the temperature scan comes first)
@@ -684,21 +708,8 @@ function onPlace(p) {
   if (r) { S.rid = r.rid; S.view = 'run'; render(); return; }
   const o = placeOut(p);
   if (o && !waitingFor(PLACES[p].kind === 'oven' ? 'MC' : 'x').length && !boardsWaiting(PLACES[p].tests).length) { S.rid = o.rid; S.view = 'run'; render(); return; }
-  if (o && o.tray && (!o.bal || o.bal === balNo())) { S.rid = o.rid; S.view = 'run'; render(); return; }
-  openLoad(p);
-}
-// This oven / furnace was scanned in the last 3 minutes: the worker is standing at it, no second scan needed
-const atPlace = p => !!S.placeScan && S.placeScan.place === p && Date.now() - S.placeScan.at < 3 * 60000;
-// Door closed / door open: the worker scans the oven or furnace first, so the right door is the one opened
-function doorScan(p) {
-  const d = S.door; if (!d) return;
-  if (p !== d.place) { redScreen(B().bad.wrongPlace, { icon: placeIcon(d.place), num: placeNo(d.place) }); return; }
-  S.door = null; S.placeScan = { place: p, at: Date.now() };
-  if (d.act === 'start') { startRun(); return; }
-  const r = runBy(d.rid);
-  if (d.act === 'go') { if (r && runPhase(r) === 'warm') enqueue({ action: 'runGo', rid: r.rid, worker: S.worker }); good(); S.rid = d.rid; S.view = 'run'; render(); return; }
-  if (r && runPhase(r) === 'up') enqueue({ action: 'runOut', rid: r.rid, worker: S.worker });
-  good(); S.rid = d.rid; S.view = 'run'; render();
+  if (o) { S.rid = o.rid; S.view = 'run'; render(); return; }
+  redScreen(B().free, { icon: placeIcon(p), num: placeNo(p) });
 }
 function goTest(code, k) { S.code = code; S.via = code + '|' + k; openTestB(k); }
 // Moisture: the dish scanned from the sample screen
@@ -736,22 +747,24 @@ function onHolder(h) {
   if (ph === 'heat') { redScreen(t.bad.heating, { icon: ICON.hour, num: String(minsLeft(r)) }); return; }
   const b = (s.holdBal || {})[k] || r.bal;
   if (b && balNo() && b !== balNo()) { redScreen(t.bad.otherBal, { icon: ICON.balance, num: String(b) }); return; }
-  if (ph === 'up') { S.rid = r.rid; S.view = 'run'; S.door = { act: 'out', place: r.place, rid: r.rid }; bad(); render(); openScanner('door'); return; }
+  if (ph === 'up') { redScreen(t.bad.waitOut, { icon: ICON.lock }); return; }   // the supervisor takes it out first
   good(); S.rid = r.rid; goTest(s.code, k);
 }
 
 /* ---------- opening a test ---------- */
 function openTestB(k) {
-  const t = B(), s = sample(S.code), st = s.tests[k];
-  if (!machineOk(S.code)) return;
+  const t = B(), s = sample(S.code), st = s.tests[k], c0 = HELD.includes(k) && cardSpot(S.code, k);
+  // a code on this balance's job card is allotted to it, whatever the sheet's Machine column says now
+  if (!(c0 && c0.bal === balNo()) && !machineOk(S.code)) return;
   if (HELD.includes(k) && S.via !== S.code + '|' + k) {
     // not from a scan: what tapping the tile does
     if (st.done === 0 && k === 'MC') { openScanner('dish'); return; }
     if (st.done === 0) {
       if (!balNo()) { redScreen(t.bad.noBal, { icon: ICON.balance, toBal: true }); return; }
-      const id = pickSpot(k);
-      if (!id) { redScreen(t.bad.noBoard, { icon: ICON[k] }); return; }
-      enqueue({ action: 'hold', code: S.code, key: k, holder: id, bal: balNo(), worker: S.worker });
+      const c = cardSpot(S.code, k);
+      if (!c) { redScreen(t.bad.noCard, { icon: ICON[k] }); return; }
+      if (c.bal !== balNo()) { redScreen(t.bad.otherCard, { icon: ICON.balance, num: String(c.bal) }); return; }
+      enqueue({ action: 'hold', code: S.code, key: k, holder: c.id, bal: balNo(), worker: S.worker });
       good();
     } else if (st.done === 2) {
       const r = runOf(S.code, k), h = holdOf(s, k);
@@ -759,6 +772,7 @@ function openTestB(k) {
       if (h) {
         if (!r) { redScreen(t.bad.notIn, { icon: k === 'MC' ? ICON.oven : ICON.furnace }); return; }
         if (runPhase(r) === 'heat') { redScreen(t.bad.heating, { icon: ICON.hour, num: String(minsLeft(r)) }); return; }
+        if (runPhase(r) !== 'out') { redScreen(t.bad.waitOut, { icon: ICON.lock }); return; }
         if (k === 'MC') { redScreen(t.bad.wrongThing, { icon: ICON.dish, num: hBig(h) }); return; }   // W3: scan the dish
         if (r.tray) { startWalk(r); return; }
       }
@@ -872,17 +886,9 @@ function batchAct(el) {
     case 'scan-typed': scanTyped(); return true;
     case 'type-open': { const v = (document.getElementById('typecode') || {}).value; if (v && v.trim()) onScan(v.trim(), 'any'); return true; }
     case 'place': onPlace(el.dataset.place); return true;
-    case 'r-out':
-      if (r && runPhase(r) === 'up') { S.door = { act: 'out', place: r.place, rid: r.rid }; atPlace(r.place) ? doorScan(r.place) : openScanner('door'); }
-      return true;
-    case 'walk': if (r) startWalk(r); return true;
-    case 'r-go': askNotify(); if (r && runPhase(r) === 'warm') { S.door = { act: 'go', place: r.place, rid: r.rid }; openScanner('door'); } return true;   // always a fresh scan: they read the display there
-    case 'r-start': askNotify(); if (S.load && loadItems().length) { S.door = { act: 'start', place: S.load.place }; atPlace(S.load.place) ? doorScan(S.load.place) : openScanner('door'); } return true;
-    case 'l-scan': openScanner('load'); return true;
-    case 'l-all': S.load.items = waitingFor('MC').map(x => x.h).slice(0, CAP.MC); good(); render(); return true;
-    case 'l-drop': S.load.items = S.load.items.filter(x => x !== el.dataset.h); render(); return true;
-    case 'l-tray': S.load.tray = el.dataset.tray; S.load.out = {}; render(); return true;
-    case 'l-out': { const p = el.dataset.pos; S.load.out[p] = !S.load.out[p]; render(); return true; }
+    case 'walk': { const w = S.view === 'card' ? cardRun(S.card) : r; if (w) startWalk(w); return true; }
+    case 'card': openCard(el.dataset.tray); return true;
+    case 'card-go': if (S.card) { S.walk = { card: S.card }; cardNext(); } return true;
     case 'redish': openScanner('redish'); return true;
     case 'fix': S.modal = { type: 'fix', test: el.dataset.test }; render(); return true;
     case 'fix-step': {
@@ -1021,12 +1027,12 @@ async function keepOn() {
 function letOff() { if (alarmWake) { alarmWake.release().catch(() => {}); alarmWake = null; } }
 // the sound needs one tap on the page first: any tap wakes it up
 document.addEventListener('pointerdown', () => { try { if (AC && AC.state === 'suspended') AC.resume(); } catch (e) {} }, true);
-document.addEventListener('visibilitychange', () => setTimeout(alarmCheck, 200));
+
 // a tap on the notification brings the app back: open the load straight away
 if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', e => {
   if (e.data && e.data.alarm) setTimeout(alarmCheck, 300);
 });
-setInterval(alarmCheck, 5000);
+// no time-up alarm on the worker phones any more: the supervisor's timer app rings and takes the load out
 
 // the countdowns tick every second without redrawing the screen; at 0:00 the screen and the alarm catch up
 setInterval(() => {
@@ -1034,7 +1040,6 @@ setInterval(() => {
   let ended = false;
   document.querySelectorAll('b.cd[data-end]').forEach(el => { const end = +el.dataset.end; el.textContent = cdText(end); if (end <= Date.now()) ended = true; });
   if (ended) {
-    alarmCheck();
     const typing = document.activeElement && /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
     if (!S.modal && !S.busy && !SCAN && !typing) render();
   }
