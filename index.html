@@ -620,7 +620,7 @@ Object.assign(L.gu, {
   prevCard: 'પાછલું સેમ્પલ', nextCard: 'આગલું સેમ્પલ'
 });
 Object.assign(L.en, {
-  phAsk: l => `${l} is out of range. Take a photo of the crucible for the record.`,
+  phAsk: (l, v) => `${l} is out of range. Put the ${v} back on the balance and take a photo that shows it and the reading, so the supervisor can check it.`,
   phAskSub: 'It is saved with the sample code. Skip only if a photo is not possible.',
   phTake: '📷 Take photo', phSkip: 'Skip photo', phMore: '📷 Add another photo', phRetake: '📷 Take photo now',
   phTitle: l => `📷 ${l} photos`, phNeed: 'No photo for this result yet.',
@@ -632,7 +632,7 @@ Object.assign(L.en, {
   phLoading: 'Loading photo…', phOld: 'earlier weights'
 });
 Object.assign(L.gu, {
-  phAsk: l => `${l} મર્યાદા બહાર છે. રેકોર્ડ માટે ક્રુસિબલનો ફોટો લો.`,
+  phAsk: (l, v) => `${l} મર્યાદા બહાર છે. ${v} ફરી બેલેન્સ પર મૂકો અને તે તથા વજન દેખાય એવો ફોટો લો, જેથી સુપરવાઇઝર તપાસી શકે.`,
   phAskSub: 'ફોટો સેમ્પલ કોડ સાથે સેવ થશે. ફોટો શક્ય ન હોય તો જ છોડો.',
   phTake: '📷 ફોટો લો', phSkip: 'ફોટો છોડો', phMore: '📷 બીજો ફોટો ઉમેરો', phRetake: '📷 હમણાં ફોટો લો',
   phTitle: l => `📷 ${l} ફોટા`, phNeed: 'આ પરિણામનો હજી ફોટો નથી.',
@@ -988,7 +988,8 @@ function approvalHTML(s) {
 }
 
 /* ---------- photos of out-of-range results (Ash) ----------
-   When a W3 makes the result go out of range, the worker is asked for a photo of the crucible.
+   When a W3 makes the Ash result cross its limit (Setup → limits), the worker is asked for a photo of the
+   crucible back on the balance with the reading showing, so the supervisor can cross-check it.
    The picture goes to weighing-data photos/<code>/<code>-<test>-<date>.jpg (one GitHub call per photo),
    and data.json samples[code].photos lists it: { id, test, path, at, by, pct, w } or { ..., skipped: true }.
    Photos wait on the phone (IndexedDB) until they are uploaded, so no internet is needed to take one. */
@@ -1017,8 +1018,10 @@ const MEMPHOTO = {};                         // fallback when IndexedDB is not a
 const photoKey = (s, k) => JSON.stringify(s.tests[k].w.slice(0, 3));
 // The photos/skips of one test, and whether the current weights still need one
 function photosOf(s, k) { return (s.photos || []).filter(p => p.test === k); }
+// Ash db needs moisture; until moisture is done, ash as received above the upper limit is already surely too high
+function photoFlag(k, st) { return isFlag(k, st) || (!isNum(st.db) && isNum(st.pct) && isNum(limOf(k)[1]) && st.pct > limOf(k)[1]); }
 function needsPhoto(s, k) {
-  if (!PHOTO_TESTS.includes(k) || !s || !s.tests[k] || s.tests[k].done !== 3 || !isFlag(k, s.tests[k])) return false;
+  if (!PHOTO_TESTS.includes(k) || !s || !s.tests[k] || s.tests[k].done !== 3 || !photoFlag(k, s.tests[k])) return false;
   const now = photoKey(s, k);
   return !photosOf(s, k).some(p => JSON.stringify(p.w) === now);
 }
@@ -1866,7 +1869,7 @@ function renderModal() {
   return `<div class="modal" style="${cvar(k)}"><div class="sheet" role="dialog" aria-modal="true">
       <div class="tick" aria-hidden="true">✓</div>
       <p class="instr">${esc(savedMsg(m))}</p>${m.slot ? `<p class="slotmsg">${esc(m.slot.text)}<b>${esc(m.slot.big)}</b></p>` : ''}${flagMsg(m)}
-      ${askPhoto(m) ? `<div class="photoask"><p>${esc(t.phAsk(lbl(k)))}</p><p class="sub" style="margin:0">${esc(t.phAskSub)}</p></div>
+      ${askPhoto(m) ? `<div class="photoask"><p>${esc(t.phAsk(lbl(k), ves(k)))}</p><p class="sub" style="margin:0">${esc(t.phAskSub)}</p></div>
       <div class="btnrow"><button class="secondary" data-act="photo-skip" ${S.busy ? 'disabled' : ''}>${esc(t.phSkip)}</button>
         <button class="primary" data-act="photo-take" data-test="${k}" ${S.busy ? 'disabled' : ''}>${esc(S.busy ? t.phBusy : t.phTake)}</button></div>`
       : `<div class="btnrow"><button class="primary" data-act="after">${esc(m.next === 'step2' ? t.enterW2 : t.ok)}</button></div>`}

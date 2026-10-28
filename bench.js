@@ -821,7 +821,7 @@ function renderSavedB(m) {
   const undoOk = !m.noUndo && Date.now() - m.at < 10000;
   return `<div class="modal greenm" style="${cvar(k)}"><div class="sheet" role="dialog" aria-modal="true">
     <div class="tick big">${ICON.check}</div>${what}
-    ${askPhoto(m) ? `<div class="photoask"><p>📷 ${esc(lbl(k))}</p></div>
+    ${askPhoto(m) ? `<div class="photoask"><div class="nextpic">${vesselIcon(k)}<span class="plus">→</span>${ICON.balance}<span class="plus">→</span><b>📷</b></div></div>
       <div class="btnrow"><button class="secondary" data-act="photo-skip" ${S.busy ? 'disabled' : ''}>${ICON.cross}</button>
         <button class="primary" data-act="photo-take" data-test="${k}" ${S.busy ? 'disabled' : ''}>📷</button></div>`
       : `<div class="btnrow">${undoOk ? `<button class="secondary undobtn" data-act="undo">${ICON.undo}<small>${esc(t.undo)}</small></button>` : ''}
