@@ -34,7 +34,7 @@ const BL = {
   en: {
     scan: 'Scan', bal: 'Balance', who: 'Who are you?', whoType: 'No list yet. Type your name.',
     pickBal: 'Which balance is this phone at?', free: 'Free', left: 'min',
-    doorClosed: 'Door closed', doorOpen: 'Door open', timeUp: 'Time up: take it out', warm: 'Heating up: scan it when it shows',  startWalk: 'Weigh W3',
+    doorClosed: 'Door closed', doorOpen: 'Door open', timeUp: 'Time up: take it out', warm: 'Heating up: tap when it shows',  startWalk: 'Weigh W3',
     allIn: 'All', w: n => 'W' + n, next: 'Next', undo: 'Undo', again: 'Weigh again',
     override: 'Supervisor: save anyway', ok: 'OK', close: 'Close',
     dish: 'Dish', spot: 'Spot', board: 'Board', oven: 'Oven', furnace: 'Furnace',
@@ -52,7 +52,7 @@ const BL = {
       locked: 'Only the supervisor can change this now.', otherLoad: 'This load belongs to another balance.', wrongPlace: 'Wrong oven / furnace. Scan this one:'
     },
     small: {
-      scanSub: 'bag · dish · oven · furnace', scanDish: 'scan an empty dish', start: 'start',
+      scanSub: 'bag · dish', scanDish: 'scan an empty dish', start: 'start',
       onIt: 'on', wait: 'waiting to go in', inHeat: 'in', w3: 'W3 now', result: 'result',
       loadDish: 'Scan each dish as it goes in', loadTap: 'Tap a spot that stayed out', boardsWaiting: 'Waiting to go in',
       changeDish: 'Change dish', supervisor: 'Supervisor', addCode: 'Add as new sample', done: 'Done'
@@ -62,7 +62,7 @@ const BL = {
   gu: {
     scan: 'સ્કેન', bal: 'કાંટો', who: 'તમે કોણ છો?', whoType: 'હજી યાદી નથી. તમારું નામ લખો.',
     pickBal: 'આ ફોન કયા કાંટા પર છે?', free: 'ખાલી', left: 'મિનિટ',
-    doorClosed: 'દરવાજો બંધ', doorOpen: 'દરવાજો ખોલો', timeUp: 'સમય પૂરો: બહાર કાઢો', warm: 'ગરમ થાય છે: આ તાપમાન દેખાય ત્યારે સ્કેન કરો',  startWalk: 'W3 વજન',
+    doorClosed: 'દરવાજો બંધ', doorOpen: 'દરવાજો ખોલો', timeUp: 'સમય પૂરો: બહાર કાઢો', warm: 'ગરમ થાય છે: આ તાપમાન દેખાય ત્યારે ટેપ કરો',  startWalk: 'W3 વજન',
     allIn: 'બધી', w: n => 'W' + n, next: 'આગળ', undo: 'પાછું', again: 'ફરી વજન',
     override: 'સુપરવાઇઝર: તો પણ સેવ કરો', ok: 'બરાબર', close: 'બંધ',
     dish: 'ડિશ', spot: 'ખાનું', board: 'બોર્ડ', oven: 'ઓવન', furnace: 'ફર્નેસ',
@@ -80,7 +80,7 @@ const BL = {
       locked: 'હવે ફક્ત સુપરવાઇઝર બદલી શકે.', otherLoad: 'આ લોડ બીજા કાંટાનો છે.', wrongPlace: 'ખોટું ઓવન / ફર્નેસ. આ સ્કેન કરો:'
     },
     small: {
-      scanSub: 'બેગ · ડિશ · ઓવન · ફર્નેસ', scanDish: 'ખાલી ડિશ સ્કેન કરો', start: 'શરૂ',
+      scanSub: 'બેગ · ડિશ', scanDish: 'ખાલી ડિશ સ્કેન કરો', start: 'શરૂ',
       onIt: 'પર', wait: 'અંદર જવાની રાહ', inHeat: 'માં', w3: 'હવે W3', result: 'પરિણામ',
       loadDish: 'દરેક ડિશ અંદર મૂકતી વખતે સ્કેન કરો', loadTap: 'બહાર રહેલું ખાનું ટેપ કરો', boardsWaiting: 'અંદર જવાની રાહ',
       changeDish: 'ડિશ બદલો', supervisor: 'સુપરવાઇઝર', addCode: 'નવા સેમ્પલ તરીકે ઉમેરો', done: 'પૂરું'
@@ -431,17 +431,17 @@ function placeTile(p) {
     else { cls = 'up'; ic = ICON.doorOpen; small = t.doorOpen; }
   } else if (out) { cls = 'out'; big = String(waitCount(out)); ic = ICON.balance; small = 'W3'; }
   const k = (r || out) ? (r || out).test : null, mo = r && placeOutMine(p);
-  // status only: the worker opens an oven / furnace by scanning its QR there, not by tapping here
-  return `<div class="ptile ${cls}" ${k ? `style="${cvar(k)}"` : ''}>
+  // the worker opens an oven / furnace by tapping its tile (no QR scan at the oven / furnace)
+  return `<button class="ptile ${cls}" data-act="place" data-place="${p}" ${k ? `style="${cvar(k)}"` : ''}>
     <span class="pi">${placeIcon(p)}<em>${placeNo(p)}</em></span>
     ${k ? `<span class="pk">${ICON[k]}</span>` : ''}
     <span class="pb">${ic ? `<span class="pic">${ic}</span>` : ''}${big ? `<b>${esc(big)}</b>` : ''}<small>${esc(small)}</small></span>
-    ${mo ? `<span class="pw3" style="${cvar(mo.test)}">${ICON[mo.test]}${ICON.balance}<b>${waitCount(mo)}</b><small>W3</small></span>` : ''}</div>`;
+    ${mo ? `<span class="pw3" style="${cvar(mo.test)}">${ICON[mo.test]}${ICON.balance}<b>${waitCount(mo)}</b><small>W3</small></span>` : ''}</button>`;
 }
 function renderHomeB() {
   const t = B(), mc = waitingFor('MC'), boards = boardsWaiting(['VM', 'ASH']);
   return `${topBar(true)}
-    <button class="primary scanbig" data-act="scan"><span class="qr">${ICON.scan}</span><span class="sbags">${ICON.bag}${ICON.dish}${ICON.oven}${ICON.furnace}</span><small>${esc(t.small.scanSub)}</small></button>
+    <button class="primary scanbig" data-act="scan"><span class="qr">${ICON.scan}</span><span class="sbags">${ICON.bag}${ICON.dish}</span><small>${esc(t.small.scanSub)}</small></button>
     <div class="typerow"><input class="field" id="typecode" type="text" autocomplete="off" autocapitalize="characters" placeholder="${esc(T().find)}">
       <button class="secondary" data-act="type-open">→</button></div>
     <div class="ptiles">${Object.keys(PLACES).map(placeTile).join('')}</div>
@@ -547,7 +547,7 @@ function renderRun() {
         return `<span class="dslot ${st}"><span>${ICON.dish}</span><b>${esc(String(hInfo(it.h).n))}</b>${st === 'w3' ? '<em>✓</em>' : ''}</span>`; }).join('')}</div>`;
   let act = '';
   if (ph === 'warm') act = `<div class="bigtime">${ICON.thermo}<b>${tempFor(k) ? tempFor(k) + '°' : '…'}</b><small>°C</small></div>
-      <button class="primary doorbtn" data-act="r-go">${ICON.scan}<small>${esc(t.warm)} ${tempFor(k) ? tempFor(k) + ' °C' : ''}</small></button>`;
+      <button class="primary doorbtn" data-act="r-go">${ICON.thermo}<small>${esc(t.warm)} ${tempFor(k) ? tempFor(k) + ' °C' : ''}</small></button>`;
   else if (ph === 'heat') act = `<div class="bigtime">${ICON.hour}${cdHTML(r)}</div>
       <button class="primary doorbtn" disabled>${ICON.lock}<small>${esc(t.doorOpen)}</small></button>`;
   else if (ph === 'up') act = `<button class="primary doorbtn blink" data-act="r-out">${ICON.doorOpen}<small>${esc(t.doorOpen)}</small></button>`;
@@ -601,8 +601,7 @@ function scanEl() {
   if (!el) { el = document.createElement('div'); el.id = 'scanner'; document.body.appendChild(el); }
   return el;
 }
-const SCAN_PIC = { dish: () => ICON.dish, redish: () => ICON.dish, load: () => ICON.dish, any: () => ICON.bag,
-  door: () => S.door ? `${placeIcon(S.door.place)}<b class="scannum">${placeNo(S.door.place)}</b>` : ICON.furnace };
+const SCAN_PIC = { dish: () => ICON.dish, redish: () => ICON.dish, load: () => ICON.dish, any: () => ICON.bag };
 async function openScanner(purpose) {
   closeScanner();
   const t = B(), el = scanEl();
@@ -660,7 +659,6 @@ function scanTyped() {
 function onScan(txt, purpose) {
   const t = B(), p = placeFromText(txt), h = holderFromText(txt);
   if (purpose === 'load' && S.view === 'load') return loadScan(h);
-  if (purpose === 'door') return doorScan(p);
   if (purpose === 'dish' || purpose === 'redish') {
     if (!h || !h.id || h.test !== 'MC') { redScreen(t.bad.wrongThing, { icon: ICON.dish }); return; }
     return purpose === 'dish' ? pairDish(h) : changeDish(h);
@@ -676,7 +674,7 @@ function onScan(txt, purpose) {
   good(); S.code = code; S.view = 'sample'; S.via = null; S.walk = null; render();
 }
 function onPlace(p) {
-  good(); S.placeScan = { place: p, at: Date.now() };
+  good();
   const r = placeRun(p), mo = placeOutMine(p);
   // this balance's load already out of here comes before someone else's load now heating in it
   // (only this balance's own load needing the door or the temperature scan comes first)
@@ -687,18 +685,11 @@ function onPlace(p) {
   if (o && o.tray && (!o.bal || o.bal === balNo())) { S.rid = o.rid; S.view = 'run'; render(); return; }
   openLoad(p);
 }
-// This oven / furnace was scanned in the last 3 minutes: the worker is standing at it, no second scan needed
-const atPlace = p => !!S.placeScan && S.placeScan.place === p && Date.now() - S.placeScan.at < 3 * 60000;
-// Door closed / door open: the worker scans the oven or furnace first, so the right door is the one opened
-function doorScan(p) {
-  const d = S.door; if (!d) return;
-  if (p !== d.place) { redScreen(B().bad.wrongPlace, { icon: placeIcon(d.place), num: placeNo(d.place) }); return; }
-  S.door = null; S.placeScan = { place: p, at: Date.now() };
-  if (d.act === 'start') { startRun(); return; }
-  const r = runBy(d.rid);
-  if (d.act === 'go') { if (r && runPhase(r) === 'warm') enqueue({ action: 'runGo', rid: r.rid, worker: S.worker }); good(); S.rid = d.rid; S.view = 'run'; render(); return; }
-  if (r && runPhase(r) === 'up') enqueue({ action: 'runOut', rid: r.rid, worker: S.worker });
-  good(); S.rid = d.rid; S.view = 'run'; render();
+// Door closed / at temperature / door open: one tap on the phone, no QR scan at the oven / furnace
+function doorTap(act, r) {
+  if (act === 'go') { if (r && runPhase(r) === 'warm') enqueue({ action: 'runGo', rid: r.rid, worker: S.worker }); }
+  else if (r && runPhase(r) === 'up') enqueue({ action: 'runOut', rid: r.rid, worker: S.worker });
+  good(); S.rid = r.rid; S.view = 'run'; render();
 }
 function goTest(code, k) { S.code = code; S.via = code + '|' + k; openTestB(k); }
 // Moisture: the dish scanned from the sample screen
@@ -736,7 +727,7 @@ function onHolder(h) {
   if (ph === 'heat') { redScreen(t.bad.heating, { icon: ICON.hour, num: String(minsLeft(r)) }); return; }
   const b = (s.holdBal || {})[k] || r.bal;
   if (b && balNo() && b !== balNo()) { redScreen(t.bad.otherBal, { icon: ICON.balance, num: String(b) }); return; }
-  if (ph === 'up') { S.rid = r.rid; S.view = 'run'; S.door = { act: 'out', place: r.place, rid: r.rid }; bad(); render(); openScanner('door'); return; }
+  if (ph === 'up') { S.rid = r.rid; S.view = 'run'; bad(); render(); return; }   // door open first: the big blinking button
   good(); S.rid = r.rid; goTest(s.code, k);
 }
 
@@ -873,11 +864,11 @@ function batchAct(el) {
     case 'type-open': { const v = (document.getElementById('typecode') || {}).value; if (v && v.trim()) onScan(v.trim(), 'any'); return true; }
     case 'place': onPlace(el.dataset.place); return true;
     case 'r-out':
-      if (r && runPhase(r) === 'up') { S.door = { act: 'out', place: r.place, rid: r.rid }; atPlace(r.place) ? doorScan(r.place) : openScanner('door'); }
+      if (r && runPhase(r) === 'up') doorTap('out', r);
       return true;
     case 'walk': if (r) startWalk(r); return true;
-    case 'r-go': askNotify(); if (r && runPhase(r) === 'warm') { S.door = { act: 'go', place: r.place, rid: r.rid }; openScanner('door'); } return true;   // always a fresh scan: they read the display there
-    case 'r-start': askNotify(); if (S.load && loadItems().length) { S.door = { act: 'start', place: S.load.place }; atPlace(S.load.place) ? doorScan(S.load.place) : openScanner('door'); } return true;
+    case 'r-go': askNotify(); if (r && runPhase(r) === 'warm') doorTap('go', r); return true;
+    case 'r-start': askNotify(); if (S.load && loadItems().length) startRun(); return true;
     case 'l-scan': openScanner('load'); return true;
     case 'l-all': S.load.items = waitingFor('MC').map(x => x.h).slice(0, CAP.MC); good(); render(); return true;
     case 'l-drop': S.load.items = S.load.items.filter(x => x !== el.dataset.h); render(); return true;
