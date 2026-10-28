@@ -54,24 +54,6 @@
   .bd .cell { display: flex; align-items: center; justify-content: center; }
   .bd .ring { width: 30mm; height: 30mm; border: 1.2mm solid var(--c); border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 16mm; font-weight: 800; color: var(--c); }
   .bd.vm .ring { width: 26mm; height: 26mm; font-size: 12mm; }
-  .jobbox { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 0 0 18px; }
-  .jobbox select, .jobbox input[type=text] { font: inherit; padding: 10px; border: 1px solid var(--line); border-radius: 10px; width: 100%; box-sizing: border-box; margin-top: 4px; }
-  .jobbox .ticks label { font-weight: 400; margin-right: 14px; }
-  #jobmsg { font-weight: 700; }
-  .bd.job .cell { justify-content: flex-start; gap: 4mm; min-height: 34mm; border: .4mm solid #ccc; border-radius: 3mm; padding: 2mm; }
-  .bd.job .ring { flex: 0 0 auto; width: 26mm; height: 26mm; font-size: 13mm; }
-  .bd.job .jc { display: flex; flex-direction: column; gap: 2mm; min-width: 0; }
-  .bd.job .jc b { font-size: 11mm; line-height: 1; letter-spacing: .02em; }
-  .bd.job .jc i { font-style: normal; font-size: 5mm; color: #333; white-space: nowrap; }
-  .bd.job .jc i em { display: inline-block; width: 8mm; height: 8mm; border: .5mm solid #333; border-radius: 1mm; vertical-align: middle; margin: 0 2mm 0 1mm; }
-  .bd.job.vm .cell { min-height: 28mm; }
-  .bd.job.vm .ring { width: 18mm; height: 18mm; font-size: 9mm; }
-  .bd.job.vm .jc b { font-size: 7.5mm; }
-  .bd.job.vm .jc i { font-size: 3.6mm; }
-  .bd.job.vm .jc i em { width: 6mm; height: 6mm; margin: 0 1mm 0 .5mm; }
-  .bd.job .cell.empty { opacity: .35; }
-  .bd.job .bt small { font-size: 5mm; }
-  body.onlyjobs .alllabels, body.nojobs #jobcards { display: none !important; }
   @media print {
     body { background: #fff; }
     .noprint, .betabar { display: none !important; }
@@ -88,20 +70,8 @@
 <div class="betabar">TRIAL · boards for the new bench flow</div>
 <div class="wrap">
   <div class="noprint">
-    <h1>Boards, job cards and labels</h1>
+    <h1>Boards and labels</h1>
     <p class="sub">Stick an oven or furnace label next to each door. Sample labels hold just the sample code, which is what the app reads.</p>
-    <div class="jobbox">
-      <h2 style="margin-top:0">Job cards</h2>
-      <p class="sub">Type the machine and the codes from your job sheet. Each spot on the card shows a sample code; the worker puts that crucible there and ticks it with a pen. The phones are told the same spots, so the phone and the card always match.</p>
-      <div class="opts">
-        <div><label for="jbal">Weighing machine</label><select id="jbal"><option value="1">W1</option><option value="2">W2</option><option value="3">W3</option><option value="4">W4</option></select></div>
-        <div><label for="jcodes">Sample codes</label><input type="text" id="jcodes" placeholder="T687-T696"></div>
-      </div>
-      <div class="ticks"><label><input type="checkbox" id="jash" checked> Ash card</label><label><input type="checkbox" id="jvm" checked> VM card</label></div>
-      <div class="row" style="margin-bottom:6px"><button class="primary" id="jprint">Print job cards</button></div>
-      <div class="sub" id="jobmsg"></div>
-    </div>
-    <div class="alllabels">
     <label for="codes"><b>Sample codes</b></label>
     <p class="sub" style="margin:2px 0 6px">One code (T45), a range (T45-T60), or several separated by commas.</p>
     <textarea id="codes" placeholder="T01"></textarea>
@@ -112,12 +82,9 @@
     <p class="sub" style="margin:0 0 6px">Dish stickers go on the side of each petri dish (polyester labels hold up at 105 °C). Each board is one A4 page: laminate it and keep it next to its balance (two Ash and two VM boards per balance). The app shows which ring to use; the worker puts the crucible on that number. Load the furnace in ring order, down each column.</p>
     <div class="row">
       <button id="make">Make labels</button>
-      <button class="primary" onclick="document.body.classList.add('nojobs'); window.print()">Print labels</button>
-    </div>
+      <button class="primary" onclick="window.print()">Print</button>
     </div>
   </div>
-  <div id="jobcards"></div>
-  <div class="alllabels">
   <h2>Ovens and furnaces</h2>
   <div class="grid places" id="places"></div>
   <h2>Samples</h2>
@@ -126,7 +93,6 @@
   <div class="grid dishes" id="dishlabs"></div>
   <h2 class="hideprint">Ash and VM boards (no QR: the app picks the spot, the worker reads the number)</h2>
   <div id="tmpls"></div>
-  </div>
 </div>
 <script src="../lib/qrcode.js"></script>
 <script>
@@ -179,87 +145,6 @@ function make() {
   const bals = parseList(document.getElementById('bals').value).filter(n => +n >= 1 && +n <= 4);
   document.getElementById('tmpls').innerHTML = bals.flatMap(b => ['ASH', 'VM'].flatMap(k => ['A', 'B'].map(l => board(k, b, l)))).join('');
 }
-/* ---------- job cards (saved in data.json jobs, read by the app's pickSpot) ---------- */
-const GH = { owner: 'girish-vastrakar', repo: 'weighing_data_QR', path: 'trial/data.json', branch: 'main' };
-const store = { get: k => { try { return localStorage.getItem('lab:' + k) || ''; } catch (e) { return ''; } },
-                set: (k, v) => { try { localStorage.setItem('lab:' + k, v); } catch (e) {} } };
-const b64 = str => btoa(unescape(encodeURIComponent(str)));
-const unb64 = str => decodeURIComponent(escape(atob(str.replace(/\n/g, ''))));
-const LETTERS = 'CDEFGHIJKLMNOPQRSTUVWXYZ'.split('');   // A and B are the permanent boards
-let JOBS = {};
-const jmsg = t => { document.getElementById('jobmsg').textContent = t; };
-const fileUrl = () => `https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${GH.path}`;
-const hdr = () => Object.assign({ Accept: 'application/vnd.github+json' }, store.get('ghkey') ? { Authorization: 'Bearer ' + store.get('ghkey') } : {});
-async function readFile() {
-  const g = await fetch(fileUrl() + '?ref=' + GH.branch, { cache: 'no-store', headers: hdr() });
-  if (!g.ok) throw new Error(g.status === 401 || g.status === 403 ? 'The key was not accepted.' : 'GitHub error ' + g.status);
-  const meta = await g.json();
-  const f = meta.content ? JSON.parse(unb64(meta.content)) : await (await fetch(fileUrl() + '?ref=' + GH.branch, { cache: 'no-store', headers: Object.assign(hdr(), { Accept: 'application/vnd.github.raw+json' }) })).json();
-  return { f, sha: meta.sha };
-}
-// Put the codes on cards of this balance: up to 10 Ash / 18 VM per card, each card gets a free letter
-function addJob(f, k, bal, codes, by) {
-  f.jobs = f.jobs || {};
-  const set = new Set(codes);
-  Object.keys(f.jobs).forEach(t => {   // a code is on one card per test: take it off older cards
-    const j = f.jobs[t]; if (j.test !== k) return;
-    j.codes = j.codes.map(c => set.has(c) ? null : c);
-    if (!j.codes.some(Boolean)) delete f.jobs[t];
-  });
-  const made = [];
-  for (let i = 0; i < codes.length; i += CAP[k]) {
-    const mine = Object.values(f.jobs).filter(j => j.test === k && +j.bal === bal);
-    const used = new Set(mine.map(j => j.letter));
-    const letter = LETTERS.find(l => !used.has(l)) || mine.sort((a, b) => a.at - b.at)[0].letter;
-    const tray = `${k} ${bal}${letter}`;
-    f.jobs[tray] = { test: k, bal, letter, codes: codes.slice(i, i + CAP[k]), at: Date.now(), by };
-    made.push(tray);
-  }
-  return made;
-}
-const fmtDay = ms => new Date(ms).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-const rangeOf = codes => { const c = codes.filter(Boolean); return c.length > 1 ? `${c[0]} – ${c[c.length - 1]}` : (c[0] || ''); };
-// Same board as the permanent one, with the sample code and pen boxes on every spot
-function jobCard(tray) {
-  const j = JOBS[tray], k = j.test, rows = Math.ceil(CAP[k] / COLS[k]);
-  const cells = Array.from({ length: CAP[k] }, (x, i) => { const c = j.codes[i];
-    return `<div class="cell${c ? '' : ' empty'}"><div class="ring">${i + 1}</div><div class="jc"><b>${c ? esc(c) : '—'}</b>${c ? '<i>In<em></em>Out<em></em></i>' : ''}</div></div>`; }).join('');
-  return `<div class="bd job ${k.toLowerCase()}"><div class="bh"><div class="big"><b>${esc(j.bal)}</b><i>${esc(j.letter)}</i></div>
-    <div class="bt">${esc(TNAME[k])}<small>W${esc(j.bal)} · card ${esc(j.letter)} · ${esc(rangeOf(j.codes))}<br>${fmtDay(j.at)} · ${j.codes.filter(Boolean).length} samples</small></div></div>
-    <div class="cells" style="grid-template-columns:repeat(${COLS[k]},1fr);grid-template-rows:repeat(${rows},auto)">${cells}</div></div>`;
-}
-// Print = put the codes on cards (data.json jobs, so the phones use the same spots) and print them.
-// No key on this computer or no internet: the cards still print, the phones just pick their own spots.
-async function printJob() {
-  const bal = +document.getElementById('jbal').value, codes = parseCodes(document.getElementById('jcodes').value);
-  const tests = [['ASH', 'jash'], ['VM', 'jvm']].filter(x => document.getElementById(x[1]).checked).map(x => x[0]);
-  if (!codes.length) { jmsg('Type the sample codes first, for example T687-T696.'); return; }
-  if (!tests.length) { jmsg('Tick Ash card, VM card or both.'); return; }
-  const btn = document.getElementById('jprint'); btn.disabled = true; jmsg('Making the cards…');
-  let made = [], note = '';
-  try {
-    for (let attempt = 0; ; attempt++) {
-      const { f, sha } = await readFile();
-      made = tests.flatMap(k => addJob(f, k, bal, codes, 'labels page')); JOBS = f.jobs;
-      if (!store.get('ghkey')) { note = 'Not sent to the phones: this computer has no lab key (open the weighing app setup link here once).'; break; }
-      const put = await fetch(fileUrl(), { method: 'PUT', headers: hdr(), body: JSON.stringify({ message: `job cards: W${bal} ${codes[0]}${codes.length > 1 ? '–' + codes[codes.length - 1] : ''} (${made.join(', ')})`, branch: GH.branch, sha, content: b64(JSON.stringify(f, null, 1)) }) });
-      if (put.ok) break;
-      if ((put.status !== 409 && put.status !== 422) || attempt >= 4) { note = 'Not sent to the phones (GitHub error ' + put.status + ').'; break; }
-    }
-  } catch (e) {
-    if (!made.length) {   // could not even read the jobs: number the cards C, D… on this computer only
-      JOBS = {}; const f = { jobs: JOBS }; made = tests.flatMap(k => addJob(f, k, bal, codes, 'labels page'));
-    }
-    note = 'Not sent to the phones (' + (e.message === 'Failed to fetch' ? 'no internet' : e.message) + ').';
-  }
-  btn.disabled = false;
-  document.getElementById('jobcards').innerHTML = made.map(jobCard).join('');
-  jmsg(note ? '⚠ ' + note + ' The phones may show other spots than the card.' : `✓ ${made.join(', ')}: phones use these spots on their next sync.`);
-  document.body.classList.add('onlyjobs'); window.print();
-}
-document.getElementById('jprint').addEventListener('click', printJob);
-window.addEventListener('afterprint', () => document.body.classList.remove('onlyjobs', 'nojobs'));
-
 document.getElementById('places').innerHTML = PLACES.map(p => label(p)).join('');
 document.getElementById('codes').value = '';
 document.getElementById('make').addEventListener('click', make);

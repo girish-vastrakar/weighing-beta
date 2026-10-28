@@ -224,6 +224,7 @@ function batchApply(f, j) {
   }
   if (j.action === 'warn') { trailAdd(f, j.code, j, { a: 'warn', k: j.key, s: j.step, v: j.value, x: j.kind, b: j.bal || 0 }); return true; }
   if (j.action === 'setRange') { f.settings = f.settings || {}; f.settings.range = Object.assign({}, f.settings.range, j.range); return true; }
+  if (j.action === 'setPhotoLim') { f.settings = f.settings || {}; f.settings.photoLim = Object.assign({}, f.settings.photoLim, j.photoLim); return true; }
   if (j.action === 'setLimits') { f.settings = f.settings || {}; f.settings.limits = Object.assign({}, f.settings.limits, j.limits); return true; }
   if (j.action === 'setPin') { f.settings = f.settings || {}; f.settings.pin = j.pin; return true; }
   if (j.action === 'setTemp') { f.settings = f.settings || {}; f.settings.temp = Object.assign({}, f.settings.temp, j.temp); return true; }
@@ -282,8 +283,13 @@ function runOf(code, k) {
 }
 // The oven / furnace still holding a load (door not opened, W3 not finished)
 const placeRun = p => runs().filter(r => r.place === p && !r.outAt && runPhase(r) !== 'done').sort((a, b) => b.start - a.start)[0] || null;
-// The newest load of a place that still has W3 to do (door already opened)
-const placeOut = p => runs().filter(r => r.place === p && r.outAt && runPhase(r) === 'out').sort((a, b) => b.start - a.start)[0] || null;
+// The newest load of a place that still has W3 to do (door already opened): this balance's first.
+// Another load can already be heating in there (VM out, Ash in), so this is not only for a free place.
+const myLoad = r => !r.bal || !balNo() || r.bal === balNo();
+const placeOut = p => runs().filter(r => r.place === p && r.outAt && runPhase(r) === 'out')
+  .sort((a, b) => (myLoad(b) - myLoad(a)) || (b.start - a.start))[0] || null;
+// W3 of this balance still to do from a place that has another load in it now
+const placeOutMine = p => { const o = placeOut(p); return o && o.bal && o.bal === balNo() ? o : null; };
 // The sample test now on a dish / spot: W1 saved, W3 not yet
 function occupants(id) {
   const out = [];
@@ -305,18 +311,8 @@ function boardsWaiting(tests) {
   }));
   return Object.values(m).sort((a, b2) => a.tray.localeCompare(b2.tray));
 }
-// Job cards: data.json jobs["ASH 2C"] = { test, bal, letter, codes } → T687 on spot 1, T688 on spot 2…
-function jobSpot(code, k, b) {
-  const jobs = (S.data && S.data.jobs) || {};
-  for (const tray in jobs) {
-    const j = jobs[tray], i = (j.codes || []).indexOf(code);
-    if (j.test === k && +j.bal === b && i >= 0 && i < CAP[k]) return { tray, pos: i + 1, id: `${tray}-${i + 1}` };
-  }
-  return null;
-}
 // Ash / VM: the next free spot on this balance's boards. Keep filling the board that is being filled
 // (none of its crucibles in a furnace), else take an empty board. Spots go down each column like the job card.
-// A sample on a job card goes to its spot on that card first.
 function pickSpot(k) {
   const b = balNo(); if (!b) return null;
   const use = {};
@@ -327,9 +323,6 @@ function pickSpot(k) {
     o.used[i.pos] = true;
     if (s.tests[k].done === 2 && runOf(s.code, k)) o.busy = true;
   });
-  // A job card printed for this sample (Boards and labels → Job cards): its spot, if that spot is free
-  const job = jobSpot(S.code, k, b);
-  if (job && !(use[job.tray] && use[job.tray].used[job.pos])) return job.id;
   const freePos = t => { for (let p = 1; p <= CAP[k]; p++) if (!use[t] || !use[t].used[p]) return p; return 0; };
   const boards = BOARDS.map(L => `${k} ${b}${L}`);
   const t = boards.find(x => use[x] && !use[x].busy && freePos(x)) || boards.find(x => !use[x]);
@@ -437,12 +430,13 @@ function placeTile(p) {
     else if (ph === 'heat') { cls = 'heat'; big = ''; small = ''; ic = ICON.hour + cdHTML(r); }
     else { cls = 'up'; ic = ICON.doorOpen; small = t.doorOpen; }
   } else if (out) { cls = 'out'; big = String(waitCount(out)); ic = ICON.balance; small = 'W3'; }
-  const k = (r || out) ? (r || out).test : null;
+  const k = (r || out) ? (r || out).test : null, mo = r && placeOutMine(p);
   // status only: the worker opens an oven / furnace by scanning its QR there, not by tapping here
   return `<div class="ptile ${cls}" ${k ? `style="${cvar(k)}"` : ''}>
     <span class="pi">${placeIcon(p)}<em>${placeNo(p)}</em></span>
     ${k ? `<span class="pk">${ICON[k]}</span>` : ''}
-    <span class="pb">${ic ? `<span class="pic">${ic}</span>` : ''}${big ? `<b>${esc(big)}</b>` : ''}<small>${esc(small)}</small></span></div>`;
+    <span class="pb">${ic ? `<span class="pic">${ic}</span>` : ''}${big ? `<b>${esc(big)}</b>` : ''}<small>${esc(small)}</small></span>
+    ${mo ? `<span class="pw3" style="${cvar(mo.test)}">${ICON[mo.test]}${ICON.balance}<b>${waitCount(mo)}</b><small>W3</small></span>` : ''}</div>`;
 }
 function renderHomeB() {
   const t = B(), mc = waitingFor('MC'), boards = boardsWaiting(['VM', 'ASH']);
@@ -683,7 +677,10 @@ function onScan(txt, purpose) {
 }
 function onPlace(p) {
   good(); S.placeScan = { place: p, at: Date.now() };
-  const r = placeRun(p);
+  const r = placeRun(p), mo = placeOutMine(p);
+  // this balance's load already out of here comes before someone else's load now heating in it
+  // (only this balance's own load needing the door or the temperature scan comes first)
+  if (r && mo && !(r.bal === balNo() && ['up', 'warm'].includes(runPhase(r)))) { S.rid = mo.rid; S.view = 'run'; render(); return; }
   if (r) { S.rid = r.rid; S.view = 'run'; render(); return; }
   const o = placeOut(p);
   if (o && !waitingFor(PLACES[p].kind === 'oven' ? 'MC' : 'x').length && !boardsWaiting(PLACES[p].tests).length) { S.rid = o.rid; S.view = 'run'; render(); return; }
@@ -834,7 +831,7 @@ function renderSavedB(m) {
   const undoOk = !m.noUndo && Date.now() - m.at < 10000;
   return `<div class="modal greenm" style="${cvar(k)}"><div class="sheet" role="dialog" aria-modal="true">
     <div class="tick big">${ICON.check}</div>${what}
-    ${askPhoto(m) ? `<div class="photoask"><p>📷 ${esc(lbl(k))}</p></div>
+    ${askPhoto(m) ? `<div class="photoask"><div class="nextpic">${vesselIcon(k)}<span class="plus">→</span>${ICON.balance}<span class="plus">→</span><b>📷</b></div></div>
       <div class="btnrow"><button class="secondary" data-act="photo-skip" ${S.busy ? 'disabled' : ''}>${ICON.cross}</button>
         <button class="primary" data-act="photo-take" data-test="${k}" ${S.busy ? 'disabled' : ''}>📷</button></div>`
       : `<div class="btnrow">${undoOk ? `<button class="secondary undobtn" data-act="undo">${ICON.undo}<small>${esc(t.undo)}</small></button>` : ''}
