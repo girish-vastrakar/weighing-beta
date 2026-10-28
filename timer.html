@@ -101,6 +101,8 @@
   .pick[aria-pressed="true"] { background: var(--c); border-color: var(--c); color: #fff; }
   .pick[aria-pressed="false"] { color: var(--muted); text-decoration: line-through; }
   .pick .x { margin-left: 6px; opacity: .8; }
+  .pick.card { display: block; width: 100%; text-align: left; margin: 0 0 8px; padding: 10px 12px; color: var(--ink); text-decoration: none; }
+  .pick.card[aria-pressed="true"] { color: #fff; } .pick.card[aria-pressed="true"] .meta { color: #fff; }
   .addrow { display: flex; gap: 8px; margin-top: 10px; }
   .addrow input { flex: 1; min-width: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font-weight: 700; text-transform: uppercase; }
   .addrow button { border: 0; border-radius: 10px; padding: 10px 14px; background: var(--ink); color: #fff; font-weight: 700; }
@@ -178,9 +180,9 @@ const L = {
     conflictCancelled: s => `${s} was started on another device at the same moment. This timer was cancelled.`,
     clockOff: m => `This phone's clock is ${m} min off. Timers will look wrong on other devices. Fix Date & time in the phone settings.`,
     keyTitle: 'Connect this device', keyText: 'Paste the same GitHub key used for the weighing app, or open the setup link with #key=… once.', connect: 'Connect',
-    useApp: 'Timers start in the weighing app: scan this oven / furnace there to load it.', fromApp: no => `${no} · from the weighing app`, dishes: n => `${n} dish${n === 1 ? '' : 'es'}`,
+    useApp: 'Timers start in the weighing app: scan this oven / furnace there to load it.', fromApp: no => `${no}`, dishes: n => `${n} dish${n === 1 ? '' : 'es'}`,
     batchesTitle: 'Batches being filled', batchesSub: 'From the weighing app. They go in when full (or started early) and the oven / furnace is scanned.',
-    fill: (n, c) => `${n} of ${c}`, readyToLoad: 'ready to load', stopAlarm: 'STOP alarm – taking out', w3Left: 'Still to weigh (W3):', slot: 'slot' },
+    fill: (n, c) => `${n} of ${c}`, readyToLoad: 'ready to load', stopAlarm: 'STOP – taken out (W3 can start)', w3Left: 'Still to weigh (W3):', slot: 'slot' },
   gu: { other: 'English', title: 'લેબ ટાઇમર', free: 'ખાલી', tapStart: 'શરૂ કરવા ટેપ કરો',
     test: { MC: 'ભેજ', VM: 'VM', ASH: 'રાખ' },
     readyAt: t => `${t} વાગ્યે તૈયાર`, samples: n => `${n} સેમ્પલ`, snoozed: (n, m) => `${n} વાર સ્નૂઝ · +${m} મિનિટ`,
@@ -211,7 +213,7 @@ const L = {
     conflictCancelled: s => `${s} એ જ સમયે બીજા ડિવાઇસ પર શરૂ થયું હતું. આ ટાઇમર રદ થયું.`,
     clockOff: m => `આ ફોનની ઘડિયાળ ${m} મિનિટ ખોટી છે. બીજા ડિવાઇસ પર ટાઇમર ખોટા દેખાશે. ફોનના સેટિંગમાં તારીખ અને સમય સુધારો.`,
     keyTitle: 'આ ડિવાઇસ જોડો', keyText: 'વજન એપ માટે વપરાયેલી GitHub કી અહીં નાખો.', connect: 'જોડો',
-    useApp: 'ટાઇમર વજન એપમાં શરૂ થાય છે: લોડ કરવા ત્યાં આ ઓવન / ફર્નેસ સ્કેન કરો.', fromApp: no => `${no} · વજન એપ માંથી`, dishes: n => `${n} ડિશ`,
+    useApp: 'ટાઇમર વજન એપમાં શરૂ થાય છે: લોડ કરવા ત્યાં આ ઓવન / ફર્નેસ સ્કેન કરો.', fromApp: no => `${no}`, dishes: n => `${n} ડિશ`,
     batchesTitle: 'ભરાતી બેચ', batchesSub: 'વજન એપ માંથી. ભરાઈ જાય (કે વહેલી શરૂ થાય) અને ઓવન / ફર્નેસ સ્કેન થાય ત્યારે અંદર જાય છે.',
     fill: (n, c) => `${n} / ${c}`, readyToLoad: 'લોડ કરવા તૈયાર', stopAlarm: 'અલાર્મ બંધ – બહાર કાઢું છું', w3Left: 'W3 બાકી:', slot: 'ખાનું' }
 };
@@ -561,6 +563,58 @@ async function clockCheck(w) {
   } catch (e) {}
 }
 
+/* ---------- the supervisor loads an oven / furnace (the workers do nothing there in the weighing app) ----------
+   A load is written to data.json runs, the same record the weighing phones read: W3 stays locked on the phones
+   until the supervisor taps Taken out here. Ash / VM go in a whole job card (or old board) at a time. */
+// "ASH W1-3-5" → job card "ASH W1-3"; "VM 2A-7" → board "VM 2A"; a dish has no group
+const trayOf = h => /^(ASH|VM)\b/.test(h || '') ? String(h).replace(/\s*-\s*\d+$/, '') : null;
+const trayLabel = tr => { const m = /^(ASH|VM) W(\d)-(\d+)$/.exec(tr || ''); return m ? `${T().test[m[1]]} · W${m[2]} · batch ${m[3]}` : String(tr).replace(/^ASH /, T().test.ASH + ' '); };
+const spotNo = h => +(/-(\d+)$/.exec(h || '') || [0, 0])[1];
+// On a dish / spot with W2 saved, no W3, not in a load yet (read from file f)
+function loadable(f, k) {
+  const out = [], rs = Object.values(f.runs || {}).filter(r => !r.cancelled && r.test === k);
+  (f.codes || []).forEach(code => {
+    const s = f.samples && f.samples[code], w = s && s.w && s.w[k], h = s && s.h && s.h[k];
+    if (!w || w[1] == null || w[2] != null || (s.pct && s.pct[k] != null) || !h) return;
+    const at = (s.ha && s.ha[k]) || 0;
+    if (rs.some(r => r.start >= at && (r.items || []).some(it => it.code === code && it.h === h))) return;
+    out.push({ h, code, w2: w[1] });
+  });
+  return out.sort((a, b) => spotNo(a.h) - spotNo(b.h) || codeNum(a.code) - codeNum(b.code));
+}
+function loadGroups(k) {
+  const g = {};
+  loadable(S.file || {}, k).forEach(x => { const tr = trayOf(x.h) || 'DISH'; (g[tr] = g[tr] || []).push(x); });
+  return g;
+}
+async function startLoad(sec, test, minutes, pick) {
+  if (S.starting) return; S.starting = true;
+  const now = Date.now(), rid = `${new Date().toISOString().slice(0, 10)}-${sec.id}-${now.toString(36)}`;
+  let bal = 0;
+  const ok = await dataEdit(f => {
+    const busy = Object.values(f.runs || {}).some(r => r.place === sec.id && !r.cancelled && !r.outAt);
+    if (busy) return false;
+    const items = loadable(f, test).filter(pick).slice(0, sec.tests[test]);
+    if (!items.length) return false;
+    const card = test !== 'MC' && f.cards && f.cards[trayOf(items[0].h)];
+    bal = card ? +card.bal : (+((f.samples[items[0].code].hb || {})[test]) || 0);
+    f.runs = f.runs || {};
+    Object.keys(f.runs).forEach(r => { if (now - f.runs[r].start > 3 * 86400000) delete f.runs[r]; });
+    f.runs[rid] = { rid, place: sec.id, test, tray: test === 'MC' ? null : trayOf(items[0].h), items, bal, start: now, mins: minutes, by: 'Supervisor (timer)' };
+    return true;
+  }, `load ${sec.id}: ${test}`);
+  S.starting = false;
+  toast(ok ? `${secName(sec.id)} started.` : 'Not started: it is busy, nothing is waiting, or no internet.');
+  if (ok) { S.sheet = null; unlockAudio(); keepAwake(); }
+  render();
+}
+function takenOut(rid) {
+  const now = Date.now();
+  return dataEdit(f => { const r = f.runs && f.runs[rid]; if (!r || r.outAt) return false;
+    r.outAt = now; r.outBy = 'Supervisor (timer)'; const end = r.reheat ? (r.go ? r.go + r.mins * 60000 : Infinity) : r.start + r.mins * 60000; if (now < end) r.early = true;
+    return true; }, `taken out ${rid}`).then(ok => { toast(ok ? 'Taken out: the workers can weigh W3 now.' : 'Could not save. Check the internet.'); return ok; });
+}
+
 /* ---------- timers ---------- */
 const sectionBatch = id => live().find(b => b.section === id && b.state !== 'out');
 function startBatch(sec, test, minutes, chosen) {
@@ -694,12 +748,13 @@ function sheetHTML() {
       <div class="readout" id="sheet-cd" style="margin:10px 0">${countdown(b.warm ? b.planned * 60000 : b.end - Date.now())}</div>
       <div class="goin"><b>${esc(t.inside)} (${b.samples.length} / ${sec.tests[b.test]})</b>
         <div class="codes" style="margin-top:6px">${b.samples.map((c, i) => `<span class="code ${stateOf(c, b.test) !== 'w2' ? 'done' : ''}">${i + 1}. ${esc(c)}</span>`).join('')}</div></div>
-      ${b.warm ? '<p class="meta" style="color:var(--err);font-weight:700">🌡 Heating up: the timer starts when a worker scans the oven / furnace at temperature, or here.</p>' : ''}
+      ${b.warm ? '<p class="meta" style="color:var(--err);font-weight:700">🌡 Heating up: start the timer here when it is at temperature.</p>' : ''}
       <p style="font-weight:700;margin:14px 0 6px">Supervisor</p>
       ${b.warm ? `<div class="btnrow" style="margin-top:0"><button class="primary" data-act="sup-go" data-rid="${esc(b.id.slice(4))}">It is hot: start the timer now</button></div>` : ''}
-      <div class="btnrow" style="margin-top:0"><button class="secondary" data-act="sup-open" data-rid="${esc(b.id.slice(4))}">${esc(S.armed === 'open' + b.id ? 'Tap again: open the door now' : 'Open the door now (early)')}</button></div>
+      ${b.state !== 'out' && b.end <= Date.now() ? `<div class="btnrow" style="margin-top:0"><button class="primary" data-act="tout" data-rid="${esc(b.id.slice(4))}">Taken out: W3 can start</button></div>` : ''}
+      ${b.state !== 'out' && b.end > Date.now() ? `<div class="btnrow" style="margin-top:0"><button class="secondary" data-act="sup-open" data-rid="${esc(b.id.slice(4))}">${esc(S.armed === 'open' + b.id ? 'Tap again: taken out early' : 'Taken out early')}</button></div>` : ''}
       <button class="secondary" style="width:100%;margin-top:8px;${S.armed === 'cancel' + b.id ? 'border-color:var(--err);color:var(--err)' : ''}" data-act="sup-cancel" data-rid="${esc(b.id.slice(4))}">${esc(S.armed === 'cancel' + b.id ? 'Tap again: cancel this load' : 'Cancel this load (loaded by mistake)')}</button>
-      <p class="meta" style="margin:6px 0 0">Opening early lets the workers weigh W3 now. Cancelling puts the samples back to waiting; it stays in the trail on the results page.</p>
+      <p class="meta" style="margin:6px 0 0">Taken out lets the workers weigh W3. Cancelling puts the samples back to waiting; it stays in the trail on the results page.</p>
       <div class="btnrow"><button class="secondary" data-act="close">${esc(t.close)}</button></div>
     </div></div>`;
   }
@@ -721,6 +776,36 @@ function sheetHTML() {
         <button class="secondary danger" data-act="stop-early">${esc(S.armed === b.id ? t.confirmStop : t.stopEarly)}</button></div>
       <button class="secondary" style="width:100%;margin-top:10px;${S.armed === 'reset' + b.id ? 'border-color:var(--err);color:var(--err)' : ''}" data-act="reset">${esc(S.armed === 'reset' + b.id ? t.confirmReset : t.reset)}</button>
       <p class="meta" style="margin:6px 0 0">${esc(t.resetHelp)}</p>
+    </div></div>`;
+  }
+  if (sh.load) {   // the supervisor puts a job card / dishes in this free oven or furnace
+    const tests = Object.keys(sec.tests), test = sh.test, cap = sec.tests[test], g = loadGroups(test);
+    const trays = Object.keys(g).filter(x => x !== 'DISH');
+    let body;
+    if (test === 'MC') {
+      const all = g.DISH || [], sel = sh.sel || all.slice(0, cap).map(x => x.code);
+      sh.sel = sel;
+      body = all.length ? `<p class="meta" style="margin:0 0 8px">Tap a code to leave it out. ${sel.length} of max ${cap} go in.</p><div class="codes">${all.map(x =>
+          `<button class="pick" data-act="ltoggle" data-code="${esc(x.code)}" aria-pressed="${sel.includes(x.code)}">${esc(x.code)} · ${esc(x.h.replace('DISH ', 'dish '))}</button>`).join('')}</div>`
+        : `<div class="warnbox" style="margin-top:0">No dishes with W2 are waiting.</div>`;
+    } else {
+      body = trays.length ? `<p class="meta" style="margin:0 0 8px">Tap the job card that goes in (one card per load).</p>${trays.map(tr => `<button class="pick card" data-act="ltray" data-tray="${esc(tr)}" aria-pressed="${sh.sel === tr}">
+          <b>${esc(trayLabel(tr))}</b> · ${g[tr].length} ready<br><span class="meta">${g[tr].map(x => `${spotNo(x.h)}. ${esc(x.code)}`).join('  ')}</span></button>`).join('')}`
+        : `<div class="warnbox" style="margin-top:0">No ${esc(t.test[test])} crucibles with W2 are waiting.</div>`;
+    }
+    const ready = test === 'MC' ? (sh.sel || []).length : !!(sh.sel && g[sh.sel]);
+    return `<div class="modal" data-act="close-bg"><div class="sheet" style="${cvar(test)}" role="dialog" aria-modal="true">
+      <h3>${esc(t.startIn(secName(sec.id)))}</h3>
+      ${tests.length > 1 ? `<div class="seg">${tests.map(k => `<button style="${cvar(k)}" data-act="lpick" data-test="${k}" aria-pressed="${k === test}">${esc(t.test[k])}</button>`).join('')}</div>` : ''}
+      <p style="font-weight:700;margin:12px 0 0">${esc(t.timeLbl)}</p>
+      <div class="timeset">
+        <input id="hh" inputmode="numeric" maxlength="2" value="${Math.floor(sh.min / 60)}" aria-label="${esc(t.h)}"><span>${esc(t.h)}</span>
+        <input id="mm" inputmode="numeric" maxlength="2" value="${p2(sh.min % 60)}" aria-label="${esc(t.m)}"><span>${esc(t.m)}</span>
+      </div>
+      <div class="goin">${body}</div>
+      <p class="meta" style="margin:8px 0 0">Start when the door is closed and it is at temperature. The workers' W3 stays locked until you tap Taken out.</p>
+      <div class="btnrow"><button class="secondary" data-act="close">${esc(t.cancel)}</button>
+        <button class="primary" data-act="lstart" ${ready && !S.starting ? '' : 'disabled'}>${esc(t.start)}</button></div>
     </div></div>`;
   }
   // start a new batch
@@ -784,7 +869,7 @@ function render() {
     ${S.clockOff ? `<div class="banner"><span>${esc(t.clockOff(Math.abs(S.clockOff)))}</span></div>` : ''}
     <div class="grid">${SECTIONS.map(tileHTML).join('')}</div>
     ${listsHTML()}
-    <div class="card" style="margin-top:12px"><h2>Heating times (supervisor)</h2><p class="sub">Every new load in the weighing app uses these. Workers only see the door buttons.</p>
+    <div class="card" style="margin-top:12px"><h2>Heating times (supervisor)</h2><p class="sub">Suggested time for every new load you start here.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">${['MC', 'VM', 'ASH'].map(k => `<label style="flex:1;min-width:90px;font-weight:700">${esc(t.test[k])}<br>
         <input id="smin-${k}" inputmode="numeric" value="${minsFor(k)}" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;font:inherit"> <span class="meta">${esc(t.m)}</span></label>`).join('')}</div>
       <button class="primary" style="width:100%;margin-top:10px" data-act="sup-mins">Save heating times</button></div>
@@ -870,11 +955,22 @@ document.addEventListener('click', e => {
     case 'sound': unlockAudio(); setTimeout(render, 200); break;
     case 'open': {
       const sec = SECTIONS.find(s => s.id === el.dataset.sec), first = Object.keys(sec.tests)[0];
-      if (!sectionBatch(sec.id)) { toast(T().useApp); break; }      // batches are started from the weighing app
+      if (!sectionBatch(sec.id)) { S.sheet = { sec: sec.id, load: true, test: first, min: minsFor(first), sel: null }; S.armed = null; render(); break; }
       S.sheet = { sec: sec.id, test: first, min: DEFAULT_MIN[first], sel: waiting(first).slice(0, sec.tests[first]), extra: [] };
       S.armed = null; render(); break;
     }
     case 'close': case 'close-bg': S.sheet = null; S.armed = null; render(); break;
+    case 'lpick': sh.test = el.dataset.test; sh.min = minsFor(sh.test); sh.sel = null; render(); break;
+    case 'ltray': sh.sel = el.dataset.tray; render(); break;
+    case 'ltoggle': { const c = el.dataset.code, cap = SECTIONS.find(x => x.id === sh.sec).tests.MC;
+      if (sh.sel.includes(c)) sh.sel = sh.sel.filter(x => x !== c); else if (sh.sel.length < cap) sh.sel.push(c); else toast(T().full(cap));
+      render(); break; }
+    case 'lstart': {
+      sh.min = readTime(); if (sh.min < 1) break;
+      const sec = SECTIONS.find(x => x.id === sh.sec), sel = sh.sel;
+      startLoad(sec, sh.test, sh.min, sh.test === 'MC' ? (x => sel.includes(x.code)) : (x => trayOf(x.h) === sel)); break;
+    }
+    case 'tout': { takenOut(el.dataset.rid); S.sheet = null; render(); break; }
     case 'sup-open': case 'sup-cancel': {
       const rid = el.dataset.rid, arm = (el.dataset.act === 'sup-open' ? 'open' : 'cancel') + 'app-' + rid;
       if (S.armed !== arm) { S.armed = arm; render(); setTimeout(() => { if (S.armed === arm) { S.armed = null; render(); } }, 4000); break; }
@@ -951,7 +1047,7 @@ document.addEventListener('click', e => {
       const b = S.batches.find(x => x.id === el.dataset.id); if (b) snooze(b, +el.dataset.min); render(); break;
     }
     case 'takeout': {
-      if (/^app-/.test(el.dataset.id)) { MUTE[el.dataset.id] = Date.now() + 2 * ABANDONED_MS; saveMute(); stopSound(); render(); break; }
+      if (/^app-/.test(el.dataset.id)) { MUTE[el.dataset.id] = Date.now() + 2 * ABANDONED_MS; saveMute(); stopSound(); takenOut(el.dataset.id.slice(4)); render(); break; }
       const b = S.batches.find(x => x.id === el.dataset.id); if (b) takeOut(b); render(); break;
     }
   }
