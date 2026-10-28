@@ -621,6 +621,7 @@ Object.assign(L.gu, {
 });
 Object.assign(L.en, {
   phAsk: (l, v) => `${l} is out of range. Put the ${v} back on the balance and take a photo that shows it and the reading, so the supervisor can check it.`,
+  phAskCheck: (l, v, why) => `${l} may be wrong (${why}). Put the ${v} back on the balance and take a photo that shows it and the reading, so the supervisor can check it.`,
   phAskSub: 'It is saved with the sample code. Skip only if a photo is not possible.',
   phTake: '📷 Take photo', phSkip: 'Skip photo', phMore: '📷 Add another photo', phRetake: '📷 Take photo now',
   phTitle: l => `📷 ${l} photos`, phNeed: 'No photo for this result yet.',
@@ -633,6 +634,7 @@ Object.assign(L.en, {
 });
 Object.assign(L.gu, {
   phAsk: (l, v) => `${l} મર્યાદા બહાર છે. ${v} ફરી બેલેન્સ પર મૂકો અને તે તથા વજન દેખાય એવો ફોટો લો, જેથી સુપરવાઇઝર તપાસી શકે.`,
+  phAskCheck: (l, v, why) => `${l} ખોટું હોઈ શકે (${why}). ${v} ફરી બેલેન્સ પર મૂકો અને તે તથા વજન દેખાય એવો ફોટો લો, જેથી સુપરવાઇઝર તપાસી શકે.`,
   phAskSub: 'ફોટો સેમ્પલ કોડ સાથે સેવ થશે. ફોટો શક્ય ન હોય તો જ છોડો.',
   phTake: '📷 ફોટો લો', phSkip: 'ફોટો છોડો', phMore: '📷 બીજો ફોટો ઉમેરો', phRetake: '📷 હમણાં ફોટો લો',
   phTitle: l => `📷 ${l} ફોટા`, phNeed: 'આ પરિણામનો હજી ફોટો નથી.',
@@ -988,8 +990,9 @@ function approvalHTML(s) {
 }
 
 /* ---------- photos of out-of-range results (Ash) ----------
-   When a W3 makes the Ash result cross its limit (Setup → limits), the worker is asked for a photo of the
-   crucible back on the balance with the reading showing, so the supervisor can cross-check it.
+   When a W3 makes the Ash result cross its limit (Setup → limits), or trips one of the results page's
+   "possible error" checks (ashChecks), the worker is asked for a photo of the crucible back on the balance
+   with the reading showing, so the supervisor can cross-check it. rec.why lists the possible errors.
    The picture goes to weighing-data photos/<code>/<code>-<test>-<date>.jpg (one GitHub call per photo),
    and data.json samples[code].photos lists it: { id, test, path, at, by, pct, w } or { ..., skipped: true }.
    Photos wait on the phone (IndexedDB) until they are uploaded, so no internet is needed to take one. */
@@ -1019,9 +1022,37 @@ const photoKey = (s, k) => JSON.stringify(s.tests[k].w.slice(0, 3));
 // The photos/skips of one test, and whether the current weights still need one
 function photosOf(s, k) { return (s.photos || []).filter(p => p.test === k); }
 // Ash db needs moisture; until moisture is done, ash as received above the upper limit is already surely too high
-function photoFlag(k, st) { return isFlag(k, st) || (!isNum(st.db) && isNum(st.pct) && isNum(limOf(k)[1]) && st.pct > limOf(k)[1]); }
+function overLimit(k, st) { return isFlag(k, st) || (!isNum(st.db) && isNum(st.pct) && isNum(limOf(k)[1]) && st.pct > limOf(k)[1]); }
+/* The "? Possible error" checks of the results page (results.html compute + markOutliers) for Ash, so the photo
+   is asked for straight after W3 and not only when the supervisor opens the dashboard. Keep the two in step. */
+function ashChecks(s) {
+  const st = s.tests.ASH, w = st.w, out = [];
+  if (![0, 1, 2].every(i => isNum(w[i]))) return out;
+  const m = w[1] - w[0];
+  if (!(m >= 0.95 && m <= 1.10)) out.push(`sample mass ${m.toFixed(3)} g`);
+  if (w[1] === w[0]) out.push('W2 same as W1');
+  else if (w[2] >= w[1] - 0.0005) out.push('W3 same as W2, not burnt?');
+  else if ((w[2] - w[0]) / m * 100 > 60) out.push(`residue ${((w[2] - w[0]) / m * 100).toFixed(1)} %, not fully burnt?`);
+  const run = (typeof runs === 'function' ? runs() : []).filter(x => x.test === 'ASH' && x.outAt && (x.items || []).some(i => i.code === s.code)).pop();
+  if (run && run.early) out.push('furnace door opened early');
+  // far from the usual Ash db for this supplier (or all samples): robust z above 3.5 and at least 2 points away
+  const v = st.db;
+  if (isNum(v) && !isFlag('ASH', st)) {
+    const sup = (nameOf(s.code) || {}).supplier, med = a => { const x = a.slice().sort((p, q) => p - q), h = x.length >> 1; return x.length % 2 ? x[h] : (x[h - 1] + x[h]) / 2; };
+    const all = S.data.samples.filter(x => x.tests.ASH && isNum(x.tests.ASH.db)).map(x => ({ v: x.tests.ASH.db, sup: (nameOf(x.code) || {}).supplier }));
+    const same = sup ? all.filter(x => x.sup === sup) : [];
+    const pool = same.length >= 6 ? same : all.length >= 8 ? all : null;
+    if (pool) {
+      const vals = pool.map(x => x.v), md = med(vals), mad = med(vals.map(x => Math.abs(x - md))) || 0.5;
+      if (Math.abs(0.6745 * (v - md) / mad) > 3.5 && Math.abs(v - md) >= 2) out.push(`${v.toFixed(2)} % db unusual (usual ${md.toFixed(1)} %)`);
+    }
+  }
+  return out;
+}
+const photoWhy = (s, k) => k === 'ASH' && !overLimit(k, s.tests[k]) ? ashChecks(s) : [];
+function photoFlag(s, k) { return overLimit(k, s.tests[k]) || photoWhy(s, k).length > 0; }
 function needsPhoto(s, k) {
-  if (!PHOTO_TESTS.includes(k) || !s || !s.tests[k] || s.tests[k].done !== 3 || !photoFlag(k, s.tests[k])) return false;
+  if (!PHOTO_TESTS.includes(k) || !s || !s.tests[k] || s.tests[k].done !== 3 || !photoFlag(s, k)) return false;
   const now = photoKey(s, k);
   return !photosOf(s, k).some(p => JSON.stringify(p.w) === now);
 }
@@ -1030,7 +1061,7 @@ function photoStamp(ms) { const d = new Date(ms), p = n => String(n).padStart(2,
 function photoRec(s, k, extra) {
   const st = s.tests[k], at = Date.now();
   return Object.assign({ id: at + '-' + Math.random().toString(36).slice(2, 6), test: k, at: isoLocal(at), by: S.worker || 'Unknown',
-    pct: isNum(st.pct) ? st.pct : null, w: st.w.slice(0, 3) }, extra);
+    pct: isNum(st.pct) ? st.pct : null, w: st.w.slice(0, 3) }, photoWhy(s, k).length ? { why: photoWhy(s, k) } : {}, extra);
 }
 // Shrink the camera picture to about 1600 px (a few hundred kB), turned the right way up
 async function shrinkPhoto(file) {
@@ -1113,7 +1144,7 @@ function photoBoxHTML(s) {
     const now = photoKey(s, k);
     const rows = photosOf(s, k).slice().reverse().map(p => {
       const old = JSON.stringify(p.w) !== now ? ` · ${esc(t.phOld)}` : '';
-      const pct = isNum(p.pct) ? ` · ${p.pct.toFixed(2)} %` : '';
+      const pct = (isNum(p.pct) ? ` · ${p.pct.toFixed(2)} %` : '') + (p.why ? ` · ? ${p.why.join(', ')}` : '');
       if (p.skipped) return `<div class="prow"><span>${esc(t.phSkipped(p.by, stamp(p.at)))}${pct}${old}</span></div>`;
       return `<div class="prow"><span><b>${esc(stamp(p.at))}</b> · ${esc(p.by)}${pct}${old}${PENDING.has(p.path) ? ` · <i>${esc(t.phWaiting)}</i>` : ''}</span>
         <button class="link" data-act="photo-view" data-path="${esc(p.path)}">${esc(t.phView)}</button></div>`;
@@ -1869,7 +1900,7 @@ function renderModal() {
   return `<div class="modal" style="${cvar(k)}"><div class="sheet" role="dialog" aria-modal="true">
       <div class="tick" aria-hidden="true">✓</div>
       <p class="instr">${esc(savedMsg(m))}</p>${m.slot ? `<p class="slotmsg">${esc(m.slot.text)}<b>${esc(m.slot.big)}</b></p>` : ''}${flagMsg(m)}
-      ${askPhoto(m) ? `<div class="photoask"><p>${esc(t.phAsk(lbl(k), ves(k)))}</p><p class="sub" style="margin:0">${esc(t.phAskSub)}</p></div>
+      ${askPhoto(m) ? `<div class="photoask"><p>${esc(photoWhy(sample(S.code), k).length ? t.phAskCheck(lbl(k), ves(k), photoWhy(sample(S.code), k).join(', ')) : t.phAsk(lbl(k), ves(k)))}</p><p class="sub" style="margin:0">${esc(t.phAskSub)}</p></div>
       <div class="btnrow"><button class="secondary" data-act="photo-skip" ${S.busy ? 'disabled' : ''}>${esc(t.phSkip)}</button>
         <button class="primary" data-act="photo-take" data-test="${k}" ${S.busy ? 'disabled' : ''}>${esc(S.busy ? t.phBusy : t.phTake)}</button></div>`
       : `<div class="btnrow"><button class="primary" data-act="after">${esc(m.next === 'step2' ? t.enterW2 : t.ok)}</button></div>`}
