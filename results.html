@@ -338,6 +338,12 @@ function compute(code, s, src) {
     else if (isNum(hi) && v > hi) { flags.push(`${TNAME[k]} ${v.toFixed(2)} %${db} above ${hi} %`); flagTests.add(k); }
     else if (isNum(lo) && v < lo) { flags.push(`${TNAME[k]} ${v.toFixed(2)} %${db} below ${lo} %`); flagTests.add(k); }
   });
+  // W3 typed in later from a paper sheet (not read off the balance in the app): held back until the supervisor checks it
+  TESTS.forEach(k => {
+    if (!complete(w[k])) return;
+    const e = (s.ev || []).filter(e => e.k === k && e.s === 3 && ['w', 'fix', 'override', 'restore'].includes(e.a)).pop();
+    if (e && e.via === 'paper' && e.v === w[k][2]) { flags.push(`${TNAME[k]} W3 from paper sheet, check`); flagTests.add(k); }
+  });
 
   let appr = D.appr[code] || null, stale = false;
   if (appr && appr.w && JSON.stringify(wSnap(appr.w)) !== JSON.stringify(wSnap(w))) { appr = null; stale = true; }
@@ -520,7 +526,7 @@ const MISTAKE = {
 function evLine(e) {
   const t = TNAME[e.k] || e.k || '', st = e.s ? ' W' + e.s : '';
   switch (e.a) {
-    case 'w': return `${t}${st} = ${g4(e.v)} g`;
+    case 'w': return `${t}${st} = ${g4(e.v)} g${e.via === 'paper' ? ' (typed in from the paper sheet' + (e.n ? ': ' + esc(e.n) : '') + ')' : ''}`;
     case 'hold': return `${t} on ${hTxt(e.h)}`;
     case 'redish': return `${t} dish changed ${hTxt(e.o)} → ${hTxt(e.h)}`;
     case 'undo': return `${t}${st} undone (${g4(e.o)} → ${g4(e.v)})`;
