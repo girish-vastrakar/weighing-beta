@@ -224,6 +224,7 @@ function batchApply(f, j) {
   }
   if (j.action === 'warn') { trailAdd(f, j.code, j, { a: 'warn', k: j.key, s: j.step, v: j.value, x: j.kind, b: j.bal || 0 }); return true; }
   if (j.action === 'setRange') { f.settings = f.settings || {}; f.settings.range = Object.assign({}, f.settings.range, j.range); return true; }
+  if (j.action === 'setPhotoLim') { f.settings = f.settings || {}; f.settings.photoLim = Object.assign({}, f.settings.photoLim, j.photoLim); return true; }
   if (j.action === 'setLimits') { f.settings = f.settings || {}; f.settings.limits = Object.assign({}, f.settings.limits, j.limits); return true; }
   if (j.action === 'setPin') { f.settings = f.settings || {}; f.settings.pin = j.pin; return true; }
   if (j.action === 'setTemp') { f.settings = f.settings || {}; f.settings.temp = Object.assign({}, f.settings.temp, j.temp); return true; }

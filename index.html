@@ -990,8 +990,8 @@ function approvalHTML(s) {
 }
 
 /* ---------- photos of out-of-range results (Ash) ----------
-   When a W3 makes the Ash result cross its limit (Setup → limits), or trips one of the results page's
-   "possible error" checks (ashChecks), the worker is asked for a photo of the crucible back on the balance
+   When a W3 puts Ash as received outside the photo limit (Setup → Ash photo limit), or trips one of the
+   results page's "possible error" checks (ashChecks, here on as received), the worker is asked for a photo of the crucible back on the balance
    with the reading showing, so the supervisor can cross-check it. rec.why lists the possible errors.
    The picture goes to weighing-data photos/<code>/<code>-<test>-<date>.jpg (one GitHub call per photo),
    and data.json samples[code].photos lists it: { id, test, path, at, by, pct, w } or { ..., skipped: true }.
@@ -1021,10 +1021,17 @@ const MEMPHOTO = {};                         // fallback when IndexedDB is not a
 const photoKey = (s, k) => JSON.stringify(s.tests[k].w.slice(0, 3));
 // The photos/skips of one test, and whether the current weights still need one
 function photosOf(s, k) { return (s.photos || []).filter(p => p.test === k); }
-// Ash db needs moisture; until moisture is done, ash as received above the upper limit is already surely too high
-function overLimit(k, st) { return isFlag(k, st) || (!isNum(st.db) && isNum(st.pct) && isNum(limOf(k)[1]) && st.pct > limOf(k)[1]); }
+// The photo limit is on Ash as received (settings.photoLim.ASH, Setup), not the dry-basis result limit:
+// it is known right after W3 without waiting for moisture, and an odd reading shows up plainly
+const DEF_PHOTO_LIM = { ASH: [1.5, 12] };
+const photoLimOf = k => ((S.data && S.data.settings && S.data.settings.photoLim) || {})[k] || DEF_PHOTO_LIM[k] || [null, null];
+function overLimit(k, st) {
+  const [lo, hi] = photoLimOf(k);
+  return isNum(st.pct) && (st.pct < 0 || (isNum(lo) && st.pct < lo) || (isNum(hi) && st.pct > hi));
+}
 /* The "? Possible error" checks of the results page (results.html compute + markOutliers) for Ash, so the photo
-   is asked for straight after W3 and not only when the supervisor opens the dashboard. Keep the two in step. */
+   is asked for straight after W3 and not only when the supervisor opens the dashboard. Keep the two in step
+   (except "unusual", which here compares Ash as received so it needs no moisture result). */
 function ashChecks(s) {
   const st = s.tests.ASH, w = st.w, out = [];
   if (![0, 1, 2].every(i => isNum(w[i]))) return out;
@@ -1035,16 +1042,16 @@ function ashChecks(s) {
   else if ((w[2] - w[0]) / m * 100 > 60) out.push(`residue ${((w[2] - w[0]) / m * 100).toFixed(1)} %, not fully burnt?`);
   const run = (typeof runs === 'function' ? runs() : []).filter(x => x.test === 'ASH' && x.outAt && (x.items || []).some(i => i.code === s.code)).pop();
   if (run && run.early) out.push('furnace door opened early');
-  // far from the usual Ash db for this supplier (or all samples): robust z above 3.5 and at least 2 points away
-  const v = st.db;
-  if (isNum(v) && !isFlag('ASH', st)) {
+  // far from the usual Ash as received for this supplier (or all samples): robust z above 3.5 and at least 2 points away
+  const v = st.pct;
+  if (isNum(v)) {
     const sup = (nameOf(s.code) || {}).supplier, med = a => { const x = a.slice().sort((p, q) => p - q), h = x.length >> 1; return x.length % 2 ? x[h] : (x[h - 1] + x[h]) / 2; };
-    const all = S.data.samples.filter(x => x.tests.ASH && isNum(x.tests.ASH.db)).map(x => ({ v: x.tests.ASH.db, sup: (nameOf(x.code) || {}).supplier }));
+    const all = S.data.samples.filter(x => x.tests.ASH && isNum(x.tests.ASH.pct)).map(x => ({ v: x.tests.ASH.pct, sup: (nameOf(x.code) || {}).supplier }));
     const same = sup ? all.filter(x => x.sup === sup) : [];
     const pool = same.length >= 6 ? same : all.length >= 8 ? all : null;
     if (pool) {
       const vals = pool.map(x => x.v), md = med(vals), mad = med(vals.map(x => Math.abs(x - md))) || 0.5;
-      if (Math.abs(0.6745 * (v - md) / mad) > 3.5 && Math.abs(v - md) >= 2) out.push(`${v.toFixed(2)} % db unusual (usual ${md.toFixed(1)} %)`);
+      if (Math.abs(0.6745 * (v - md) / mad) > 3.5 && Math.abs(v - md) >= 2) out.push(`${v.toFixed(2)} % unusual (usual ${md.toFixed(1)} %)`);
     }
   }
   return out;
@@ -1646,7 +1653,13 @@ function supervisorHTML() {
         return `<div class="typerow" style="align-items:center"><b style="flex:0 0 4.5em">${esc(lbl(k))}${LIM_DB[k] ? ' db' : ''}</b>
           <input class="field" id="lmin-${k}" type="number" inputmode="decimal" step="0.1" placeholder="min" value="${isNum(l[0]) ? l[0] : ''}">
           <span>–</span><input class="field" id="lmax-${k}" type="number" inputmode="decimal" step="0.1" placeholder="max" value="${isNum(l[1]) ? l[1] : ''}"></div>`; }).join('')}
-      <button class="secondary" data-act="save-limits" style="width:100%">Save result limits</button></div>` : ''}
+      <button class="secondary" data-act="save-limits" style="width:100%">Save result limits</button></div>
+    <div class="row" style="display:block"><b>Ash photo limit (% as received)</b>
+      <p class="sub" style="margin:4px 0 8px">After Ash W3, the worker is asked for a photo of the crucible on the balance when Ash as received is outside this, or looks like a possible error.</p>
+      <div class="typerow" style="align-items:center"><b style="flex:0 0 4.5em">${esc(lbl('ASH'))} ar</b>
+        <input class="field" id="pmin-ASH" type="number" inputmode="decimal" step="0.1" placeholder="min" value="${isNum(photoLimOf('ASH')[0]) ? photoLimOf('ASH')[0] : ''}">
+        <span>–</span><input class="field" id="pmax-ASH" type="number" inputmode="decimal" step="0.1" placeholder="max" value="${isNum(photoLimOf('ASH')[1]) ? photoLimOf('ASH')[1] : ''}"></div>
+      <button class="secondary" data-act="save-photolim" style="width:100%">Save Ash photo limit</button></div>` : ''}
   </div>`;
 }
 const fmtV = v => v == null ? '–' : fmt(v);
@@ -2178,6 +2191,10 @@ document.addEventListener('click', e => {
       const lim = {}, num = id => { const v = document.getElementById(id).value.trim(); return v === '' || !isFinite(+v) ? null : +v; };
       ['MC', 'VM', 'ASH', 'FC'].forEach(k => { lim[k] = [num('lmin-' + k), num('lmax-' + k)]; });
       enqueue({ action: 'setLimits', limits: lim, worker: S.worker }); toast('Saved.', true); render(); break;
+    }
+    case 'save-photolim': {
+      const num = id => { const v = document.getElementById(id).value.trim(); return v === '' || !isFinite(+v) ? null : +v; };
+      enqueue({ action: 'setPhotoLim', photoLim: { ASH: [num('pmin-ASH'), num('pmax-ASH')] }, worker: S.worker }); toast('Saved.', true); render(); break;
     }
     case 'save-range': {
       const range = {};
