@@ -3,8 +3,9 @@
    and right / wrong is a sound, a vibration and a green or red screen. Words stay small, for the supervisor.
 
    Moisture: scan the sample bag → tap Moisture → scan any empty petri dish → W1, W2. W3: scan each dish.
-   Ash / VM: scan the JOB CARD (one QR per card) → the card with the sample codes in its circles → W1, W2
-             spot 1, 2, 3 … (the walk). After heating: scan the card again → W3 spot 1, 2, 3 …
+   Ash / VM: scan the JOB CARD (one QR per card) → the card with the sample codes in its circles → W1, scan the
+             bag (must be the code in that circle), W2, spot 1, 2, 3 … (the walk). After heating: scan the card again → W3.
+             The Moisture card is paper only (codes + a box for the dish number): nothing to scan on it.
              Job cards are printed on the labels page from the Google Sheet allotment: one Ash card (10) and
              one VM card (18) per balance per batch (card "ASH W1-3" = Ash, balance W1, batch 3; spot "ASH W1-3-5").
    Ovens and furnaces: the workers do nothing there in the app. The supervisor puts a card / dishes in a free
@@ -54,7 +55,7 @@ const BL = {
       nothing: 'Nothing is waiting to go in.', empty: 'Nothing is on this.', notSample: 'Not in the sample list.',
       locked: 'Only the supervisor can change this now.', otherLoad: 'This load belongs to another balance.', wrongPlace: 'Wrong oven / furnace. Scan this one:',
       noCard: 'Not on a job card. Scan the job card.', otherCard: 'This job card is for another balance.', notCard: 'Job card not found. Ask the supervisor.',
-      waitOut: 'Wait: the supervisor takes it out first.'
+      waitOut: 'Wait: the supervisor takes it out first.', wrongBag: 'Wrong bag. Put it back. Take this one:'
     },
     small: {
       scanSub: 'bag · dish · job card', scanDish: 'scan an empty dish', start: 'start',
@@ -84,7 +85,7 @@ const BL = {
       nothing: 'અંદર જવા માટે કંઈ નથી.', empty: 'આના પર કંઈ નથી.', notSample: 'સેમ્પલ યાદીમાં નથી.',
       locked: 'હવે ફક્ત સુપરવાઇઝર બદલી શકે.', otherLoad: 'આ લોડ બીજા કાંટાનો છે.', wrongPlace: 'ખોટું ઓવન / ફર્નેસ. આ સ્કેન કરો:',
       noCard: 'જોબ કાર્ડ પર નથી. જોબ કાર્ડ સ્કેન કરો.', otherCard: 'આ જોબ કાર્ડ બીજા કાંટાનું છે.', notCard: 'જોબ કાર્ડ મળ્યું નથી. સુપરવાઇઝરને પૂછો.',
-      waitOut: 'રાહ જુઓ: પહેલા સુપરવાઇઝર બહાર કાઢે.'
+      waitOut: 'રાહ જુઓ: પહેલા સુપરવાઇઝર બહાર કાઢે.', wrongBag: 'ખોટી બેગ. પાછી મૂકો. આ લો:'
     },
     small: {
       scanSub: 'બેગ · ડિશ · જોબ કાર્ડ', scanDish: 'ખાલી ડિશ સ્કેન કરો', start: 'શરૂ',
@@ -410,7 +411,7 @@ function renderCard() {
 // Ash / VM on the home screen: this balance's job cards that still need W1 / W2, or W3 now
 function myCards() {
   const c = cards(), b = balNo();
-  return Object.keys(c).filter(tray => +c[tray].bal === b && (cardTodo(tray) || cardRun(tray)))
+  return Object.keys(c).filter(tray => c[tray].test !== 'MC' && +c[tray].bal === b && (cardTodo(tray) || cardRun(tray)))   // the Moisture card is paper only
     .sort((x, y) => (c[x].at || 0) - (c[y].at || 0));
 }
 
@@ -480,7 +481,29 @@ function holderBanner() {
   return `<div class="hold"><div class="hb"><span class="bnum">${esc(String(i.bal || ''))}<i>${esc(i.letter)}</i></span><b>${esc(String(i.pos))}</b></div>
     ${boardMap(i.tray, i.pos)}</div>`;
 }
+// Ash / VM on a job card: before W2 the worker scans the bag, so the sample in the crucible is the one in the circle.
+// A bag scanned to open the sample counts too (S.bagOk); a wrong bag is a red screen and a line in the trail.
+function needBag() {
+  if (S.view !== 'step' || S.step !== 2 || S.editing || !['ASH', 'VM'].includes(S.test) || S.bagOk === S.code) return false;
+  const h = holdOf(sample(S.code), S.test);
+  return !!h && !!hInfo(h).card;
+}
+function bagScan(txt) {
+  const code = codeFromText(txt), want = S.code;
+  if (code === want) { S.bagOk = want; good(); render(); return; }
+  logWarn('wrongBag', { value: code || String(txt).trim().slice(0, 20) });
+  redScreen(B().bad.wrongBag, { icon: ICON.bag, sub: '✕ ' + (code || String(txt).trim().slice(0, 20)), num: want, bag: true });
+}
+function renderBagB() {
+  const s = sample(S.code), k = S.test, h = holdOf(s, k), i = hInfo(h);
+  return `<div style="${cvar(k)}">${topBar(false)}
+    <div class="stephead"><span class="ti">${ICON[k]}</span><b>${esc(s.code)}</b><span class="wn">W2</span></div>
+    ${holderBanner()}
+    <button class="primary scanbig" data-act="bag-scan"><span class="qr">${ICON.scan}</span><span class="sbags">${ICON.bag}</span><b class="bagcode">${esc(s.code)}</b></button>
+    <p class="sub center-t">${ICON.crucible} ${esc(String(i.pos))} = ${ICON.bag} ${esc(s.code)}</p></div>`;
+}
 function renderStepB() {
+  if (needBag()) return renderBagB();
   const t = T(), s = sample(S.code), k = S.test, st = s.tests[k], step = S.step;
   const prev = st.w.map((w, i) => isNum(w) && i !== step - 1 ? `<span class="pw"><small>W${i + 1}</small>${fmt(w)}</span>` : '').join('');
   const pic = step === 1 ? `<span class="v">${vesselIcon(k)}</span>`
@@ -626,7 +649,7 @@ function scanEl() {
   if (!el) { el = document.createElement('div'); el.id = 'scanner'; document.body.appendChild(el); }
   return el;
 }
-const SCAN_PIC = { dish: () => ICON.dish, redish: () => ICON.dish, any: () => ICON.bag };
+const SCAN_PIC = { dish: () => ICON.dish, redish: () => ICON.dish, any: () => ICON.bag, bag: () => `${ICON.bag}<b class="scannum">${esc(S.code || '')}</b>` };
 async function openScanner(purpose) {
   closeScanner();
   const t = B(), el = scanEl();
@@ -682,6 +705,7 @@ function scanTyped() {
 
 // What a scan (or a typed code) does, depending on what it was started for
 function onScan(txt, purpose) {
+  if (purpose === 'bag') return bagScan(txt);
   const t = B(), p = placeFromText(txt), h = holderFromText(txt);
   if (purpose === 'dish' || purpose === 'redish') {
     if (!h || !h.id || h.test !== 'MC') { redScreen(t.bad.wrongThing, { icon: ICON.dish }); return; }
@@ -696,7 +720,7 @@ function onScan(txt, purpose) {
   // a code from the Name Tags sheet that has no weights yet joins the list by itself
   if (!machineOk(code)) return;
   if (!sample(code)) enqueue({ action: 'addCodes', codes: [code], worker: S.worker });
-  good(); S.code = code; S.view = 'sample'; S.via = null; S.walk = null; render();
+  good(); S.code = code; S.bagOk = code; S.view = 'sample'; S.via = null; S.walk = null; render();
 }
 // An old oven / furnace sticker scanned: show what is in there (the supervisor loads it in the timer app)
 function onPlace(p) {
@@ -888,6 +912,7 @@ function batchAct(el) {
     case 'place': onPlace(el.dataset.place); return true;
     case 'walk': { const w = S.view === 'card' ? cardRun(S.card) : r; if (w) startWalk(w); return true; }
     case 'card': openCard(el.dataset.tray); return true;
+    case 'bag-scan': openScanner('bag'); return true;
     case 'card-go': if (S.card) { S.walk = { card: S.card }; cardNext(); } return true;
     case 'redish': openScanner('redish'); return true;
     case 'fix': S.modal = { type: 'fix', test: el.dataset.test }; render(); return true;
@@ -896,7 +921,7 @@ function batchAct(el) {
       S.modal = null; S.test = k; S.step = step; S.editing = true; S.via = S.code + '|' + k; S.view = 'step';
       S.draft = isNum(w) ? String(w) : ''; render(); return true;
     }
-    case 'red-ok': { const m = S.modal; S.modal = null; if (m && m.toBal) S.view = 'bal'; render(); return true; }
+    case 'red-ok': { const m = S.modal; S.modal = null; if (m && m.toBal) S.view = 'bal'; render(); if (m && m.bag) openScanner('bag'); return true; }
     case 'red-again': S.modal = null; S.draft = ''; render(); return true;
     case 'red-override': { const m = S.modal; S.modal = null; if (m && m.value != null) doSave(m.value, m.why); return true; }
     case 'undo': undoSave(); return true;

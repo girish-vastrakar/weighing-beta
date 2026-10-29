@@ -43,7 +43,14 @@
   .vm .spot .q svg { width: 16mm; height: 16mm; }
   .betabar { background: #e07a00; color: #fff; text-align: center; font-weight: 700; font-size: .8rem; padding: 4px; letter-spacing: .04em; }
   .bd { --c: #574a9c; background: #fff; border: 3mm solid var(--c); border-radius: 6mm; padding: 6mm; margin: 0 0 12px; break-before: page; break-inside: avoid; }
-  .bd.vm { --c: #3c7a2a; }
+  .bd.vm { --c: #3c7a2a; } .bd.mc { --c: #a8426b; }
+  .bd.mc .cells { gap: 4mm; }
+  .bd.mc .mcell { border: 1mm solid var(--c); border-radius: 4mm; padding: 3mm; display: flex; flex-direction: column; gap: 2mm; color: var(--c); }
+  .bd.mc .mcell.empty { opacity: .3; }
+  .bd.mc .mcell i { font-style: normal; font-size: 5mm; font-weight: 700; } .bd.mc .mcell b { font-size: 11mm; line-height: 1; color: #1f2a33; }
+  .bd.mc .mcell span { display: flex; align-items: center; gap: 2mm; font-size: 4.5mm; color: #333; }
+  .bd.mc .mcell em { display: inline-block; height: 9mm; border: .5mm solid #333; border-radius: 1mm; }
+  .bd.mc .mcell em.dish { flex: 1; } .bd.mc .mcell em.tick { width: 8mm; height: 8mm; }
   .bd, .bd * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   .bd .bh { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6mm; }
   .bd .big { display: flex; align-items: baseline; background: var(--c); color: #fff; border-radius: 4mm; padding: 1mm 6mm; font-weight: 800; line-height: 1; }
@@ -83,13 +90,14 @@
   <div class="noprint">
     <h1>Job cards and labels</h1>
     <div class="jobbox">
-      <h2 style="margin-top:0">Job cards (Ash and VM)</h2>
-      <p class="sub">One Ash card (10) and one VM card (18) per balance per batch. The codes come from the Google Sheet allotment (Machine column). The worker scans the card's QR on the weighing phone, weighs W1 and W2 spot by spot, and scans it again for W3 after you tap Taken out in the timer app.</p>
+      <h2 style="margin-top:0">Job cards (Moisture, Ash and VM)</h2>
+      <p class="sub">One Moisture card (12), one Ash card (10) and one VM card (18) per balance per batch: print all three before the batch starts. The Moisture card is paper only (no QR): the worker writes the dish number used next to each code. The codes come from the Google Sheet allotment (Machine column). The worker scans the card's QR on the weighing phone, weighs W1 and W2 spot by spot, and scans it again for W3 after you tap Taken out in the timer app.</p>
       <div class="opts">
         <div><label for="jbal">Weighing machine</label><select id="jbal"><option value="1">W1</option><option value="2">W2</option><option value="3">W3</option><option value="4">W4</option></select></div>
         <div><label for="jbatch">Batch</label><input type="text" id="jbatch" placeholder="next"></div>
       </div>
       <div class="opts">
+        <div><label for="jmc">Moisture card codes (max 12)</label><input type="text" id="jmc" placeholder="T740, T741 …"></div>
         <div><label for="jash">Ash card codes (spot 1, 2 …, max 10)</label><input type="text" id="jash" placeholder="T740, T741 …"></div>
         <div><label for="jvm">VM card codes (spot 1, 2 …, max 18)</label><input type="text" id="jvm" placeholder="T740, T741 …"></div>
       </div>
@@ -153,7 +161,7 @@ function parseList(txt, letters) {
   });
   return [...new Set(out)];
 }
-const CAP = { ASH: 10, VM: 18 }, COLS = { ASH: 2, VM: 3 }, TNAME = { ASH: 'Ash', VM: 'VM' };
+const CAP = { MC: 12, ASH: 10, VM: 18 }, COLS = { MC: 3, ASH: 2, VM: 3 }, TNAME = { MC: 'Moisture', ASH: 'Ash', VM: 'VM' };
 function make() {
   const codes = parseCodes(document.getElementById('codes').value);
   document.getElementById('samples').innerHTML = codes.map(c => label(c)).join('');
@@ -197,14 +205,23 @@ async function fillNext() {
     const [{ f }, { f: n }] = await Promise.all([readJSON(GH.path), readJSON(GH.names)]);
     const names = n.names || {};
     document.getElementById('jbatch').value = nextBatch(f, bal);
+    document.getElementById('jmc').value = allotted(f, names, bal, 'MC').slice(0, CAP.MC).join(', ');
     document.getElementById('jash').value = allotted(f, names, bal, 'ASH').slice(0, CAP.ASH).join(', ');
     document.getElementById('jvm').value = allotted(f, names, bal, 'VM').slice(0, CAP.VM).join(', ');
     jmsg(`W${bal} batch ${nextBatch(f, bal)}: check the codes, then Save and print.`);
   } catch (e) { jmsg('⚠ ' + (e.message === 'Failed to fetch' ? 'No internet.' : e.message) + ' Open the weighing app setup link on this computer once so it has the lab key.'); }
 }
 // The card: big balance and batch, one QR for the whole card, the sample code in every circle
+// Moisture: paper only, no QR; a box per code for the dish number the worker used, and In / Out ticks
 function jobCard(tray, j) {
   const k = j.test, rows = Math.ceil(CAP[k] / COLS[k]), when = new Date(j.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  if (k === 'MC') {
+    const cells = Array.from({ length: CAP.MC }, (x, i) => { const c = j.codes[i];
+      return `<div class="mcell${c ? '' : ' empty'}"><i>${i + 1}</i><b>${c ? esc(c) : '—'}</b>${c ? '<span>Dish <em class="dish"></em></span><span>In <em class="tick"></em> Out <em class="tick"></em></span>' : ''}</div>`; }).join('');
+    return `<div class="bd job mc"><div class="bh"><div class="big"><b>W${esc(j.bal)}</b><i>#${esc(j.batch)}</i></div>
+      <div class="bt">${esc(TNAME.MC)}<small>Balance W${esc(j.bal)} · batch ${esc(j.batch)}<br>${when} · ${j.codes.filter(Boolean).length} samples</small></div></div>
+      <div class="cells" style="grid-template-columns:repeat(${COLS.MC},1fr);grid-template-rows:repeat(${rows},auto)">${cells}</div></div>`;
+  }
   const cells = Array.from({ length: CAP[k] }, (x, i) => { const c = j.codes[i];
     return `<div class="cell"><div class="ring${c ? '' : ' empty'}"><i>${i + 1}</i>${c ? esc(c) : ''}</div></div>`; }).join('');
   return `<div class="bd job ${k.toLowerCase()}"><div class="bh"><div class="qr">${svg(tray)}<b>${esc(tray)}</b></div>
@@ -214,8 +231,8 @@ function jobCard(tray, j) {
 }
 async function printJobs() {
   const bal = +document.getElementById('jbal').value;
-  const want = { ASH: parseCodes(document.getElementById('jash').value).slice(0, CAP.ASH), VM: parseCodes(document.getElementById('jvm').value).slice(0, CAP.VM) };
-  if (!want.ASH.length && !want.VM.length) { jmsg('Fill the codes first (Fill from the Google Sheet).'); return; }
+  const want = { MC: parseCodes(document.getElementById('jmc').value).slice(0, CAP.MC), ASH: parseCodes(document.getElementById('jash').value).slice(0, CAP.ASH), VM: parseCodes(document.getElementById('jvm').value).slice(0, CAP.VM) };
+  if (!want.MC.length && !want.ASH.length && !want.VM.length) { jmsg('Fill the codes first (Fill from the Google Sheet).'); return; }
   if (!store.get('ghkey')) { jmsg('⚠ This computer has no lab key: open the weighing app setup link here once.'); return; }
   const btn = document.getElementById('jprint'); btn.disabled = true; jmsg('Saving the cards…');
   let made = {}, note = '';
@@ -224,7 +241,7 @@ async function printJobs() {
       const { f, sha } = await readJSON(GH.path);
       const batch = +document.getElementById('jbatch').value || nextBatch(f, bal);
       f.cards = f.cards || {}; made = {};
-      ['ASH', 'VM'].forEach(k => { if (!want[k].length) return;
+      ['MC', 'ASH', 'VM'].forEach(k => { if (!want[k].length) return;
         const tray = `${k} W${bal}-${batch}`;
         made[tray] = f.cards[tray] = { test: k, bal, batch, codes: want[k], at: Date.now(), by: 'labels page' }; });
       const put = await fetch(api(GH.path), { method: 'PUT', headers: hdr(), body: JSON.stringify({ message: `job cards: ${Object.keys(made).join(', ')}`, branch: GH.branch, sha, content: b64(JSON.stringify(f, null, 1)) }) });
