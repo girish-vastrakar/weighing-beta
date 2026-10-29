@@ -120,6 +120,14 @@
   .btn:disabled { opacity: .5; }
   .btn.danger { color: var(--bad); border-color: var(--bad); font-weight: 700; }
   .resetbox summary { cursor: pointer; }
+  table.wedit input { width: 5.6em; font: inherit; text-align: right; padding: 5px 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
+  table.wedit input.chg { border-color: var(--warn); background: var(--warnbg); font-weight: 700; }
+  table.wedit input.bad { border-color: var(--bad); background: var(--badbg); }
+  .srcpick { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
+  .srcpick label { border: 1px solid var(--line); border-radius: 10px; padding: 7px 10px; cursor: pointer; flex: 1 1 220px; }
+  .srcpick label:has(input:checked) { border-color: var(--ok); background: var(--okbg); }
+  .apprrow label.f { display: flex; flex-direction: column; gap: 2px; flex: 1 1 160px; font-size: .82rem; color: var(--muted); }
+  .apprrow label.f input { flex: none; color: var(--ink); }
   @media (max-width: 640px) { input[type=search] { min-width: 0; width: 100%; } }
   .trh { font-size: .95rem; margin: 6px 0 6px; } .trh .sub { font-weight: 400; color: var(--muted); font-size: .82rem; }
   ol.trail { list-style: none; margin: 0 0 12px; padding: 0; font-size: .86rem; border-left: 2px solid var(--line); }
@@ -321,7 +329,7 @@ function compute(code, s, src) {
     // the bench app knows the load: judge by its door closed / door open times
     const run = runsOf(D, code).filter(x => x.test === k && x.outAt).pop();
     if (run) { if (run.early) chk(k, `${TNAME[k]} door opened early, after ${Math.round((run.outAt - (run.go || run.start)) / 6e4)} min (heating is ${run.mins} min)`); return; }
-    const t = tsS[TSKEY[k]] || {}; if (!t.W2 || !t.W3) return;
+    const t = tsS[TSKEY[k]] || {}; if (!t.W2 || !t.W3 || t.W2.via === 'paper' || t.W3.via === 'paper') return;  // paper times are typed in, not exact
     const gap = (Date.parse(t.W3.at) - Date.parse(t.W2.at)) / 6e4;
     if (gap >= 0 && gap < mins * 0.9) chk(k, `${TNAME[k]} W3 only ${Math.round(gap)} min after W2 (heating is ${mins} min)`);
   });
@@ -472,7 +480,7 @@ function render() {
   root.innerHTML = `
     <header><h1>Lab results</h1>
       <span class="meta">${ERR ? '⚠ ' + esc(ERR) + ' · showing last data · ' : ''}Updated ${LOADED ? hm(LOADED) : '–'} · refreshes every minute
-        <button class="btn" id="refresh" aria-label="Refresh now">↻</button><a href="./">Weighing app</a><a href="timer.html">Timer</a><a href="dashboard.html">Lab timeline</a><a href="labels.html">Boards and labels</a><br>
+        <button class="btn" id="refresh" aria-label="Refresh now">↻</button><a href="./">Weighing app</a><a href="timer.html">Timer</a><a href="dashboard.html">Lab timeline</a><a href="labels.html">Boards and labels</a> <button class="btn" id="paper">✎ Type in paper weights</button><br>
         ${SD.old ? `Old app data included (${Object.keys(SD.old.samples).length} samples)` : `Old app data not shown${OLDERR && OLDERR !== 'no key' ? ': ' + esc(OLDERR) : ''} · <button class="btn" id="oldkey">Add old app data</button>`}</span></header>
     <div class="filters">
       <div class="seg" role="group" aria-label="Time range">${seg('range', 'today', 'Today')}${seg('range', 'yesterday', 'Yesterday')}${seg('range', '7d', '7 days')}${seg('range', '30d', '30 days')}${seg('range', 'all', 'All')}</div>
@@ -527,11 +535,11 @@ const MISTAKE = {
 function evLine(e) {
   const t = TNAME[e.k] || e.k || '', st = e.s ? ' W' + e.s : '';
   switch (e.a) {
-    case 'w': return `${t}${st} = ${g4(e.v)} g${e.via === 'paper' ? ' (typed in from the paper sheet' + (e.n ? ': ' + esc(e.n) : '') + ')' : ''}`;
+    case 'w': return `${t}${st} = ${g4(e.v)} g${e.via === 'paper' ? ' (typed in from the paper sheet' + (e.wb ? ', weighed by ' + esc(e.wb) : '') + (e.n ? ': ' + esc(e.n) : '') + ')' : e.via === 'edit' ? ' (typed in on the results page' + (e.n ? ': ' + esc(e.n) : '') + ')' : ''}`;
     case 'hold': return `${t} on ${hTxt(e.h)}`;
     case 'redish': return `${t} dish changed ${hTxt(e.o)} → ${hTxt(e.h)}`;
     case 'undo': return `${t}${st} undone (${g4(e.o)} → ${g4(e.v)})`;
-    case 'fix': return `${t}${st} corrected ${g4(e.o)} → ${g4(e.v)} g`;
+    case 'fix': return `${t}${st} corrected ${g4(e.o)} → ${g4(e.v)} g${e.via === 'paper' ? ' (from the paper sheet)' : e.via === 'edit' ? ' (results page)' : ''}${e.wb ? ', weighed by ' + esc(e.wb) : ''}${e.n ? ': ' + esc(e.n) : ''}`;
     case 'restore': return `${t}${st} put back ${g4(e.v)} g`;
     case 'override': return `${t}${st} = ${g4(e.v)} g saved after red screen${e.x ? ': ' + esc(warnText(e.x)) : ''}`;
     case 'reset': { const o = e.o || [], p = e.k === 'ASH' ? residuePct(o) : lossPct(o);
@@ -540,12 +548,31 @@ function evLine(e) {
   }
   return esc(e.a);
 }
-// The photo itself (weighing_data_QR is public, so the raw file opens without the key); tap for full size
+// The photo itself, tap for full size. weighing_data_QR is public, so its raw file opens without the key;
+// old-app photos (private weighing-data) are fetched with the key after the dialog opens (loadPhotos)
+const NOPHOTO = '<span class="sub"> · not uploaded from the phone yet</span>';
 function photoImg(r, p) {
-  if (!SRC[r.src].open || !p.path) return '';
+  if (!p.path) return '';
+  const alt = `${esc(r.code)} ${esc(TNAME[p.test] || p.test)} photo`;
+  if (!SRC[r.src].open) return `<a class="tphoto" data-src="${esc(r.src)}" data-path="${esc(p.path)}" target="_blank" rel="noopener"><img alt="${alt}"></a>`;
   const url = `https://raw.githubusercontent.com/${GH.owner}/${SRC[r.src].repo}/${GH.branch}/${p.path.split('/').map(encodeURIComponent).join('/')}`;
-  return `<a class="tphoto" href="${esc(url)}" target="_blank" rel="noopener"><img src="${esc(url)}" alt="${esc(r.code)} ${esc(TNAME[p.test] || p.test)} photo" loading="lazy"
-    onerror="this.parentNode.outerHTML='<span class=&quot;sub&quot;> · not uploaded from the phone yet</span>'"></a>`;
+  return `<a class="tphoto" href="${esc(url)}" target="_blank" rel="noopener"><img src="${esc(url)}" alt="${alt}" loading="lazy"
+    onerror="this.parentNode.outerHTML=NOPHOTO"></a>`;
+}
+const PHOTOURL = {};
+function loadPhotos(root) {
+  root.querySelectorAll('a.tphoto[data-path]').forEach(async a => {
+    const src = a.dataset.src, path = a.dataset.path, key = src === 'old' ? OLDKEY : KEY;
+    try {
+      if (!PHOTOURL[path]) {
+        const res = await fetch(`https://api.github.com/repos/${GH.owner}/${SRC[src].repo}/contents/${path}?ref=${GH.branch}`,
+          { headers: { Authorization: 'Bearer ' + key, Accept: 'application/vnd.github.raw+json' } });
+        if (!res.ok) throw new Error(res.status);
+        PHOTOURL[path] = URL.createObjectURL(await res.blob());
+      }
+      a.href = PHOTOURL[path]; a.querySelector('img').src = PHOTOURL[path];
+    } catch (e) { a.outerHTML = NOPHOTO; }
+  });
 }
 function trailHTML(r) {
   const PL = { O1: 'Oven 1', O2: 'Oven 2', F1: 'Furnace 1', F2: 'Furnace 2' };
@@ -740,6 +767,13 @@ function detail(id) {
     if (a) a.onclick = () => go(true);
     if (u) u.onclick = () => go(false);
   }
+  if (r.src === 'qr') {
+    dlg.querySelector('.dlg').insertAdjacentHTML('beforeend', `<div class="apprbox"><b>✎ Edit weights or type in paper weights</b>
+      <p class="sub" style="margin:2px 0 8px">Correct a wrong W1, W2 or W3, or type in weights from the paper sheet. Every change goes on the trail with your name and reason; old values are kept in corrections.json.</p>
+      <div class="apprrow"><button class="btn" id="wedit">✎ Correct a weight</button><button class="btn" id="wpaper">📝 Type in from paper</button></div></div>`);
+    document.getElementById('wedit').onclick = () => editWeights(r.code, 'edit');
+    document.getElementById('wpaper').onclick = () => editWeights(r.code, 'paper');
+  }
   const resettable = r.src === 'qr' ? tests.filter(k => (r.w[k] || []).some(isNum)) : [];
   if (resettable.length) {
     dlg.querySelector('.dlg').insertAdjacentHTML('beforeend', `<details class="apprbox resetbox"><summary><b>↺ Reset a test for retest</b></summary>
@@ -751,6 +785,7 @@ function detail(id) {
       <p class="sub" id="rsmsg" style="margin:6px 0 0"></p></details>`);
     dlg.querySelectorAll('[data-reset]').forEach(b => b.onclick = () => resetTest(r, b.dataset.reset));
   }
+  loadPhotos(dlg);
   if (!dlg.open) dlg.showModal();
   document.getElementById('dclose').onclick = () => dlg.close();
 }
@@ -824,6 +859,159 @@ async function resetTest(r, k) {
   }
 }
 
+/* ---------- edit weights / type in paper weights (QR samples, also codes the app has never seen) ----------
+   data.json: each changed W on samples[code].w, a trail line per change ({a: 'w' first value | 'fix' changed, via: 'paper' | 'edit',
+   n: reason, wb: who weighed it on paper}) · timestamps.json: a newly filled W gets its time (paper: when weighed, via 'paper'),
+   a corrected W keeps the time it was weighed, a cleared W loses it · corrections.json: every change with the old value */
+function pickCode() {
+  dlg.innerHTML = `<div class="dlg"><button class="btn close" id="dclose" aria-label="Close">✕</button>
+    <h2>📝 Type in paper weights</h2>
+    <p class="sub">For samples weighed the old way, on the paper sheet. Type the sample code: a code the app already has opens its weights, a new code is added.</p>
+    <div class="apprrow"><input id="pcode" placeholder="Sample code, e.g. T745" aria-label="Sample code" autocapitalize="characters"><button class="btn primary" id="pgo">Open</button></div>
+    <p class="sub" id="pmsg" style="margin:6px 0 0"></p></div>`;
+  if (!dlg.open) dlg.showModal();
+  document.getElementById('dclose').onclick = () => dlg.close();
+  const inp = document.getElementById('pcode'), go = () => {
+    const c = normCode(inp.value);
+    if (!/^[A-Z0-9]{2,}$/.test(c)) { document.getElementById('pmsg').textContent = 'Type a sample code (letters and numbers).'; inp.focus(); return; }
+    if (!SD.qr) { document.getElementById('pmsg').textContent = 'The QR app data has not loaded yet. Try again in a moment.'; return; }
+    editWeights(Object.keys(SD.qr.samples).find(k => normCode(k) === c) || c, 'paper');
+  };
+  document.getElementById('pgo').onclick = go;
+  inp.onkeydown = e => { if (e.key === 'Enter') go(); };
+  inp.focus();
+}
+// "2026-10-29T14:05" for a datetime-local box, in this device's time
+const dtLocal = ms => isoLocal(ms).slice(0, 16);
+function editWeights(code, mode) {
+  const s = SD.qr.samples[code], isNew = !s, w0 = (s && s.w) || {};
+  const tests = TESTS.filter(k => k !== 'TM' || (s && s.tm) || (w0.TM || []).some(isNum));
+  const cur = k => [0, 1, 2].map(i => { const v = (w0[k] || [])[i]; return isNum(v) ? v : null; });
+  const snap = Object.fromEntries(tests.map(k => [k, cur(k)]));   // what this screen started from, to spot a change by a phone meanwhile
+  const r = ROWS.find(x => x.id === 'qr:' + code);
+  dlg.innerHTML = `<div class="dlg"><button class="btn close" id="dclose" aria-label="Close">✕</button>
+    <h2>✎ Weights for ${esc(code)}</h2>
+    <p class="sub">${isNew ? '<b>New code</b>: not in the app yet. It is added with these weights.' : esc([r && r.name, r && r.supplier].filter(Boolean).join(' · ') || 'Change only the boxes that are wrong or missing.')}</p>
+    <div class="srcpick" role="radiogroup" aria-label="Where the weights come from">
+      <label><input type="radio" name="wsrc" value="paper"${mode === 'paper' ? ' checked' : ''}> <b>📝 From the paper sheet</b><br><span class="sub">weighed the old way, typed in now</span></label>
+      <label><input type="radio" name="wsrc" value="edit"${mode === 'edit' ? ' checked' : ''}> <b>✎ Correct a weight</b><br><span class="sub">a saved weight is wrong</span></label>
+    </div>
+    <div class="scroll"><table class="wedit"><thead><tr><th>Test</th><th>W1 empty (g)</th><th>W2 + sample (g)</th><th>W3 after heating (g)</th><th>Sample (g)</th><th>Loss / residue %</th></tr></thead>
+      <tbody>${tests.map(k => `<tr><td>${TNAME[k]}</td>${[0, 1, 2].map(i => `<td><input data-k="${k}" data-i="${i}" inputmode="decimal" autocomplete="off"
+        value="${snap[k][i] == null ? '' : snap[k][i].toFixed(4)}" aria-label="${TNAME[k]} W${i + 1}"></td>`).join('')}<td data-m="${k}">–</td><td data-p="${k}">–</td></tr>`).join('')}</tbody></table></div>
+    <p class="sub" style="margin:0 0 10px">Empty a box to remove that weight. Changed boxes turn yellow.</p>
+    <div class="apprrow" id="paperrow">
+      <label class="f">Weighed by (on paper)<input id="wwb" placeholder="Worker's name" value="${esc(store.get('paper-wb'))}"></label>
+      <label class="f">When weighed<input id="wat" type="datetime-local" value="${dtLocal(Date.now())}" max="${dtLocal(Date.now() + 36e5)}"></label></div>
+    <div class="apprrow" style="margin-top:8px">
+      <label class="f">Your name<input id="wby" value="${esc(store.get('supervisor'))}"></label>
+      <label class="f">Why<input id="wwhy" placeholder="e.g. W1 typed wrong, balance 2 down"></label></div>
+    <div class="apprrow" style="margin-top:10px"><button class="btn primary" id="wsave">Save</button>${isNew ? '' : '<button class="btn" id="wback">‹ Back</button>'}</div>
+    <p class="sub" id="wmsg" style="margin:6px 0 0"></p></div>`;
+  if (!dlg.open) dlg.showModal();
+  document.getElementById('dclose').onclick = () => dlg.close();
+  const back = document.getElementById('wback'); if (back) back.onclick = () => detail('qr:' + code);
+  const src = () => dlg.querySelector('input[name=wsrc]:checked').value;
+  const showSrc = () => { document.getElementById('paperrow').style.display = src() === 'paper' ? '' : 'none';
+    document.getElementById('wwhy').placeholder = src() === 'paper' ? 'Optional, e.g. balance app down' : 'e.g. W1 typed wrong'; };
+  dlg.querySelectorAll('input[name=wsrc]').forEach(x => x.onchange = showSrc); showSrc();
+  // read the boxes: { k: [v, v, v] } with undefined for a box that is not a weight
+  const read = () => Object.fromEntries(tests.map(k => [k, [0, 1, 2].map(i => {
+    const t = dlg.querySelector(`input[data-k="${k}"][data-i="${i}"]`).value.trim().replace(',', '.');
+    if (!t) return null;
+    const v = Number(t); return /^\d+(\.\d+)?$/.test(t) && v > 0 && v < 1000 ? Math.round(v * 1e4) / 1e4 : undefined; })]));
+  const preview = () => {
+    const nw = read();
+    tests.forEach(k => {
+      [0, 1, 2].forEach(i => { const el = dlg.querySelector(`input[data-k="${k}"][data-i="${i}"]`);
+        el.classList.toggle('bad', nw[k][i] === undefined); el.classList.toggle('chg', nw[k][i] !== undefined && nw[k][i] !== snap[k][i]); });
+      const x = nw[k].map(v => v === undefined ? null : v), m = massOf(x), p = k === 'ASH' ? residuePct(x) : lossPct(x);
+      const mc = dlg.querySelector(`[data-m="${k}"]`); mc.textContent = m == null ? '–' : m.toFixed(4);
+      mc.style.color = m != null && !(m >= 0.95 && m <= 1.10) ? 'var(--bad)' : '';
+      dlg.querySelector(`[data-p="${k}"]`).textContent = p == null ? '–' : p.toFixed(2) + (k === 'ASH' ? ' residue' : ' loss');
+    });
+  };
+  dlg.querySelectorAll('table.wedit input').forEach(x => x.oninput = preview); preview();
+  document.getElementById('wsave').onclick = () => saveWeights(code, tests, snap, read(), src(), isNew);
+}
+async function saveWeights(code, tests, snap, nw, via, isNew) {
+  const msg = document.getElementById('wmsg'), who = document.getElementById('wby').value.trim(), why = document.getElementById('wwhy').value.trim();
+  const wb = via === 'paper' ? document.getElementById('wwb').value.trim() : '';
+  const atIn = via === 'paper' ? Date.parse(document.getElementById('wat').value) : NaN;
+  if (tests.some(k => nw[k].some(v => v === undefined))) { msg.textContent = 'A red box is not a weight. Type grams, e.g. 15.2345.'; return; }
+  const changes = tests.flatMap(k => [0, 1, 2].filter(i => nw[k][i] !== snap[k][i]).map(i => ({ k, i, o: snap[k][i], v: nw[k][i] })));
+  if (!changes.length) { msg.textContent = 'Nothing changed.'; return; }
+  if (!who) { msg.textContent = 'Type your name first.'; document.getElementById('wby').focus(); return; }
+  if (via === 'edit' && !why) { msg.textContent = 'Type why the weight is being corrected.'; document.getElementById('wwhy').focus(); return; }
+  if (via === 'paper' && !isFinite(atIn)) { msg.textContent = 'Pick when it was weighed.'; return; }
+  const odd = tests.filter(k => { const x = nw[k], m = massOf(x);
+    return (m != null && !(m >= 0.95 && m <= 1.10)) || (complete(x) && (k === 'ASH' ? x[2] < x[0] || x[2] > x[1] : x[2] > x[1])); });
+  const list = changes.map(c => `${TNAME[c.k]} W${c.i + 1}: ${c.o == null ? '–' : c.o.toFixed(4)} → ${c.v == null ? 'removed' : c.v.toFixed(4)}`).join('\n');
+  if (!confirm(`Save ${changes.length} change${changes.length === 1 ? '' : 's'} for ${code}${isNew ? ' (new code)' : ''}?\n\n${list}` +
+    (odd.length ? `\n\n⚠ ${odd.map(k => TNAME[k]).join(', ')}: these weights look wrong (sample not ~1 g, or W3 outside W1–W2). Save anyway?` : ''))) return;
+  if (!KEY) { KEY = (prompt('Saving needs the lab GitHub key (the same one the phones use). It is saved on this device.') || '').trim(); if (!KEY) return; store.set('ghkey', KEY); }
+  store.set('supervisor', who); if (wb) store.set('paper-wb', wb);
+  dlg.querySelectorAll('#wsave, #wback').forEach(b => b.disabled = true);
+  msg.textContent = 'Saving…';
+  const at = Date.now(), base = at + '-' + (via === 'paper' ? 'pp' : 'ed') + Math.random().toString(36).slice(2, 6);
+  const LABEL = { MC: 'Moisture', VM: 'Volatile Matter', ASH: 'Ash', TM: 'Total Moisture' };
+  const tag = via === 'paper' ? 'paper sheet' : 'correction', wAt = via === 'paper' ? atIn : at;
+  let moved = null, saved = {};
+  try {
+    const f = await ghEdit('data.json', f => {
+      f = f || { app: 'proximate-weighing', version: 1, codes: [], samples: {} };
+      f.samples = f.samples || {}; f.codes = f.codes || [];
+      let s = f.samples[code];
+      // a phone saved this sample since the screen opened: stop rather than overwrite it
+      moved = tests.find(k => [0, 1, 2].some(i => { const v = ((s && s.w && s.w[k]) || [])[i]; return (isNum(v) ? v : null) !== snap[k][i]; }));
+      if (moved) return null;
+      if (!s) { s = f.samples[code] = { tm: false, w: Object.fromEntries(TESTS.map(k => [k, [null, null, null]])), pct: {}, last: '' }; if (!f.codes.includes(code)) f.codes.push(code); }
+      s.pct = s.pct || {}; s.ev = s.ev || [];
+      changes.forEach((c, n) => {
+        s.w[c.k] = s.w[c.k] || [null, null, null];
+        s.ev.push({ id: base + '-' + n, t: at, by: who, a: c.o == null ? 'w' : 'fix', k: c.k, s: c.i + 1, v: c.v, o: c.o, h: (s.h || {})[c.k] || '',
+          via, ...(why ? { n: why } : {}), ...(wb ? { wb } : {}), ...(via === 'paper' ? { wt: wAt } : {}) });
+        s.w[c.k][c.i] = c.v; delete s.pct[c.k];
+      });
+      if (changes.some(c => c.k === 'TM')) s.tm = true;
+      if (s.ev.length > 120) s.ev.splice(0, s.ev.length - 120);
+      s.last = `${who} | ${[...new Set(changes.map(c => LABEL[c.k]))].join(', ')} ${via === 'paper' ? 'typed in from paper' : 'corrected'} (results page) | ${stamp(at)}`;
+      return f;
+    }, `${code} ${changes.map(c => `${LABEL[c.k]} W${c.i + 1}`).join(', ')} ${via === 'paper' ? 'typed in from paper' : 'corrected'} by ${who} (results page)${why ? ': ' + why : ''}`);
+    if (!f) { msg.textContent = `⚠ ${TNAME[moved]} was just saved on a phone. The screen now shows the new weights: check them and save again.`;
+      await load(); editWeights(code, via); return; }
+    SD.qr.samples = f.samples; SD.qr.runs = Object.values(f.runs || {});
+    await ghEdit('timestamps.json', t => {
+      t = t || {};
+      const cs = t[code] = t[code] || {};
+      changes.forEach(c => {
+        const kk = cs[TSKEY[c.k]] = cs[TSKEY[c.k]] || {}, n = 'W' + (c.i + 1);
+        saved[c.k + n] = kk[n] || null;
+        if (c.v == null) delete kk[n];
+        else if (c.o == null || !kk[n]) kk[n] = { at: isoLocal(wAt), by: wb || who, ...(via === 'paper' ? { via: 'paper', entered: who } : {}) };
+        // a corrected weight keeps the time it was weighed
+        if (!Object.keys(kk).length) delete cs[TSKEY[c.k]];
+      });
+      if (!Object.keys(cs).length) delete t[code];
+      return t;
+    }, `${code} weights ${via === 'paper' ? 'typed in from paper' : 'corrected'} (results page)`).then(t => { if (t) SD.qr.ts = t; });
+    await ghEdit('corrections.json', c => {
+      c = c || { about: 'Every weight that was overwritten or reset in the weighing app. Restore from the app: Setup → Corrections and resets.', entries: [] };
+      c.entries = c.entries || [];
+      changes.forEach((x, n) => c.entries.push({ id: base + '-' + n, at: isoLocal(at), by: who, action: x.o == null ? 'paper' : 'overwrite', code, test: LABEL[x.k], key: x.k,
+        step: x.i + 1, old: x.o, new: x.v, saved: saved[x.k + 'W' + (x.i + 1)] || null, via: via === 'paper' ? 'results page, paper sheet' : 'results page',
+        ...(why ? { note: why } : {}), ...(wb ? { weighedBy: wb } : {}), ...(via === 'paper' ? { weighedAt: isoLocal(wAt) } : {}) }));
+      return c;
+    }, `corrections: ${code} ${changes.length} weight${changes.length === 1 ? '' : 's'} (${tag}, results page)`);
+    ROWS = Object.keys(SD).flatMap(src => Object.entries(SD[src].samples).map(([c, s]) => compute(c, s, src)));
+    markOutliers(ROWS); render(); detail('qr:' + code);
+    dlg.querySelector('.dlg h2').insertAdjacentHTML('afterend', `<div class="note ok">✓ ${changes.length} weight${changes.length === 1 ? '' : 's'} saved${via === 'paper' ? ' from the paper sheet' : ''}. The phones show ${changes.length === 1 ? 'it' : 'them'} on their next sync.</div>`);
+  } catch (e) {
+    msg.textContent = '⚠ ' + (e.message === 'Failed to fetch' ? 'No internet connection.' : e.message);
+    dlg.querySelectorAll('#wsave, #wback').forEach(b => b.disabled = false);
+  }
+}
+
 function csv(list) {
   const head = ['App', 'Code', 'Sample name', 'Supplier', 'Sample date', 'Machine', 'Status', 'Waiting for', 'Moisture % (ar)', 'Total moisture %',
     'VM loss %', 'VM % (ar)', 'VM % (db)', 'Ash % (ar)', 'Ash % (db)', 'FC % (ar)', 'FC % (db)', 'Flags', 'Possible errors', 'Retest', 'Approved by', 'Approved at', 'Last weighed', 'Weighed by'];
@@ -855,6 +1043,7 @@ function wire() {
   const s = document.getElementById('supplier'); if (s) s.onchange = () => { V.supplier = s.value; render(); };
   const sr = document.getElementById('src'); if (sr) sr.onchange = () => { V.src = sr.value; render(); };
   const ok = document.getElementById('oldkey'); if (ok) ok.onclick = addOldKey;
+  document.getElementById('paper').onclick = pickCode;
   const q = document.getElementById('q');
   q.oninput = () => { V.q = q.value; const pos = q.selectionStart; render(); const n = document.getElementById('q'); n.focus(); n.setSelectionRange(pos, pos); };
   document.getElementById('csv').onclick = () => csv(sorted(filtered()));

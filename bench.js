@@ -269,6 +269,8 @@ function itemState(r, it) {
 }
 // 'heat' (timer running), 'up' (time is up, door not opened yet), 'out' (door opened: W3 now), 'done'
 function runPhase(r) {
+  // a plain timer (no samples): time only, until Taken out (or 3 h after it ran out)
+  if (!r.items.length) return r.outAt || Date.now() > runEnd(r) + 3 * 3600000 ? 'done' : Date.now() < runEnd(r) ? 'heat' : 'up';
   if (!r.items.some(it => itemState(r, it) === 'wait')) return 'done';
   if (r.outAt) return 'out';
   if (r.reheat && !r.go) return 'warm';

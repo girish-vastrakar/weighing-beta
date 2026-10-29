@@ -357,7 +357,7 @@ const appAll = () => Object.values((S.file && S.file.runs) || {}).filter(r => !r
 // the dish / spot still holds the sample that went in (not reset or moved since)
 const itemLive = (r, it) => { const s = S.file.samples && S.file.samples[it.code];
   return !!s && s.h && s.h[r.test] === it.h && ((s.ha && s.ha[r.test]) || 0) <= r.start; };
-const runLabel = r => r.tray ? r.tray.replace(/^ASH /, T().test.ASH + ' ').replace(/^VM /, 'VM ') : T().dishes(r.items.length);
+const runLabel = r => !r.items.length ? T().test[r.test] : r.tray ? r.tray.replace(/^ASH /, T().test.ASH + ' ').replace(/^VM /, 'VM ') : T().dishes(r.items.length);
 // loaded and timed, with a sample still waiting for W3
 function appBatches() {
   return appAll().filter(r => r.start && r.mins && SECTIONS.some(x => x.id === r.place))
@@ -367,9 +367,10 @@ function appBatches() {
       const warm = r.reheat && !r.go, t0 = r.reheat ? r.go : r.start;
       return { id: 'app-' + r.rid, app: true, warm, no: runLabel(r), section: r.place, test: r.test, samples, start: warm ? r.start : t0, end: warm ? r.start + 1e12 : t0 + r.mins * 60000,
                planned: r.mins, snoozes: 0, snoozeMin: 0, state: r.outAt ? 'out' : 'run', events: [],
-               left: samples.filter(c => stateOf(c, r.test) === 'w2') };
+               left: samples.filter(c => stateOf(c, r.test) === 'w2'), plain: !r.items.length };
     })
-    .filter(b => b.left.length && Date.now() - b.end < ABANDONED_MS);
+    // a plain timer (nothing picked) shows until Taken out
+    .filter(b => (b.left.length || (b.plain && b.state !== 'out')) && Date.now() - b.end < ABANDONED_MS);
 }
 // batches loaded by the earlier version of the weighing app (data.json batches), until they are finished
 const oldAll = () => Object.values((S.file && S.file.batches) || {});
@@ -565,7 +566,7 @@ async function clockCheck(w) {
 
 /* ---------- the supervisor loads an oven / furnace (the workers do nothing there in the weighing app) ----------
    A load is written to data.json runs, the same record the weighing phones read (status only: W3 is never locked).
-   With nothing picked, Start runs a plain timer, like the old app. Ash / VM go in a whole job card (or old board) at a time. */
+   With nothing picked, Start saves a plain timer (no samples) there too, so the phones still show the countdown. Ash / VM go in a whole job card (or old board) at a time. */
 // "ASH W1-3-5" → job card "ASH W1-3"; "VM 2A-7" → board "VM 2A"; a dish has no group
 const trayOf = h => /^(ASH|VM)\b/.test(h || '') ? String(h).replace(/\s*-\s*\d+$/, '') : null;
 const trayLabel = tr => { const m = /^(ASH|VM) W(\d)-(\d+)$/.exec(tr || ''); return m ? `${T().test[m[1]]} · W${m[2]} · batch ${m[3]}` : String(tr).replace(/^ASH /, T().test.ASH + ' '); };
@@ -594,13 +595,14 @@ async function startLoad(sec, test, minutes, pick) {
   const ok = await dataEdit(f => {
     const busy = Object.values(f.runs || {}).some(r => r.place === sec.id && !r.cancelled && !r.outAt);
     if (busy) return false;
-    const items = loadable(f, test).filter(pick).slice(0, sec.tests[test]);
-    if (!items.length) return false;
-    const card = test !== 'MC' && f.cards && f.cards[trayOf(items[0].h)];
-    bal = card ? +card.bal : (+((f.samples[items[0].code].hb || {})[test]) || 0);
+    // no pick: a plain timer with no samples, saved too so the weighing phones show the countdown
+    const items = pick ? loadable(f, test).filter(pick).slice(0, sec.tests[test]) : [];
+    if (pick && !items.length) return false;
+    const card = items.length && test !== 'MC' && f.cards && f.cards[trayOf(items[0].h)];
+    bal = card ? +card.bal : items.length ? (+((f.samples[items[0].code].hb || {})[test]) || 0) : 0;
     f.runs = f.runs || {};
     Object.keys(f.runs).forEach(r => { if (now - f.runs[r].start > 3 * 86400000) delete f.runs[r]; });
-    f.runs[rid] = { rid, place: sec.id, test, tray: test === 'MC' ? null : trayOf(items[0].h), items, bal, start: now, mins: minutes, by: 'Supervisor (timer)' };
+    f.runs[rid] = { rid, place: sec.id, test, tray: test === 'MC' || !items.length ? null : trayOf(items[0].h), items, bal, start: now, mins: minutes, by: 'Supervisor (timer)' };
     return true;
   }, `load ${sec.id}: ${test}`);
   S.starting = false;
@@ -953,8 +955,8 @@ document.addEventListener('click', e => {
       sh.min = readTime(); if (sh.min < 1) break;
       const sec = SECTIONS.find(x => x.id === sh.sec), sel = sh.sel;
       // nothing picked (or nothing waiting): a plain timer, as before the app loads
-      if (!(sh.test === 'MC' ? (sel || []).length : sel)) { startBatch(sec, sh.test, sh.min, []); S.sheet = null; toast(`${secName(sec.id)} started.`); render(); break; }
-      startLoad(sec, sh.test, sh.min, sh.test === 'MC' ? (x => sel.includes(x.code)) : (x => trayOf(x.h) === sel)); break;
+      const none = !(sh.test === 'MC' ? (sel || []).length : sel);
+      startLoad(sec, sh.test, sh.min, none ? null : sh.test === 'MC' ? (x => sel.includes(x.code)) : (x => trayOf(x.h) === sel)); break;
     }
     case 'tout': { takenOut(el.dataset.rid); S.sheet = null; render(); break; }
     case 'sup-open': case 'sup-cancel': {
