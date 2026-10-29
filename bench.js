@@ -404,12 +404,6 @@ function renderCard() {
     <div class="runboard cardboard">${boardMap(tray, 0, cell)}</div>
     <div class="bact">${act}</div></div>`;
 }
-// Ash / VM on the home screen: this balance's job cards that still need W1 / W2, or W3 now
-function myCards() {
-  const c = cards(), b = balNo();
-  return Object.keys(c).filter(tray => c[tray].test !== 'MC' && +c[tray].bal === b && (cardTodo(tray) || cardW3(tray)))   // the Moisture card is paper only
-    .sort((x, y) => (c[x].at || 0) - (c[y].at || 0));
-}
 
 /* ---------- red and green screens ---------- */
 // A red screen: buzz, a big picture or number, a small line. opts: { big, icon, test, again, override }
@@ -563,9 +557,6 @@ function renderHomeB() {
     <button class="primary scanbig" data-act="scan"><span class="qr">${ICON.scan}</span><span class="sbags">${ICON.bag}${ICON.dish}${ICON.card}</span><small>${esc(t.small.scanSub)}</small></button>
     <div class="typerow"><input class="field" id="typecode" type="text" autocomplete="off" autocapitalize="characters" placeholder="${esc(T().find)}">
       <button class="secondary" data-act="type-open">→</button></div>
-    ${myCards().length ? `<div class="waits">${myCards().map(tray => { const k = hInfo(tray).test, r = cardRun(tray), ph = r && runPhase(r);
-        return `<button class="wtile" style="${cvar(k)}" data-act="card" data-tray="${esc(tray)}"><span class="wi">${ICON[k]}</span><span class="bnum">${esc(String(hInfo(tray).bal))}<i>${esc(hInfo(tray).letter)}</i></span>
-          <span class="wi">${!cardTodo(tray) ? ICON.balance + '<b>W3</b>' : ph === 'heat' ? ICON.hour : ICON.balance}</span></button>`; }).join('')}</div>` : ''}
     <div class="ptiles">${Object.keys(PLACES).map(placeTile).join('')}</div>
     ${mc.length || boards.length ? `<h3 class="bhead">${esc(t.small.boardsWaiting)}</h3><div class="waits">
       ${mc.length ? `<div class="wtile" style="${cvar('MC')}"><span class="wi">${ICON.dish}</span><b>${mc.length}</b></div>` : ''}
