@@ -564,8 +564,8 @@ async function clockCheck(w) {
 }
 
 /* ---------- the supervisor loads an oven / furnace (the workers do nothing there in the weighing app) ----------
-   A load is written to data.json runs, the same record the weighing phones read: W3 stays locked on the phones
-   until the supervisor taps Taken out here. Ash / VM go in a whole job card (or old board) at a time. */
+   A load is written to data.json runs, the same record the weighing phones read (status only: W3 is never locked).
+   With nothing picked, Start runs a plain timer, like the old app. Ash / VM go in a whole job card (or old board) at a time. */
 // "ASH W1-3-5" → job card "ASH W1-3"; "VM 2A-7" → board "VM 2A"; a dish has no group
 const trayOf = h => /^(ASH|VM)\b/.test(h || '') ? String(h).replace(/\s*-\s*\d+$/, '') : null;
 const trayLabel = tr => { const m = /^(ASH|VM) W(\d)-(\d+)$/.exec(tr || ''); return m ? `${T().test[m[1]]} · W${m[2]} · batch ${m[3]}` : String(tr).replace(/^ASH /, T().test.ASH + ' '); };
@@ -751,7 +751,7 @@ function sheetHTML() {
       ${b.warm ? '<p class="meta" style="color:var(--err);font-weight:700">🌡 Heating up: start the timer here when it is at temperature.</p>' : ''}
       <p style="font-weight:700;margin:14px 0 6px">Supervisor</p>
       ${b.warm ? `<div class="btnrow" style="margin-top:0"><button class="primary" data-act="sup-go" data-rid="${esc(b.id.slice(4))}">It is hot: start the timer now</button></div>` : ''}
-      ${b.state !== 'out' && b.end <= Date.now() ? `<div class="btnrow" style="margin-top:0"><button class="primary" data-act="tout" data-rid="${esc(b.id.slice(4))}">Taken out: W3 can start</button></div>` : ''}
+      ${b.state !== 'out' && b.end <= Date.now() ? `<div class="btnrow" style="margin-top:0"><button class="primary" data-act="tout" data-rid="${esc(b.id.slice(4))}">Taken out</button></div>` : ''}
       ${b.state !== 'out' && b.end > Date.now() ? `<div class="btnrow" style="margin-top:0"><button class="secondary" data-act="sup-open" data-rid="${esc(b.id.slice(4))}">${esc(S.armed === 'open' + b.id ? 'Tap again: taken out early' : 'Taken out early')}</button></div>` : ''}
       <button class="secondary" style="width:100%;margin-top:8px;${S.armed === 'cancel' + b.id ? 'border-color:var(--err);color:var(--err)' : ''}" data-act="sup-cancel" data-rid="${esc(b.id.slice(4))}">${esc(S.armed === 'cancel' + b.id ? 'Tap again: cancel this load' : 'Cancel this load (loaded by mistake)')}</button>
       <p class="meta" style="margin:6px 0 0">Taken out lets the workers weigh W3. Cancelling puts the samples back to waiting; it stays in the trail on the results page.</p>
@@ -803,9 +803,9 @@ function sheetHTML() {
         <input id="mm" inputmode="numeric" maxlength="2" value="${p2(sh.min % 60)}" aria-label="${esc(t.m)}"><span>${esc(t.m)}</span>
       </div>
       <div class="goin">${body}</div>
-      <p class="meta" style="margin:8px 0 0">Start when the door is closed and it is at temperature. The workers' W3 stays locked until you tap Taken out.</p>
+      <p class="meta" style="margin:8px 0 0">Start when the door is closed and it is at temperature.${ready ? '' : ' Nothing picked: Start runs a plain timer with no samples linked.'}</p>
       <div class="btnrow"><button class="secondary" data-act="close">${esc(t.cancel)}</button>
-        <button class="primary" data-act="lstart" ${ready && !S.starting ? '' : 'disabled'}>${esc(t.start)}</button></div>
+        <button class="primary" data-act="lstart" ${S.starting ? 'disabled' : ''}>${esc(t.start)}</button></div>
     </div></div>`;
   }
   // start a new batch
@@ -952,6 +952,8 @@ document.addEventListener('click', e => {
     case 'lstart': {
       sh.min = readTime(); if (sh.min < 1) break;
       const sec = SECTIONS.find(x => x.id === sh.sec), sel = sh.sel;
+      // nothing picked (or nothing waiting): a plain timer, as before the app loads
+      if (!(sh.test === 'MC' ? (sel || []).length : sel)) { startBatch(sec, sh.test, sh.min, []); S.sheet = null; toast(`${secName(sec.id)} started.`); render(); break; }
       startLoad(sec, sh.test, sh.min, sh.test === 'MC' ? (x => sel.includes(x.code)) : (x => trayOf(x.h) === sel)); break;
     }
     case 'tout': { takenOut(el.dataset.rid); S.sheet = null; render(); break; }
