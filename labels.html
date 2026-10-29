@@ -64,6 +64,8 @@
   .jobbox { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin: 0 0 18px; }
   .jobbox select, .jobbox input[type=text] { font: inherit; padding: 10px; border: 1px solid var(--line); border-radius: 10px; width: 100%; box-sizing: border-box; margin-top: 4px; }
   #jobmsg { font-weight: 700; }
+  .oldrow { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid #e3e6ea; flex-wrap: wrap; }
+  .oldrow b { min-width: 70px; } .oldrow span { flex: 1; min-width: 180px; }
   .bd.job .bh { gap: 6mm; }
   .bd.job .qr { text-align: center; } .bd.job .qr svg { width: 46mm; height: 46mm; display: block; } .bd.job .qr b { font-size: 5mm; }
   .bd.job .cell { flex-direction: column; }
@@ -91,7 +93,7 @@
     <h1>Job cards and labels</h1>
     <div class="jobbox">
       <h2 style="margin-top:0">Job cards (Moisture, Ash and VM)</h2>
-      <p class="sub">One Moisture card (12), one Ash card (10) and one VM card (18) per balance per batch: print all three before the batch starts. The Moisture card is paper only (no QR): the worker writes the dish number used next to each code. The codes come from the Google Sheet allotment (Machine column). The worker scans the card's QR on the weighing phone, weighs W1 and W2 spot by spot, and scans it again for W3 after you tap Taken out in the timer app.</p>
+      <p class="sub">One Moisture card (12), one Ash card (10) and one VM card (18) per balance per batch: print all three before the batch starts. The Moisture card is paper only (no QR): the worker writes the dish number used next to each code. The codes come from the Google Sheet allotment (Machine column). The worker scans the card's QR on the weighing phone, weighs W1 and W2 spot by spot, and scans it again for W3 when the crucibles are back.</p>
       <div class="opts">
         <div><label for="jbal">Weighing machine</label><select id="jbal"><option value="1">W1</option><option value="2">W2</option><option value="3">W3</option><option value="4">W4</option></select></div>
         <div><label for="jbatch">Batch</label><input type="text" id="jbatch" placeholder="next"></div>
@@ -103,6 +105,9 @@
       </div>
       <div class="row" style="margin-bottom:6px"><button id="jnext">Fill from the Google Sheet</button><button class="primary" id="jprint">Save and print job cards</button></div>
       <div class="sub" id="jobmsg"></div>
+      <h3 style="margin:14px 0 6px">Reprint a saved card</h3>
+      <p class="sub" style="margin:0 0 6px">The cards already saved for this weighing machine. Reprint prints the same card again: nothing changes on the phones.</p>
+      <div id="jold" class="sub">…</div>
     </div>
     <div class="alllabels">
     <p class="sub">Sample labels hold just the sample code, which is what the app reads.</p>
@@ -208,7 +213,11 @@ async function fillNext() {
     document.getElementById('jmc').value = allotted(f, names, bal, 'MC').slice(0, CAP.MC).join(', ');
     document.getElementById('jash').value = allotted(f, names, bal, 'ASH').slice(0, CAP.ASH).join(', ');
     document.getElementById('jvm').value = allotted(f, names, bal, 'VM').slice(0, CAP.VM).join(', ');
-    jmsg(`W${bal} batch ${nextBatch(f, bal)}: check the codes, then Save and print.`);
+    const got = ['jmc', 'jash', 'jvm'].some(id => document.getElementById(id).value);
+    // nothing new: say why, so it does not look broken
+    const inSheet = Object.keys(names).filter(c => String(names[c].machine || '').toUpperCase().split(/[^A-Z0-9]+/).includes('W' + bal)).length;
+    jmsg(got ? `W${bal} batch ${nextBatch(f, bal)}: check the codes, then Save and print.`
+      : `No new codes for W${bal} in the Google Sheet: its ${inSheet} W${bal} codes are all on a saved card or weighed already (here or in the old app). Put new codes on W${bal} in the sheet (Machine column), wait for the sheet to sync, then Fill again. To print an old card again, use Reprint below.`);
   } catch (e) { jmsg('⚠ ' + (e.message === 'Failed to fetch' ? 'No internet.' : e.message) + ' Open the weighing app setup link on this computer once so it has the lab key.'); }
 }
 // The card: big balance and batch, one QR for the whole card, the sample code in every circle
@@ -253,8 +262,30 @@ async function printJobs() {
   if (note) { jmsg('⚠ Not saved (' + note + '). Nothing printed: the phones would not know the card.'); return; }
   document.getElementById('jobcards').innerHTML = Object.keys(made).map(tr => jobCard(tr, made[tr])).join('');
   jmsg(`✓ ${Object.keys(made).join(', ')} saved: the phones know them on their next sync.`);
+  listOld();
   document.body.classList.add('onlyjobs'); window.print();
 }
+// Saved cards of this balance, newest batch first, each batch with a Reprint button (prints, saves nothing)
+let OLD = {};
+async function listOld() {
+  const el = document.getElementById('jold'), bal = +document.getElementById('jbal').value;
+  if (!store.get('ghkey')) { el.textContent = 'Open the weighing app setup link on this computer once so it has the lab key.'; return; }
+  try { OLD = (await readJSON(GH.path)).f.cards || {}; } catch (e) { el.textContent = '⚠ ' + (e.message === 'Failed to fetch' ? 'No internet.' : e.message); return; }
+  const by = {};
+  Object.keys(OLD).filter(tr => +OLD[tr].bal === bal).forEach(tr => (by[OLD[tr].batch] = by[OLD[tr].batch] || []).push(tr));
+  const order = { MC: 0, ASH: 1, VM: 2 }, batches = Object.keys(by).sort((a, b) => b - a);
+  el.innerHTML = batches.length ? batches.map(n => { const trs = by[n].sort((a, b) => order[OLD[a].test] - order[OLD[b].test]);
+    const when = new Date(Math.max(...trs.map(tr => OLD[tr].at || 0))).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+    return `<div class="oldrow"><b>Batch ${esc(n)}</b><span>${trs.map(tr => `${esc(TNAME[OLD[tr].test])} ${OLD[tr].codes.filter(Boolean).length}`).join(' · ')} · ${when}</span>
+      <button data-batch="${esc(n)}">Reprint</button></div>`; }).join('') : `No cards saved for W${bal} yet.`;
+  el.querySelectorAll('button[data-batch]').forEach(b => b.addEventListener('click', () => {
+    document.getElementById('jobcards').innerHTML = by[b.dataset.batch].map(tr => jobCard(tr, OLD[tr])).join('');
+    jmsg(`Reprinting W${bal} batch ${b.dataset.batch}.`);
+    document.body.classList.add('onlyjobs'); window.print();
+  }));
+}
+document.getElementById('jbal').addEventListener('change', listOld);
+listOld();
 document.getElementById('jnext').addEventListener('click', fillNext);
 document.getElementById('jprint').addEventListener('click', printJobs);
 window.addEventListener('afterprint', () => document.body.classList.remove('onlyjobs', 'nojobs'));
