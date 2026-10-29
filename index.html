@@ -278,6 +278,9 @@
   .stephead { display: flex; align-items: center; gap: 10px; margin: 0 0 8px; }
   .stephead .ti { font-size: 2.4rem; color: var(--c); display: flex; } .stephead b { font-size: 1.5rem; flex: 1; }
   .stephead .wn { font-size: 2rem; font-weight: 700; color: #fff; background: var(--c); border-radius: 12px; padding: 0 12px; }
+  .stephead .wtabs { display: flex; gap: 8px; margin-left: auto; }
+  .stephead .wn.off { font: inherit; font-size: 2rem; font-weight: 700; color: var(--c); background: #fff; border: 3px solid var(--c); border-radius: 12px; padding: 0 12px; min-height: 0; width: auto; }
+  .stephead .wn.off:disabled { opacity: .3; }
   .hold { display: flex; align-items: center; gap: 14px; background: var(--c-bg); border: 3px solid var(--c); border-radius: 16px; padding: 10px 14px; margin: 8px 0; }
   .hold .hi { font-size: 2.6rem; color: var(--c); display: flex; }
   .hold > b, .hold .hb b { font-size: 4rem; line-height: 1; color: var(--c); }
@@ -2102,7 +2105,7 @@ function doSave(value, override) {
   const m = { type: 'saved', next: 'sample', step: S.step, pct: st.pct, at: Date.now(), old: isNum(old) ? old : null, value };
   const at = S.step === 2 && !S.editing ? batchAfterW2(S.code, S.test) : null;     // W2: where the dish / crucible goes
   if (at) m.slot = at;
-  if (S.editing) m.kind = 'corrected';
+  if (S.editing) { m.kind = 'corrected'; if (S.step === 1 && st.done < 2) m.next = 'step2'; }   // W1 fixed from the W2 screen: back to W2
   else if (S.step === 1) { m.kind = 's1'; m.next = 'step2'; }
   else if (S.step === 2) m.kind = 's2';
   else m.kind = 's3';

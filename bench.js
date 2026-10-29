@@ -498,6 +498,19 @@ function renderBagB() {
     <button class="primary scanbig" data-act="bag-scan"><span class="qr">${ICON.scan}</span><span class="sbags">${ICON.bag}</span><b class="bagcode">${esc(s.code)}</b></button>
     <p class="sub center-t">${ICON.crucible} ${esc(String(i.pos))} = ${ICON.bag} ${esc(s.code)}</p></div>`;
 }
+// W1 and W2 side by side at the top: a worker on the wrong one taps the other.
+// W1 is always open (a saved W1 is corrected); W2 opens once W1 is saved. W3 keeps its one badge.
+function wTiles(st, step) {
+  if (step > 2) return `<span class="wn">W${step}</span>`;
+  return `<span class="wtabs">${[1, 2].map(n => n === step ? `<span class="wn">W${n}</span>`
+    : `<button class="wn off" data-act="go-w" data-step="${n}" ${n === 2 && st.done < 1 ? 'disabled' : ''}>W${n}</button>`).join('')}</span>`;
+}
+function goW(n) {
+  const st = sample(S.code).tests[S.test], w = st.w[n - 1];
+  if (n === 2 && st.done < 1) return;
+  S.modal = null; S.step = n; S.editing = st.done >= n; S.draft = S.editing && isNum(w) ? String(w) : '';
+  S.via = S.code + '|' + S.test; S.view = 'step'; good(); render();
+}
 function renderStepB() {
   if (needBag()) return renderBagB();
   const t = T(), s = sample(S.code), k = S.test, st = s.tests[k], step = S.step;
@@ -507,7 +520,7 @@ function renderStepB() {
     : `<span class="v">${HELD.includes(k) || k === 'TM' ? (S.tests[k].heat === 'oven' ? ICON.oven : ICON.furnace) : ICON.oven}</span><span class="plus">→</span><span class="v">${vesselIcon(k)}</span>`;
   return `<div style="${cvar(k)}">
     ${topBar(false)}
-    <div class="stephead"><span class="ti">${ICON[k]}</span><b>${esc(s.code)}</b><span class="wn">W${step}</span></div>
+    <div class="stephead"><span class="ti">${ICON[k]}</span><b>${esc(s.code)}</b>${wTiles(st, step)}</div>
     ${holderBanner()}
     <div class="onbal">${pic}<span class="plus">→</span><span class="v">${ICON.balance}</span></div>
     <label class="readout"><input id="w" type="text" inputmode="decimal" autocomplete="off"
@@ -900,6 +913,7 @@ function batchAct(el) {
     case 'walk': { const w = S.view === 'card' ? cardRun(S.card) : r; if (w) startWalk(w); return true; }
     case 'card': openCard(el.dataset.tray); return true;
     case 'bag-scan': openScanner('bag'); return true;
+    case 'go-w': goW(+el.dataset.step); return true;
     case 'card-go': if (S.card) { S.walk = { card: S.card }; cardNext(); } return true;
     case 'card-w3': if (S.card) { S.walk = { card: S.card, w3: true }; cardNext(); } return true;
     case 'redish': openScanner('redish'); return true;
