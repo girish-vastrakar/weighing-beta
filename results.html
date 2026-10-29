@@ -135,6 +135,7 @@
   ol.trail li.bad { color: var(--bad); background: var(--badbg); border-left: 3px solid var(--bad); margin-left: -2px; }
   ol.trail .tt { color: var(--muted); font-variant-numeric: tabular-nums; } ol.trail li.bad .tt { color: inherit; }
   ol.trail .tw { color: var(--muted); font-size: .8rem; text-align: right; }
+  ol.trail .tphoto { display: block; margin-top: 6px; } ol.trail .tphoto img { max-width: 100%; width: 260px; border-radius: 8px; border: 1px solid var(--line); }
   @media (max-width: 560px) { ol.trail li { grid-template-columns: 1fr; gap: 0; } ol.trail .tw { text-align: left; } }
   .limcard summary { cursor: pointer; padding: 0 16px; list-style: none; } .limcard summary::-webkit-details-marker { display: none; }
   .limgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 8px 16px; margin: 0 16px; }
@@ -372,7 +373,7 @@ function compute(code, s, src) {
     status, state, pending: Object.keys(done).filter(k => !done[k]),
     mc: r2(mc), tm: r2(tm), vml: r2(vml), vmAr: r2(vmAr), vmDb: r2(vmDb), ashAr: r2(ashAr), ashDb: r2(ashDb), fcAr: r2(fcAr), fcDb: r2(fcDb),
     flags, flagTests, checks, suspect, appr, stale, w, ts, first, last, doneAt, who, hasTm: !!s.tm, lastText: s.last || '',
-    ev: s.ev || [], holders: holdersOf(s), runs: runsOf(D, code) };
+    ev: s.ev || [], photos: s.photos || [], holders: holdersOf(s), runs: runsOf(D, code) };
 }
 
 /* A result far from the usual for its supplier (or for all samples when the supplier has few) is a possible error,
@@ -547,6 +548,32 @@ function evLine(e) {
   }
   return esc(e.a);
 }
+// The photo itself, tap for full size. weighing_data_QR is public, so its raw file opens without the key;
+// old-app photos (private weighing-data) are fetched with the key after the dialog opens (loadPhotos)
+const NOPHOTO = '<span class="sub"> · not uploaded from the phone yet</span>';
+function photoImg(r, p) {
+  if (!p.path) return '';
+  const alt = `${esc(r.code)} ${esc(TNAME[p.test] || p.test)} photo`;
+  if (!SRC[r.src].open) return `<a class="tphoto" data-src="${esc(r.src)}" data-path="${esc(p.path)}" target="_blank" rel="noopener"><img alt="${alt}"></a>`;
+  const url = `https://raw.githubusercontent.com/${GH.owner}/${SRC[r.src].repo}/${GH.branch}/${p.path.split('/').map(encodeURIComponent).join('/')}`;
+  return `<a class="tphoto" href="${esc(url)}" target="_blank" rel="noopener"><img src="${esc(url)}" alt="${alt}" loading="lazy"
+    onerror="this.parentNode.outerHTML=NOPHOTO"></a>`;
+}
+const PHOTOURL = {};
+function loadPhotos(root) {
+  root.querySelectorAll('a.tphoto[data-path]').forEach(async a => {
+    const src = a.dataset.src, path = a.dataset.path, key = src === 'old' ? OLDKEY : KEY;
+    try {
+      if (!PHOTOURL[path]) {
+        const res = await fetch(`https://api.github.com/repos/${GH.owner}/${SRC[src].repo}/contents/${path}?ref=${GH.branch}`,
+          { headers: { Authorization: 'Bearer ' + key, Accept: 'application/vnd.github.raw+json' } });
+        if (!res.ok) throw new Error(res.status);
+        PHOTOURL[path] = URL.createObjectURL(await res.blob());
+      }
+      a.href = PHOTOURL[path]; a.querySelector('img').src = PHOTOURL[path];
+    } catch (e) { a.outerHTML = NOPHOTO; }
+  });
+}
 function trailHTML(r) {
   const PL = { O1: 'Oven 1', O2: 'Oven 2', F1: 'Furnace 1', F2: 'Furnace 2' };
   const items = r.ev.map(e => ({ t: e.t, by: e.by, b: e.b, bad: !!MISTAKE[e.a], txt: evLine(e) }));
@@ -556,6 +583,13 @@ function trailHTML(r) {
     if (x.go) items.push({ t: x.go, by: x.goBy, txt: `${TNAME[x.test]}: furnace hot again, timer started (reheat ${Math.round((x.go - x.start) / 6e4)} min)` });
     if (x.outAt) items.push({ t: x.outAt, by: x.outBy, bad: !!x.early, txt: `${TNAME[x.test]}: door open, ${p}${x.early ? ` EARLY after ${Math.round((x.outAt - (x.go || x.start)) / 6e4)} min` : ''}` });
     if (x.cancelled) items.push({ t: x.cancelled.at, by: x.cancelled.by, bad: true, txt: `${TNAME[x.test]}: load cancelled, ${p}` });
+  });
+  // photos the bench app asked for (Ash out of the photo limit, or a possible error), and skipped ones
+  r.photos.forEach(p => {
+    const why = [isNum(p.pct) ? `${p.pct.toFixed(2)} % residue` : '', ...(p.why || [])].filter(Boolean).join(' · ');
+    items.push({ t: Date.parse(p.at), by: p.by, bad: !!p.skipped, txt: p.skipped
+      ? `📷 ${TNAME[p.test] || p.test} photo skipped${why ? ' (' + esc(why) + ')' : ''}`
+      : `📷 ${TNAME[p.test] || p.test} photo${why ? ' (' + esc(why) + ')' : ''}${photoImg(r, p)}` });
   });
   if (!items.length) return '';
   items.sort((a, b) => a.t - b.t);
@@ -633,7 +667,7 @@ function attentionHTML(list) {
   if (!items.length) return '';
   return `<div class="card"><h2>Needs attention</h2>
     <p class="sub">Red = outside limits: kept off the final results until approved in the weighing app or retested. Possible errors = weights or times that look like a slip (sample mass off, W3 heavier than W2, not heated long enough, value far from that supplier's usual).</p>
-    <ul class="attn">${items.map(r => `<li data-id="${esc(r.id)}"><b>${esc(r.code)}</b>${SD.old ? ` <span class="sm">${SRC[r.src].label}</span>` : ''}
+    <ul class="attn">${items.map(r => `<li data-id="${esc(r.id)}"><b>${esc(r.code)}</b>${r.photos.some(p => !p.skipped) ? ' <span title="photo in the trail">📷</span>' : ''}${SD.old ? ` <span class="sm">${SRC[r.src].label}</span>` : ''}
       ${r.flags.length ? `<span class="why">⚠ ${esc(r.flags.join(' · '))}</span>` : ''}${r.checks.length ? `<span class="why" style="color:var(--warn)">? ${esc(r.checks.join(' · '))}</span>` : ''}
       <span class="what">${r.state === 'flag' ? 'Tap to approve, or retest ' : 'Retest '}${[...new Set([...(r.state === 'flag' ? r.flagTests : []), ...r.suspect])].map(k => TNAME[k]).join(', ')}${r.stale ? ' · approval outdated, weights changed' : ''}${r.name ? ' · ' + esc(r.name) : ''} · ${when(r.last)}</span></li>`).join('')}</ul></div>`;
 }
@@ -684,7 +718,7 @@ function tableHTML(list, anyTm) {
       ${COLS.map(c => th(c.k, c.label + ' %', true)).join('')}${anyTm ? th('tm', 'Total moist. %', true) : ''}
       <th>Notes</th>${th('done', 'Last weighed')}</tr></thead>
     <tbody>${list.map(r => `<tr data-id="${esc(r.id)}">
-      <td><b>${esc(r.code)}</b>${SD.old ? `<span class="sm"> ${r.src === 'old' ? 'old' : 'QR'}</span>` : ''}</td><td>${esc(r.name) || '<span class="sm">–</span>'}</td><td>${esc(r.supplier) || '<span class="sm">–</span>'}</td>
+      <td><b>${esc(r.code)}</b>${r.photos.some(p => !p.skipped) ? ' <span title="photo in the trail">📷</span>' : ''}${SD.old ? `<span class="sm"> ${r.src === 'old' ? 'old' : 'QR'}</span>` : ''}</td><td>${esc(r.name) || '<span class="sm">–</span>'}</td><td>${esc(r.supplier) || '<span class="sm">–</span>'}</td>
       <td>${esc(r.machine) || '<span class="sm">–</span>'}</td><td>${pill(r)}</td>
       ${COLS.map(c => cell(r, c)).join('')}${anyTm ? `<td class="num${isHi(r, 'TM') ? ' hi' : ''}">${r.hasTm ? f2(r.tm) : '<span class="sm">–</span>'}</td>` : ''}
       <td class="wrapcell"><span class="sm">${esc([...(r.pending.length && r.status !== 'not started' ? ['waiting: ' + r.pending.map(k => TNAME[k]).join(', ')] : []),
@@ -751,6 +785,7 @@ function detail(id) {
       <p class="sub" id="rsmsg" style="margin:6px 0 0"></p></details>`);
     dlg.querySelectorAll('[data-reset]').forEach(b => b.onclick = () => resetTest(r, b.dataset.reset));
   }
+  loadPhotos(dlg);
   if (!dlg.open) dlg.showModal();
   document.getElementById('dclose').onclick = () => dlg.close();
 }
