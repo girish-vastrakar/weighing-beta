@@ -594,7 +594,7 @@ function runBusy(f, r, now) {
   if (!(r.items || []).length) return now < end + 3 * 3600000;
   return r.items.some(it => { const w = f.samples && f.samples[it.code] && f.samples[it.code].w && f.samples[it.code].w[r.test]; return !!w && w[1] != null && w[2] == null; });
 }
-async function startLoad(sec, test, minutes, pick) {
+async function startLoad(sec, test, minutes, pick, ringBal) {
   if (S.starting) return; S.starting = true;
   const now = Date.now(), rid = `${new Date().toISOString().slice(0, 10)}-${sec.id}-${now.toString(36)}`;
   let bal = 0;
@@ -607,7 +607,7 @@ async function startLoad(sec, test, minutes, pick) {
     const items = pick ? loadable(f, test).filter(pick).slice(0, sec.tests[test]) : [];
     if (pick && !items.length) return false;
     const card = items.length && test !== 'MC' && f.cards && f.cards[trayOf(items[0].h)];
-    bal = card ? +card.bal : items.length ? (+((f.samples[items[0].code].hb || {})[test]) || 0) : 0;
+    bal = card ? +card.bal : items.length ? (+((f.samples[items[0].code].hb || {})[test]) || 0) : (+ringBal || 0);
     f.runs = f.runs || {};
     Object.keys(f.runs).forEach(r => { if (now - f.runs[r].start > 3 * 86400000) delete f.runs[r]; });
     f.runs[rid] = { rid, place: sec.id, test, tray: test === 'MC' || !items.length ? null : trayOf(items[0].h), items, bal, start: now, mins: minutes, by: 'Supervisor (timer)' };
@@ -813,7 +813,8 @@ function sheetHTML() {
         <input id="mm" inputmode="numeric" maxlength="2" value="${p2(sh.min % 60)}" aria-label="${esc(t.m)}"><span>${esc(t.m)}</span>
       </div>
       <div class="goin">${body}</div>
-      <p class="meta" style="margin:8px 0 0">Start when the door is closed and it is at temperature.${ready ? '' : ' Nothing picked: Start runs a plain timer with no samples linked.'}</p>
+      ${ready ? '' : `<p style="font-weight:700;margin:12px 0 0">Ring on the phone of balance</p><div class="seg" style="margin-top:6px">${[0, 1, 2, 3, 4].map(n => `<button data-act="lbal" data-bal="${n}" aria-pressed="${(sh.bal || 0) === n}">${n ? 'W' + n : 'None'}</button>`).join('')}</div>`}
+      <p class="meta" style="margin:8px 0 0">Start when the door is closed and it is at temperature.${ready ? ' When time is up, the timer and the phone of that card\'s balance ring.' : ' Nothing picked: Start runs a plain timer with no samples linked.'}</p>
       <div class="btnrow"><button class="secondary" data-act="close">${esc(t.cancel)}</button>
         <button class="primary" data-act="lstart" ${S.starting ? 'disabled' : ''}>${esc(t.start)}</button></div>
     </div></div>`;
@@ -956,6 +957,7 @@ document.addEventListener('click', e => {
     case 'close': case 'close-bg': S.sheet = null; S.armed = null; render(); break;
     case 'lpick': sh.test = el.dataset.test; sh.min = minsFor(sh.test); sh.sel = null; render(); break;
     case 'ltray': sh.sel = el.dataset.tray; render(); break;
+    case 'lbal': sh.bal = +el.dataset.bal; render(); break;
     case 'ltoggle': { const c = el.dataset.code, cap = SECTIONS.find(x => x.id === sh.sec).tests.MC;
       if (sh.sel.includes(c)) sh.sel = sh.sel.filter(x => x !== c); else if (sh.sel.length < cap) sh.sel.push(c); else toast(T().full(cap));
       render(); break; }
@@ -964,7 +966,7 @@ document.addEventListener('click', e => {
       const sec = SECTIONS.find(x => x.id === sh.sec), sel = sh.sel;
       // nothing picked (or nothing waiting): a plain timer, as before the app loads
       const none = !(sh.test === 'MC' ? (sel || []).length : sel);
-      startLoad(sec, sh.test, sh.min, none ? null : sh.test === 'MC' ? (x => sel.includes(x.code)) : (x => trayOf(x.h) === sel)); break;
+      startLoad(sec, sh.test, sh.min, none ? null : sh.test === 'MC' ? (x => sel.includes(x.code)) : (x => trayOf(x.h) === sel), sh.bal); break;
     }
     case 'tout': { takenOut(el.dataset.rid); S.sheet = null; render(); break; }
     case 'sup-open': case 'sup-cancel': {

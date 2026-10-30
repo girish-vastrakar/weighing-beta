@@ -11,7 +11,7 @@
              Job cards are printed on the labels page from the Google Sheet allotment: one Ash card (10) and
              one VM card (18) per balance per batch (card "ASH W1-3" = Ash, balance W1, batch 3; spot "ASH W1-3-5").
    Ovens and furnaces: the workers do nothing there in the app. The supervisor puts a card / dishes in a free
-             oven or furnace in the timer app (timer.html) and taps Taken out. The phone shows that status only.
+             oven or furnace in the timer app (timer.html) and taps Taken out. The phone shows that status, and rings on that load's balance when time is up.
    Boards "ASH 2A-5" (balance 2, board A, spot 5) and old paper templates ("ASH A-5") still work for samples
    already on them, and for loads started before job cards.
 
@@ -986,7 +986,9 @@ function ackRun(rid) {
 // only the balance that loaded it (W1 loaded Oven 1 → only W1's phone); the timer app rings for every load
 const myRun = r => !!r.bal && r.bal === balNo();
 // loads of this balance whose time is up, door not opened, not stopped in the last 3 minutes
+// (once a W3 of the load is weighed the worker is on it: no more ringing)
 const dueRuns = () => !S.data ? [] : runs().filter(r => myRun(r) && runPhase(r) === 'up' && Date.now() - runEnd(r) < ALARM_STALE
+  && !r.items.some(it => itemState(r, it) === 'w3')
   && !(Date.now() - (ackAll()[r.rid] || 0) < ALARM_AGAIN)).sort((a, b) => runEnd(a) - runEnd(b));
 const heatingMine = () => !!S.data && runs().some(r => myRun(r) && ['heat', 'warm'].includes(runPhase(r)));
 
@@ -1068,7 +1070,28 @@ document.addEventListener('pointerdown', () => { try { if (AC && AC.state === 's
 if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message', e => {
   if (e.data && e.data.alarm) setTimeout(alarmCheck, 300);
 });
-// no time-up alarm on the worker phones any more: the supervisor's timer app rings and takes the load out
+// time up: the phone of the balance the load belongs to rings too (the card's balance, or the one the supervisor picked)
+setInterval(alarmCheck, 5000);
+// A load the supervisor just started reaches this phone within 15 s, on any screen (the full list refresh only
+// runs on the home screen, once a minute). If-None-Match: an unchanged file costs a tiny 304, no download.
+let RUNTAG = '';
+async function runsPoll() {
+  if (document.visibilityState !== 'visible' || !S.data || S.busy || !KEY) return;
+  const started = Date.now();
+  try {
+    const res = await fetch(`${API}/contents/${GH.path}?ref=${GH.branch}`, { cache: 'no-store', credentials: 'omit',
+      headers: Object.assign({ Authorization: 'Bearer ' + KEY, Accept: 'application/vnd.github+json' }, RUNTAG ? { 'If-None-Match': RUNTAG } : {}) });
+    if (!res.ok) return;                                   // 304: nothing new
+    const meta = await res.json(), sha = meta.sha;
+    if (!meta.content) return;
+    RUNTAG = res.headers.get('ETag') || '';
+    if (isStale(sha) || wroteAt > started || S.busy) return;
+    takeFile(JSON.parse(b64decode(meta.content)), sha); rebuild();
+  } catch (e) { return; }
+  alarmCheck();
+  if (['home', 'run', 'card'].includes(S.view) && !S.modal && !SCAN) render();
+}
+setInterval(runsPoll, 15000);
 
 // the countdowns tick every second without redrawing the screen; at 0:00 the screen and the alarm catch up
 setInterval(() => {
