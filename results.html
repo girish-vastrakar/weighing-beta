@@ -148,6 +148,38 @@
   .limgrid label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .limgrid input { width: 4.5em; font: inherit; padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
   .wrapcell { white-space: normal !important; min-width: 12em; }
+  .cardhead { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 6px 12px; margin: 0 16px 2px; }
+  .cardhead h2 { margin: 0; }
+  a.btn { text-decoration: none; display: inline-block; }
+  .strip h3 a { text-decoration: none; } .strip h3 a:hover { text-decoration: underline; }
+  .seg a { padding: 6px 14px; border-radius: 7px; color: var(--ink2); text-decoration: none; }
+  .seg a[aria-pressed="true"] { background: var(--ink); color: var(--surface); font-weight: 700; }
+  .ctest { margin-bottom: 14px; font-size: 1.05rem; }
+  .filters select { max-width: 100%; }
+  .chart .sub { max-width: 95ch; }
+  .plot { padding: 0 16px 4px; }
+  .plot svg text { font-size: 12.5px; }
+  svg .okband { fill: var(--okbg); }
+  svg .limt { fill: var(--bad); font-weight: 700; }
+  svg .tick { stroke: var(--line); }
+  svg .grid { stroke: var(--grid); }
+  svg .mean { stroke: var(--ink); stroke-width: 1.5; }
+  svg .meant { fill: var(--ink); font-weight: 700; }
+  svg .sdl { stroke: var(--muted); stroke-dasharray: 2 4; }
+  svg .sdt { font-size: 11px !important; }
+  svg .bar { fill: var(--dot); opacity: .55; cursor: default; }
+  svg .bar.bad { fill: var(--bad); }
+  svg .bar:hover, svg .bar:focus { opacity: .85; outline: none; }
+  svg .bell { fill: none; stroke: var(--run); stroke-width: 2.5; }
+  svg .roll { fill: none; stroke: var(--run); stroke-width: 2.5; opacity: .8; }
+  svg .whisk { stroke: var(--ink2); stroke-width: 1.5; }
+  svg .box { fill: var(--runbg); stroke: var(--run); stroke-width: 1.5; }
+  svg .med { stroke: var(--ink); stroke-width: 3; }
+  svg .glab { fill: var(--ink); }
+  svg circle.sm { stroke-width: 1; opacity: .85; }
+  table.stats td, table.stats th { cursor: default; }
+  table.stats tbody tr { cursor: default; }
+  table.stats tr.cur td { background: var(--grid); font-weight: 700; }
 </style>
 </head>
 <body>
@@ -183,7 +215,7 @@ let OLDKEY = store.get('oldkey') || KEY;
 })();
 
 const V = { range: store.get('res-range') || '7d', status: 'all', machine: '', supplier: '', src: '', q: '', lim: '',
-            basis: store.get('res-basis') || 'db', sort: 'done', dir: -1 };
+            basis: store.get('res-basis') || 'db', sort: 'done', dir: -1, cgroup: store.get('res-cgroup') || 'supplier' };
 let DATA = null, LOADED = 0, ERR = null, OLDERR = null, ROWS = [];
 const SD = {};  // per source: { samples, ts, names, appr }
 
@@ -472,6 +504,23 @@ function sorted(list) {
 
 /* ---------- render ---------- */
 const root = document.getElementById('root'), tip = document.getElementById('tip'), dlg = document.getElementById('dlg');
+// The filter bar at the top: the results page and the charts page share it (and V)
+function filtersHTML(machines, suppliers, withCsv) {
+  const seg = (name, v, l) => `<button data-${name}="${v}" aria-pressed="${V[name] === v}">${l}</button>`;
+  return `<div class="filters">
+      <div class="seg" role="group" aria-label="Time range">${seg('range', 'today', 'Today')}${seg('range', 'yesterday', 'Yesterday')}${seg('range', '7d', '7 days')}${seg('range', '30d', '30 days')}${seg('range', 'all', 'All')}</div>
+      <div class="seg" role="group" aria-label="Status">${seg('status', 'all', 'All')}${seg('status', 'complete', 'Complete')}${seg('status', 'running', 'In progress')}${seg('status', 'flag', 'Needs approval')}${seg('status', 'checks', 'Possible errors')}</div>
+      <div class="seg" role="group" aria-label="Basis">${seg('basis', 'db', 'Dry basis')}${seg('basis', 'ar', 'As received')}</div>
+      <select id="machine" aria-label="Weighing machine"><option value="">All machines</option>
+        ${machines.map(m => `<option value="${esc(m)}"${V.machine === m ? ' selected' : ''}>${esc(m === 'ALL' ? 'ALL (any machine)' : 'Machine ' + m)}</option>`).join('')}
+        <option value="-"${V.machine === '-' ? ' selected' : ''}>No machine in sheet</option></select>
+      ${suppliers.length ? `<select id="supplier" aria-label="Supplier"><option value="">All suppliers</option>${suppliers.map(s => `<option${V.supplier === s ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select>` : ''}
+      ${SD.old ? `<select id="src" aria-label="App"><option value="">Both apps</option>${Object.keys(SRC).map(k => `<option value="${k}"${V.src === k ? ' selected' : ''}>${SRC[k].label}</option>`).join('')}</select>` : ''}
+      <input type="search" id="q" placeholder="Search code, name, supplier" value="${esc(V.q)}" aria-label="Search">
+      ${!withCsv && V.lim ? `<button class="btn on" id="climclear" title="Set in the table's filter bar on the results page">✕ Limits: ${esc(V.lim === 'ok' ? 'all inside' : V.lim === 'any' ? 'any out' : TNAME[V.lim] + ' out')}</button>` : ''}
+      ${withCsv ? '<button class="btn" id="csv">Download CSV</button>' : ''}
+    </div>`;
+}
 function render() {
   if (!DATA) { root.innerHTML = `<div class="empty">${esc(ERR || 'Loading…')} ${ERR ? '<button class="btn" onclick="load()">Try again</button>' : ''}</div>`; return; }
   const list = sorted(filtered());
@@ -482,27 +531,16 @@ function render() {
   const machines = [...new Set(ROWS.flatMap(r => r.machine.split(/[^A-Z0-9]+/)).filter(Boolean))].sort();
   const suppliers = [...new Set(ROWS.map(r => r.supplier).filter(Boolean))].sort();
   const anyTm = list.some(r => r.hasTm);
-  const seg = (name, v, l) => `<button data-${name}="${v}" aria-pressed="${V[name] === v}">${l}</button>`;
   const b = V.basis === 'db' ? 'dry basis' : 'as received';
   const avgTile = (c, l) => { const v = avg(accepted.map(c.val).filter(isNum)); return `<div class="tile"><b>${v == null ? '–' : v.toFixed(2) + ' %'}</b><span>average ${l}</span></div>`; };
+  if (chartView()) { root.innerHTML = chartsPageHTML(list, machines, suppliers); wire(); return; }
 
   root.innerHTML = `
     <header><h1>Lab results</h1>
       <span class="meta">${ERR ? '⚠ ' + esc(ERR) + ' · showing last data · ' : ''}Updated ${LOADED ? hm(LOADED) : '–'} · refreshes every minute
         <button class="btn" id="refresh" aria-label="Refresh now">↻</button><a href="./">Weighing app</a><a href="timer.html">Timer</a><a href="dashboard.html">Lab timeline</a><a href="labels.html">Boards and labels</a> <button class="btn" id="paper">✎ Type in paper weights</button><br>
         ${SD.old ? `Old app data included (${Object.keys(SD.old.samples).length} samples)` : `Old app data not shown${OLDERR && OLDERR !== 'no key' ? ': ' + esc(OLDERR) : ''} · <button class="btn" id="oldkey">Add old app data</button>`}</span></header>
-    <div class="filters">
-      <div class="seg" role="group" aria-label="Time range">${seg('range', 'today', 'Today')}${seg('range', 'yesterday', 'Yesterday')}${seg('range', '7d', '7 days')}${seg('range', '30d', '30 days')}${seg('range', 'all', 'All')}</div>
-      <div class="seg" role="group" aria-label="Status">${seg('status', 'all', 'All')}${seg('status', 'complete', 'Complete')}${seg('status', 'running', 'In progress')}${seg('status', 'flag', 'Needs approval')}${seg('status', 'checks', 'Possible errors')}</div>
-      <div class="seg" role="group" aria-label="Basis">${seg('basis', 'db', 'Dry basis')}${seg('basis', 'ar', 'As received')}</div>
-      <select id="machine" aria-label="Weighing machine"><option value="">All machines</option>
-        ${machines.map(m => `<option value="${esc(m)}"${V.machine === m ? ' selected' : ''}>${esc(m === 'ALL' ? 'ALL (any machine)' : 'Machine ' + m)}</option>`).join('')}
-        <option value="-"${V.machine === '-' ? ' selected' : ''}>No machine in sheet</option></select>
-      ${suppliers.length ? `<select id="supplier" aria-label="Supplier"><option value="">All suppliers</option>${suppliers.map(s => `<option${V.supplier === s ? ' selected' : ''}>${esc(s)}</option>`).join('')}</select>` : ''}
-      ${SD.old ? `<select id="src" aria-label="App"><option value="">Both apps</option>${Object.keys(SRC).map(k => `<option value="${k}"${V.src === k ? ' selected' : ''}>${SRC[k].label}</option>`).join('')}</select>` : ''}
-      <input type="search" id="q" placeholder="Search code, name, supplier" value="${esc(V.q)}" aria-label="Search">
-      <button class="btn" id="csv">Download CSV</button>
-    </div>
+    ${filtersHTML(machines, suppliers, true)}
     <div class="tiles">
       <div class="tile"><b>${list.length}</b><span>samples in view</span></div>
       <div class="tile"><b>${done.length}</b><span>all tests done</span></div>
@@ -681,12 +719,181 @@ function stripsHTML(list) {
     const ticks = [lo, (lo + hi) / 2, hi].map(v => `<text x="${x(v)}" y="${H - 2}" text-anchor="${v === lo ? 'start' : v === hi ? 'end' : 'middle'}">${Math.round(v)}</text>`).join('');
     const lim = d.lim != null ? `<line class="lim" x1="${x(d.lim)}" x2="${x(d.lim)}" y1="4" y2="${H - 16}"></line><text x="${x(d.lim) > W - 60 ? x(d.lim) - 3 : x(d.lim) + 3}" y="11" text-anchor="${x(d.lim) > W - 60 ? 'end' : 'start'}" style="fill:var(--bad)">limit ${d.lim}</text>` : '';
     const m = avg(vals);
-    return `<div class="strip"><h3>${d.label} % <span>${d.unit} · avg ${m.toFixed(2)} · ${pts.length} sample${pts.length === 1 ? '' : 's'}</span></h3>
+    return `<div class="strip"><h3><a href="#charts/${d.k}" title="Bigger charts for ${d.label}">${d.label} %</a> <span>${d.unit} · avg ${m.toFixed(2)} · ${pts.length} sample${pts.length === 1 ? '' : 's'}</span></h3>
       <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${d.label} spread, ${pts.length} samples, average ${m.toFixed(2)} %">
         <line class="base" x1="${L}" x2="${W - R}" y1="${H - 16}" y2="${H - 16}"></line>${ticks}${lim}${dots}</svg></div>`;
   };
-  return `<div class="card"><h2>Spread of results</h2><p class="sub">Each dot is a sample; red = outside limits, amber = possible error. Hover or tap for the code.</p>
+  return `<div class="card"><div class="cardhead"><h2>Spread of results</h2><a class="btn" href="#charts">⤢ Open big charts and distribution curves</a></div>
+    <p class="sub">Each dot is a sample; red = outside limits, amber = possible error. Hover or tap for the code.</p>
     <div class="strips">${defs.map(strip).join('')}</div></div>`;
+}
+
+/* ---------- charts page (results.html#charts/VM): the same filtered samples as the results page, drawn large ---------- */
+const chartView = () => /^#charts\b/.test(location.hash);
+const CTESTS = ['MC', 'VM', 'ASH', 'FC'];
+const chartTest = () => { const k = (location.hash.match(/^#charts\/(\w+)/) || [])[1]; return CTESTS.includes(k) ? k : 'MC'; };
+// value, unit text and limits for one test on the chosen basis (limits are set as received for moisture, dry basis for the rest)
+function chartDef(k) {
+  const c = COLS.find(x => x.k === k), db = k === 'MC' || V.basis === 'db', [lo, hi] = LIM()[k] || [];
+  return { k, label: TNAME[k], val: c.val, unit: k === 'MC' ? 'as received' : V.basis === 'db' ? 'dry basis' : 'as received',
+    lo: db && isNum(lo) ? lo : null, hi: db && isNum(hi) ? hi : null, limNote: db ? '' : 'Limits are on dry basis, so they are not drawn on as received values.' };
+}
+// time the test was finished (its W3), else the sample's last weighing
+const testTime = (r, k) => { const t = k === 'FC' ? null : ((r.ts[TSKEY[k]] || {}).W3 || {}).at; return (t && Date.parse(t)) || r.last; };
+const quant = (s, q) => { const i = (s.length - 1) * q, a = Math.floor(i); return s[a] + (s[Math.min(a + 1, s.length - 1)] - s[a]) * (i - a); };
+function statsOf(vals, lo, hi) {
+  const s = vals.slice().sort((a, b) => a - b), n = s.length, m = avg(s);
+  const sd = n > 1 ? Math.sqrt(s.reduce((t, v) => t + (v - m) ** 2, 0) / (n - 1)) : 0;
+  return { n, s, mean: m, sd, min: s[0], max: s[n - 1], med: quant(s, .5), q1: quant(s, .25), q3: quant(s, .75),
+    out: s.filter(v => (lo != null && v < lo) || (hi != null && v > hi)).length };
+}
+// normal curve helpers: density, and the share expected outside the limits
+const npdf = (x, m, sd) => Math.exp(-((x - m) ** 2) / (2 * sd * sd)) / (sd * Math.sqrt(2 * Math.PI));
+function ncdf(z) {  // Abramowitz-Stegun 7.1.26
+  const t = 1 / (1 + 0.3275911 * Math.abs(z) / Math.SQRT2), y = 1 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-z * z / 2);
+  return z >= 0 ? (1 + y) / 2 : (1 - y) / 2;
+}
+const niceStep = raw => { const p = 10 ** Math.floor(Math.log10(raw)), f = raw / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p; };
+const ticksOf = (lo, hi, n) => { const st = niceStep((hi - lo) / n), out = []; for (let v = Math.ceil(lo / st) * st; v <= hi + st * 1e-9; v += st) out.push(+v.toFixed(6)); return out; };
+const fmtT = v => +v.toFixed(2) + '';
+// x range for a test: every value plus the limits, with a little room
+function domainOf(vals, d) {
+  let lo = Math.min(...vals, d.lo != null ? d.lo : Infinity, d.hi != null ? d.hi : Infinity);
+  let hi = Math.max(...vals, d.hi != null ? d.hi : -Infinity, d.lo != null ? d.lo : -Infinity);
+  const pad = Math.max((hi - lo) * 0.06, 0.5); lo = lo - pad; hi = hi + pad;
+  const st = niceStep((hi - lo) / 8); return [Math.max(0, Math.floor(lo / st) * st), Math.ceil(hi / st) * st];
+}
+const chartW = () => Math.max(300, Math.min(root.clientWidth || innerWidth, 1360) - 32 - 2 - 32);
+const dotCls = (r, k) => { const bad = k !== 'FC' && isHi(r, k); return bad ? 'bad' : r.suspect.has(k) ? 'sus' : ''; };
+const dotTip = (r, v, extra) => `${esc(r.code)}${r.name ? ' · ' + esc(r.name) : ''}${r.supplier ? ' · ' + esc(r.supplier) : ''}: ${v.toFixed(2)} %${extra ? ' · ' + extra : ''}`;
+// limit lines and the shaded "inside limits" band, along x (vertical lines) or along y (horizontal lines)
+function limMarks(d, sc, a0, a1, horiz) {
+  let out = '';
+  if (d.lo != null || d.hi != null) {
+    const p0 = sc(d.lo != null ? d.lo : sc.lo), p1 = sc(d.hi != null ? d.hi : sc.hi);
+    out += horiz ? `<rect class="okband" x="${a0}" width="${a1 - a0}" y="${Math.min(p0, p1)}" height="${Math.abs(p1 - p0)}"></rect>`
+                 : `<rect class="okband" x="${Math.min(p0, p1)}" width="${Math.abs(p1 - p0)}" y="${a0}" height="${a1 - a0}"></rect>`;
+  }
+  [['lo', 'min'], ['hi', 'max']].forEach(([k, l]) => { if (d[k] == null) return; const p = sc(d[k]);
+    out += horiz ? `<line class="lim" x1="${a0}" x2="${a1}" y1="${p}" y2="${p}"></line><text class="limt" x="${a1 - 4}" y="${p + (k === 'hi' ? -5 : 14)}" text-anchor="end">${l} limit ${d[k]}</text>`
+                 : `<line class="lim" x1="${p}" x2="${p}" y1="${a0}" y2="${a1}"></line><text class="limt" x="${p + (k === 'hi' ? -4 : 4)}" y="${a0 + 12}" text-anchor="${k === 'hi' ? 'end' : 'start'}">${l} ${d[k]}</text>`; });
+  return out;
+}
+function xAxis(sc, y, W) {
+  return `<line class="base" x1="${sc(sc.lo)}" x2="${sc(sc.hi)}" y1="${y}" y2="${y}"></line>` + ticksOf(sc.lo, sc.hi, Math.max(4, Math.round(W / 90)))
+    .map(v => `<line class="tick" x1="${sc(v)}" x2="${sc(v)}" y1="${y}" y2="${y + 5}"></line><text x="${sc(v)}" y="${y + 18}" text-anchor="middle">${fmtT(v)}</text>`).join('');
+}
+const scale = (lo, hi, p0, p1) => { const f = v => p0 + (v - lo) / (hi - lo) * (p1 - p0); f.lo = lo; f.hi = hi; return f; };
+
+// 1. every sample as a dot, stacked where they overlap
+function bigDots(pts, d, dom, W) {
+  const L = 16, R = 16, sx = scale(dom[0], dom[1], L, W - R), used = {}, rows = [];
+  pts.slice().sort((a, b) => d.val(a) - d.val(b)).forEach(r => { const v = d.val(r), px = sx(v), slot = Math.round(px / 13);
+    used[slot] = (used[slot] || 0) + 1; rows.push({ r, v, px, lvl: used[slot] - 1 }); });
+  const lv = Math.min(Math.max(...rows.map(x => x.lvl)) + 1, 12), H = 44 + lv * 13 + 24, base = H - 24;
+  const st = statsOf(rows.map(x => x.v));
+  const dots = rows.map(x => `<circle r="6" cx="${x.px.toFixed(1)}" cy="${base - 10 - (x.lvl % 12) * 13}" class="${dotCls(x.r, d.k)}" tabindex="0" data-id="${esc(x.r.id)}" data-tip="${dotTip(x.r, x.v)}"></circle>`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" style="height:${H}px" role="img" aria-label="${d.label}: ${pts.length} samples, each a dot">
+    ${limMarks(d, sx, 4, base, false)}<line class="mean" x1="${sx(st.mean)}" x2="${sx(st.mean)}" y1="20" y2="${base}"></line>
+    <text class="meant" x="${sx(st.mean)}" y="30" text-anchor="middle">avg ${st.mean.toFixed(2)}</text>${xAxis(sx, base, W)}${dots}</svg>`;
+}
+// histogram bar width: about 2·√n bars across the data (8 to 40), rounded to a tidy step
+const binStep = (vals, dom) => { const r = Math.max(...vals) - Math.min(...vals) || (dom[1] - dom[0]) / 10; return niceStep(r / Math.min(40, Math.max(8, Math.round(2 * Math.sqrt(vals.length))))); };
+// 2. histogram with the fitted normal (bell) curve
+function bigHist(vals, d, dom, W) {
+  const H = 300, L = 40, R = 16, T = 26, B = H - 26, st = statsOf(vals, d.lo, d.hi), sx = scale(dom[0], dom[1], L, W - R);
+  const step = binStep(vals, dom);
+  const b0 = Math.floor(Math.min(...vals) / step) * step, nb = Math.floor((Math.max(...vals) - b0) / step) + 1, cnt = Array(nb).fill(0);
+  vals.forEach(v => { cnt[Math.min(nb - 1, Math.max(0, Math.floor((v - b0) / step + 1e-9)))]++; });
+  const curve = st.sd > 0 ? Array.from({ length: 161 }, (_, i) => { const x = dom[0] + (dom[1] - dom[0]) * i / 160; return [x, npdf(x, st.mean, st.sd) * vals.length * step]; }) : [];
+  const ymax = Math.max(...cnt, ...curve.map(c => c[1]), 1) * 1.08, sy = scale(0, ymax, B, T);
+  const bars = cnt.map((c, i) => { const a = b0 + i * step, z = a + step, out = (d.lo != null && z <= d.lo + 1e-9) || (d.hi != null && a >= d.hi - 1e-9);
+    return c ? `<rect class="bar${out ? ' bad' : ''}" x="${sx(a) + 1}" width="${Math.max(1, sx(z) - sx(a) - 2)}" y="${sy(c)}" height="${B - sy(c)}" tabindex="0"
+      data-tip="${fmtT(a)} – ${fmtT(z)} %: ${c} sample${c === 1 ? '' : 's'}"></rect>` : ''; }).join('');
+  const yt = ticksOf(0, ymax, 5).filter(v => v === Math.round(v)).map(v => `<line class="grid" x1="${L}" x2="${W - R}" y1="${sy(v)}" y2="${sy(v)}"></line><text x="${L - 6}" y="${sy(v) + 4}" text-anchor="end">${v}</text>`).join('');
+  const sdl = st.sd > 0 ? [-2, -1, 1, 2].map(z => { const v = st.mean + z * st.sd; return v < dom[0] || v > dom[1] ? '' :
+    `<line class="sdl" x1="${sx(v)}" x2="${sx(v)}" y1="${T + 30}" y2="${B}"></line> <text class="sdt" x="${sx(v)}" y="${T + 26}" text-anchor="middle">${z > 0 ? '+' : '−'}${Math.abs(z)} SD</text>`; }).join('') : '';
+  return `<svg viewBox="0 0 ${W} ${H}" style="height:${H}px" role="img" aria-label="${d.label} distribution: histogram of ${vals.length} samples with a normal curve, mean ${st.mean.toFixed(2)}, SD ${st.sd.toFixed(2)}">
+    ${limMarks(d, sx, T, B, false)}${yt}${bars}${sdl}
+    ${curve.length ? `<path class="bell" d="${curve.map((c, i) => (i ? 'L' : 'M') + sx(c[0]).toFixed(1) + ' ' + sy(c[1]).toFixed(1)).join('')}"></path>` : ''}
+    <line class="mean" x1="${sx(st.mean)}" x2="${sx(st.mean)}" y1="${T}" y2="${B}"></line><text class="meant" x="${sx(st.mean)}" y="${T - 6}" text-anchor="middle">avg ${st.mean.toFixed(2)}</text>
+    ${xAxis(sx, B, W)}<text x="10" y="${(T + B) / 2}" transform="rotate(-90 10 ${(T + B) / 2})" text-anchor="middle">samples</text></svg>`;
+}
+// 3. value against the time the test finished, with a running average of the last 10
+function bigTrend(pts, d, dom, W) {
+  const H = 300, L = 44, R = 16, T = 14, B = H - 26, rows = pts.map(r => ({ r, v: d.val(r), t: testTime(r, d.k) })).filter(x => x.t != null).sort((a, b) => a.t - b.t);
+  if (rows.length < 2) return '<p class="sub">Needs at least two samples with a time.</p>';
+  const t0 = rows[0].t, t1 = rows[rows.length - 1].t, span = Math.max(t1 - t0, 36e5), pad = span * 0.03;
+  const sx = scale(t0 - pad, t1 + pad, L, W - R), sy = scale(dom[0], dom[1], B, T);
+  const nt = Math.max(3, Math.round(W / 110)), short = span < 48 * 36e5, ts = [];
+  if (short) { const st = [1, 2, 3, 4, 6, 12, 24].find(h => span / (h * 36e5) <= nt) * 36e5, d0 = new Date(t0 - pad); d0.setMinutes(0, 0, 0);
+    for (let t = d0.getTime() + st; t <= t1 + pad; t += st) if (t >= t0 - pad) ts.push(t); }
+  else { const days = Math.ceil(span / 864e5 / nt), d0 = new Date(t0 - pad); d0.setHours(24, 0, 0, 0);
+    for (const d = d0; d.getTime() <= t1 + pad; d.setDate(d.getDate() + days)) ts.push(d.getTime()); }
+  const xt = ts.map(t => `<line class="tick" x1="${sx(t)}" x2="${sx(t)}" y1="${B}" y2="${B + 5}"></line><text x="${sx(t)}" y="${B + 18}" text-anchor="middle">${short ? (new Date(t).getHours() ? hm(t) : dayLabel(t)) : dayLabel(t)}</text>`).join('');
+  const yt = ticksOf(dom[0], dom[1], 6).map(v => `<line class="grid" x1="${L}" x2="${W - R}" y1="${sy(v)}" y2="${sy(v)}"></line><text x="${L - 6}" y="${sy(v) + 4}" text-anchor="end">${fmtT(v)}</text>`).join('');
+  const roll = rows.map((x, i) => { const w = rows.slice(Math.max(0, i - 9), i + 1); return [x.t, avg(w.map(y => y.v))]; });
+  return `<svg viewBox="0 0 ${W} ${H}" style="height:${H}px" role="img" aria-label="${d.label} over time, ${rows.length} samples">
+    ${limMarks(d, sy, L, W - R, true)}${yt}<line class="base" x1="${L}" x2="${W - R}" y1="${B}" y2="${B}"></line>${xt}
+    ${rows.length > 3 ? `<path class="roll" d="${roll.map((p, i) => (i ? 'L' : 'M') + sx(p[0]).toFixed(1) + ' ' + sy(p[1]).toFixed(1)).join('')}"></path>` : ''}
+    ${rows.map(x => `<circle r="5" cx="${sx(x.t).toFixed(1)}" cy="${sy(x.v).toFixed(1)}" class="${dotCls(x.r, d.k)}" tabindex="0" data-id="${esc(x.r.id)}" data-tip="${dotTip(x.r, x.v, when(x.t))}"></circle>`).join('')}</svg>`;
+}
+// 4. box plot per supplier (or machine), with every sample as a dot on top
+function bigBoxes(pts, d, dom, W) {
+  const by = V.cgroup === 'machine' ? r => r.machine || 'no machine' : r => r.supplier || 'no supplier', g = {};
+  pts.forEach(r => (g[by(r)] = g[by(r)] || []).push(r));
+  let groups = Object.entries(g).map(([name, rs]) => ({ name, rs, st: statsOf(rs.map(d.val)) }));
+  const hidden = Math.max(0, groups.length - 20);
+  groups = groups.sort((a, b) => b.st.n - a.st.n).slice(0, 20).sort((a, b) => a.st.med - b.st.med);
+  const names = groups.map(x => x.name).filter(n => !/^no /.test(n));
+  let pre = names.length > 1 ? names.reduce((a, n) => { let i = 0; while (i < a.length && a[i] === n[i]) i++; return a.slice(0, i); }) : '';
+  pre = pre.slice(0, pre.search(/[^·\-,/ ]*$/));
+  if (names.some(n => n.length <= pre.length + 2)) pre = '';
+  const LW = Math.min(260, W * 0.3), RW = W < 560 ? 8 : 120, L = LW + 8, R = RW + 8, rowH = 34, T = 18, B = T + groups.length * rowH, H = B + 26;
+  const sx = scale(dom[0], dom[1], L, W - R), clip = s => s.length > Math.floor(LW / 7) ? s.slice(0, Math.floor(LW / 7) - 1) + '…' : s;
+  const rowsSvg = groups.map((gr, i) => { const y = T + i * rowH + rowH / 2, s = gr.st, iqr = s.q3 - s.q1;
+    const wl = Math.min(...s.s.filter(v => v >= s.q1 - 1.5 * iqr)), wh = Math.max(...s.s.filter(v => v <= s.q3 + 1.5 * iqr));
+    return `<text x="${LW}" y="${y + 4}" text-anchor="end" class="glab"><title>${esc(gr.name)}</title>${esc(clip(pre && gr.name.startsWith(pre) ? '…' + gr.name.slice(pre.length) : gr.name))}</text>
+      <line class="whisk" x1="${sx(wl)}" x2="${sx(wh)}" y1="${y}" y2="${y}"></line>
+      <line class="whisk" x1="${sx(wl)}" x2="${sx(wl)}" y1="${y - 6}" y2="${y + 6}"></line><line class="whisk" x1="${sx(wh)}" x2="${sx(wh)}" y1="${y - 6}" y2="${y + 6}"></line>
+      <rect class="box" x="${sx(s.q1)}" width="${Math.max(2, sx(s.q3) - sx(s.q1))}" y="${y - 10}" height="20" tabindex="0"
+        data-tip="${esc(gr.name)}: ${s.n} sample${s.n === 1 ? '' : 's'} · median ${s.med.toFixed(2)} · middle half ${s.q1.toFixed(2)}–${s.q3.toFixed(2)} · range ${s.min.toFixed(2)}–${s.max.toFixed(2)} %"></rect>
+      <line class="med" x1="${sx(s.med)}" x2="${sx(s.med)}" y1="${y - 10}" y2="${y + 10}"></line>
+      ${gr.rs.map(r => `<circle r="3.5" class="sm ${dotCls(r, d.k)}" cx="${sx(d.val(r)).toFixed(1)}" cy="${y}" tabindex="-1" data-id="${esc(r.id)}" data-tip="${dotTip(r, d.val(r))}"></circle>`).join('')}
+      ${RW > 8 ? `<text x="${W - RW}" y="${y + 4}">${s.n} · med ${s.med.toFixed(2)}</text>` : ''}`; }).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" style="height:${H}px" role="img" aria-label="${d.label} by ${V.cgroup === 'machine' ? 'machine' : 'supplier'}">
+    ${limMarks(d, sx, 4, B, false)}${rowsSvg}${xAxis(sx, B, W)}</svg>${hidden ? `<p class="sub">${hidden} smaller group${hidden === 1 ? '' : 's'} not shown.</p>` : ''}`;
+}
+
+function chartsPageHTML(list, machines, suppliers) {
+  const k = chartTest(), d = chartDef(k), W = chartW();
+  const pts = list.filter(r => isNum(d.val(r))), vals = pts.map(d.val);
+  const sumRow = t => { const dd = chartDef(t), v = list.map(dd.val).filter(isNum); if (!v.length) return `<tr><td>${TNAME[t]}</td><td colspan="8" class="sm">no results</td></tr>`;
+    const s = statsOf(v, dd.lo, dd.hi), lim = dd.lo != null || dd.hi != null;
+    return `<tr${t === k ? ' class="cur"' : ''}><td><a href="#charts/${t}">${TNAME[t]}</a> <span class="sm">${dd.unit}</span></td><td class="num">${s.n}</td><td class="num">${s.mean.toFixed(2)}</td><td class="num">${s.sd.toFixed(2)}</td>
+      <td class="num">${s.min.toFixed(2)}</td><td class="num">${s.med.toFixed(2)}</td><td class="num">${s.max.toFixed(2)}</td>
+      <td>${lim ? [dd.lo, dd.hi].map(x => x == null ? '–' : x).join(' to ') : '<span class="sm">none</span>'}</td><td class="num${s.out ? ' hi' : ''}">${lim ? `${s.out} (${(100 * s.out / s.n).toFixed(0)} %)` : '–'}</td></tr>`; };
+  const head = `<header><h1>Result charts</h1>
+      <span class="meta">${ERR ? '⚠ ' + esc(ERR) + ' · showing last data · ' : ''}Updated ${LOADED ? hm(LOADED) : '–'} · refreshes every minute
+        <button class="btn" id="refresh" aria-label="Refresh now">↻</button><a class="btn" href="#">← Back to results</a></span></header>
+    ${filtersHTML(machines, suppliers, false)}
+    <div class="seg ctest" role="group" aria-label="Test">${CTESTS.map(t => `<a href="#charts/${t}" aria-pressed="${t === k}">${TNAME[t]}</a>`).join('')}</div>`;
+  const summary = `<div class="card"><h2>Summary</h2><p class="sub">${list.length} sample${list.length === 1 ? '' : 's'} in view with the filters above · SD = standard deviation · tap a test to chart it</p>
+    <div class="scroll"><table class="list stats"><thead><tr><th>Test</th><th class="num">Samples</th><th class="num">Average %</th><th class="num">SD</th><th class="num">Min</th><th class="num">Median</th><th class="num">Max</th><th>Limits %</th><th class="num">Outside limits</th></tr></thead>
+    <tbody>${CTESTS.map(sumRow).join('')}</tbody></table></div></div>`;
+  if (!pts.length) return head + summary + `<div class="card"><div class="empty">No ${d.label} results in this view.${V.range !== 'all' ? ' Try a longer time range.' : ''}</div></div>`;
+  const dom = domainOf(vals, d), st = statsOf(vals, d.lo, d.hi), lim = d.lo != null || d.hi != null;
+  const expOut = lim && st.sd > 0 ? 100 * ((d.lo != null ? ncdf((d.lo - st.mean) / st.sd) : 0) + (d.hi != null ? 1 - ncdf((d.hi - st.mean) / st.sd) : 0)) : null;
+  const card = (title, sub, body, extra) => `<div class="card chart"><div class="cardhead"><h2>${title}</h2>${extra || ''}</div><p class="sub">${sub}</p><div class="plot">${body}</div></div>`;
+  const u = `${d.label} % ${d.unit}`;
+  return head + summary
+    + card(`Spread: ${u}`, `Each dot is a sample, tap one for its weights. Red = outside limits, amber = possible error. Green band = inside limits.${d.limNote ? ' ' + d.limNote : ''}`, bigDots(pts, d, dom, W))
+    + card(`Distribution curve: ${u}`, `Bars count the samples in each ${fmtT(binStep(vals, dom))} % step; the line is the normal (bell) curve with the same average and SD.
+      Average ${st.mean.toFixed(2)} %, SD ${st.sd.toFixed(2)}, so about two thirds of samples fall between ${(st.mean - st.sd).toFixed(2)} and ${(st.mean + st.sd).toFixed(2)} %.
+      ${expOut != null ? `The curve predicts ${expOut.toFixed(1)} % outside limits; actually ${st.out} of ${st.n} (${(100 * st.out / st.n).toFixed(1)} %).` : ''}${st.n < 15 ? ' With under 15 samples the curve is only a rough guide.' : ''}`, bigHist(vals, d, dom, W))
+    + card(`Over time: ${u}`, `Each dot at the time the test was finished (W3). The line is the average of the last 10 samples, so drift shows up.`, bigTrend(pts, d, dom, W))
+    + card(`By ${V.cgroup === 'machine' ? 'weighing machine' : 'supplier'}: ${u}`, `Box = middle half of the samples, thick line = median, whiskers = usual range; dots are the samples. Sorted by median. Hover a name for it in full.`, bigBoxes(pts, d, dom, W),
+      `<div class="seg" role="group" aria-label="Group by"><button data-cgroup="supplier" aria-pressed="${V.cgroup !== 'machine'}">Supplier</button><button data-cgroup="machine" aria-pressed="${V.cgroup === 'machine'}">Machine</button></div>`);
 }
 
 // Filter and sort bar right above the table; it shares V with the bar at the top of the page
@@ -1038,11 +1245,13 @@ function wire() {
   on('tsort', v => { V.sort = v; V.dir = sortDir0(v); });
   const td = document.getElementById('tdir'); if (td) td.onclick = () => { V.dir = -V.dir; render(); };
   const tc = document.getElementById('tclear'); if (tc) tc.onclick = () => { Object.assign(V, { status: 'all', lim: '', machine: '', supplier: '', src: '', q: '' }); render(); };
+  const lc0 = document.getElementById('climclear'); if (lc0) lc0.onclick = () => { V.lim = ''; render(); };
+  root.querySelectorAll('[data-cgroup]').forEach(b => b.onclick = () => { V.cgroup = b.dataset.cgroup; store.set('res-cgroup', V.cgroup); render(); });
   root.querySelectorAll('tr[data-id], li[data-id], circle[data-id]').forEach(el => {
     el.onclick = () => detail(el.dataset.id);
     el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); detail(el.dataset.id); } };
   });
-  root.querySelectorAll('circle[data-tip]').forEach(c => {
+  root.querySelectorAll('[data-tip]').forEach(c => {
     const show = e => { tip.textContent = c.dataset.tip; tip.hidden = false; const r = c.getBoundingClientRect();
       tip.style.left = Math.min(r.left, innerWidth - tip.offsetWidth - 8) + 'px'; tip.style.top = (r.top - tip.offsetHeight - 6) + 'px'; };
     c.onmouseenter = show; c.onfocus = show; c.onmouseleave = c.onblur = () => { tip.hidden = true; };
@@ -1051,16 +1260,20 @@ function wire() {
   const s = document.getElementById('supplier'); if (s) s.onchange = () => { V.supplier = s.value; render(); };
   const sr = document.getElementById('src'); if (sr) sr.onchange = () => { V.src = sr.value; render(); };
   const ok = document.getElementById('oldkey'); if (ok) ok.onclick = addOldKey;
-  document.getElementById('paper').onclick = pickCode;
+  const pp = document.getElementById('paper'); if (pp) pp.onclick = pickCode;
   ['q', 'tq'].forEach(id => { const q = document.getElementById(id); if (q) q.oninput = () => { V.q = q.value; const pos = q.selectionStart; render();
     const n = document.getElementById(id); n.focus({ preventScroll: true }); n.setSelectionRange(pos, pos); }; });
-  document.getElementById('csv').onclick = () => csv(sorted(filtered()));
+  const cv = document.getElementById('csv'); if (cv) cv.onclick = () => csv(sorted(filtered()));
   const sl = document.getElementById('savelim'); if (sl) sl.onclick = saveLimits;
   const lc = root.querySelector('.limcard'); if (lc) lc.ontoggle = () => { V.limOpen = lc.open; };
   document.getElementById('refresh').onclick = load;
 }
 
 load();
+// results.html#charts/VM is the big charts page; the browser's back button returns to the results
+let chartsWas = chartView();
+addEventListener('hashchange', () => { const c = chartView(); tip.hidden = true; if (DATA) render(); if (c !== chartsWas) scrollTo(0, 0); chartsWas = c; });
+let resizeT; addEventListener('resize', () => { if (!chartView()) return; clearTimeout(resizeT); resizeT = setTimeout(() => { if (DATA) render(); }, 200); });
 setInterval(() => { if (!document.hidden && !dlg.open) load(); }, 60000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && Date.now() - LOADED > 30000) load(); });
 </script>
