@@ -159,7 +159,7 @@
   .chart .sub { max-width: 95ch; }
   .plot { padding: 0 16px 4px; }
   .plot svg text { font-size: 12.5px; }
-  svg .okband { fill: var(--okbg); }
+  svg .okband { fill: var(--okbg); pointer-events: none; }
   svg .limt { fill: var(--bad); font-weight: 700; }
   svg .tick { stroke: var(--line); }
   svg .grid { stroke: var(--grid); }
@@ -171,6 +171,15 @@
   svg .bar.bad { fill: var(--bad); }
   svg .bar:hover, svg .bar:focus { opacity: .85; outline: none; }
   svg .bell { fill: none; stroke: var(--run); stroke-width: 2.5; }
+  svg .scurve { fill: none; stroke-width: 3; cursor: default; }
+  svg .scurve:hover, svg .scurve:focus { stroke-width: 5; outline: none; }
+  svg .smean { stroke-width: 1.5; stroke-dasharray: 3 3; opacity: .8; }
+  .slegend { list-style: none; margin: 8px 0 4px; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 4px 12px; }
+  .slegend button { display: grid; grid-template-columns: 14px 1fr; gap: 0 8px; align-items: center; width: 100%; text-align: left; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 5px 8px; cursor: pointer; font-size: .86rem; }
+  .slegend button[aria-pressed="false"] { opacity: .45; }
+  .slegend button[aria-pressed="false"] b { text-decoration: line-through; }
+  .slegend i { width: 14px; height: 4px; border-radius: 2px; grid-row: span 2; }
+  .slegend span { color: var(--muted); grid-column: 2; }
   svg .whisk { stroke: var(--ink2); stroke-width: 1.5; }
   svg .box { fill: var(--runbg); stroke: var(--run); stroke-width: 1.5; }
   svg .med { stroke: var(--ink); stroke-width: 3; }
@@ -214,7 +223,7 @@ let OLDKEY = store.get('oldkey') || KEY;
 })();
 
 const V = { range: store.get('res-range') || '7d', status: 'all', machine: '', supplier: '', src: '', q: '', lim: '',
-            basis: store.get('res-basis') || 'db', sort: 'done', dir: -1, cgroup: store.get('res-cgroup') || 'supplier' };
+            basis: store.get('res-basis') || 'db', sort: 'done', dir: -1, cgroup: store.get('res-cgroup') || 'supplier', cdist: store.get('res-cdist') || 'sup', chide: new Set() };
 let DATA = null, LOADED = 0, ERR = null, OLDERR = null, ROWS = [];
 const SD = {};  // per source: { samples, ts, names, appr }
 
@@ -816,6 +825,39 @@ function bigHist(vals, d, dom, W) {
     <line class="mean" x1="${sx(st.mean)}" x2="${sx(st.mean)}" y1="${T}" y2="${B}"></line><text class="meant" x="${sx(st.mean)}" y="${T - 6}" text-anchor="middle">avg ${st.mean.toFixed(2)}</text>
     ${xAxis(sx, B, W)}<text x="10" y="${(T + B) / 2}" transform="rotate(-90 10 ${(T + B) / 2})" text-anchor="middle">samples</text></svg>`;
 }
+// Supplier names mostly start the same ("Tata 500 PO dMRV · …"): drop the shared start so the part that differs shows
+function shortNamer(all) {
+  const names = all.filter(n => !/^no /.test(n));
+  let pre = names.length > 1 ? names.reduce((a, n) => { let i = 0; while (i < a.length && a[i] === n[i]) i++; return a.slice(0, i); }) : '';
+  pre = pre.slice(0, pre.search(/[^·\-,/ ]*$/));
+  if (names.some(n => n.length <= pre.length + 2)) pre = '';
+  return n => pre && n.startsWith(pre) ? '…' + n.slice(pre.length) : n;
+}
+// 2b. one bell curve per supplier on the same axes, each scaled to that supplier's own sample count so small and big suppliers compare
+const SUPCOL = ['#2b6cb0', '#d97706', '#0f9d8a', '#8e44ad', '#c2185b', '#5d7a1f', '#4fc3f7', '#8d6e63', '#f06292', '#90a4ae'];
+function bigSupCurves(pts, d, dom, W) {
+  const g = {}; pts.forEach(r => { const n = r.supplier || 'no supplier'; (g[n] = g[n] || []).push(d.val(r)); });
+  const all = Object.entries(g).map(([name, v]) => ({ name, st: statsOf(v, d.lo, d.hi) })).sort((a, b) => b.st.n - a.st.n);
+  const fit = all.filter(x => x.st.n >= 3 && x.st.sd > 0), few = all.filter(x => !fit.includes(x)), shown = fit.slice(0, SUPCOL.length), extra = fit.slice(SUPCOL.length);
+  if (!shown.length) return '<p class="sub">No supplier has 3 or more samples yet, so there is no curve to draw.</p>';
+  shown.forEach((x, i) => { x.col = SUPCOL[i]; x.off = V.chide.has(x.name); });
+  const short = shortNamer(shown.map(x => x.name)), step = binStep(pts.map(d.val), dom);
+  const H = 320, L = 44, R = 16, T = 16, B = H - 26, sx = scale(dom[0], dom[1], L, W - R);
+  const curves = shown.filter(x => !x.off).map(x => ({ x, c: Array.from({ length: 201 }, (_, i) => { const v = dom[0] + (dom[1] - dom[0]) * i / 200; return [v, 100 * step * npdf(v, x.st.mean, x.st.sd)]; }) }));
+  const ymax = Math.max(1, ...curves.flatMap(c => c.c.map(p => p[1]))) * 1.08, sy = scale(0, ymax, B, T);
+  const yt = ticksOf(0, ymax, 5).map(v => `<line class="grid" x1="${L}" x2="${W - R}" y1="${sy(v)}" y2="${sy(v)}"></line><text x="${L - 6}" y="${sy(v) + 4}" text-anchor="end">${fmtT(v)}</text>`).join('');
+  const tipOf = x => `${esc(x.name)}: ${x.st.n} samples · average ${x.st.mean.toFixed(2)} · SD ${x.st.sd.toFixed(2)}${d.lo != null || d.hi != null ? ` · ${x.st.out} outside limits` : ''}`;
+  curves.forEach(o => { o.c = o.c.filter(p => p[1] > ymax * 0.004); });  // drop the flat tails, which would all lie on the baseline
+  const paths = curves.map(({ x, c }) => `<path class="scurve" style="stroke:${x.col}" tabindex="0" data-tip="${tipOf(x)}" d="${c.map((p, i) => (i ? 'L' : 'M') + sx(p[0]).toFixed(1) + ' ' + sy(p[1]).toFixed(1)).join('')}"></path>
+    <line style="stroke:${x.col}" class="smean" x1="${sx(x.st.mean)}" x2="${sx(x.st.mean)}" y1="${sy(100 * step * npdf(x.st.mean, x.st.mean, x.st.sd))}" y2="${B}"></line>`).join('');
+  const legend = `<ul class="slegend">${shown.slice().sort((a, b) => a.st.mean - b.st.mean).map(x => `<li><button data-chide="${esc(x.name)}" aria-pressed="${!x.off}" title="${x.off ? 'Show' : 'Hide'} ${esc(x.name)}">
+      <i style="background:${x.col}"></i><b>${esc(short(x.name))}</b><span>${x.st.n} · avg ${x.st.mean.toFixed(2)} · SD ${x.st.sd.toFixed(2)}${d.lo != null || d.hi != null ? ` · ${x.st.out} out` : ''}</span></button></li>`).join('')}</ul>`;
+  const left = [...extra, ...few];
+  return `<svg viewBox="0 0 ${W} ${H}" style="height:${H}px" role="img" aria-label="${d.label} distribution per supplier: ${shown.length} curves">
+    ${limMarks(d, sx, T, B, false)}${yt}${paths}${xAxis(sx, B, W)}
+    <text x="10" y="${(T + B) / 2}" transform="rotate(-90 10 ${(T + B) / 2})" text-anchor="middle">% of the supplier's samples</text></svg>${legend}
+    ${left.length ? `<p class="sub">Not drawn: ${left.map(x => `${esc(x.name)} (${x.st.n})`).join(', ')}${few.length ? '. A curve needs 3 or more samples.' : ''}</p>` : ''}`;
+}
 // 3. box plot per supplier (or machine), with every sample as a dot on top
 function bigBoxes(pts, d, dom, W) {
   const by = V.cgroup === 'machine' ? r => r.machine || 'no machine' : r => r.supplier || 'no supplier', g = {};
@@ -823,15 +865,12 @@ function bigBoxes(pts, d, dom, W) {
   let groups = Object.entries(g).map(([name, rs]) => ({ name, rs, st: statsOf(rs.map(d.val)) }));
   const hidden = Math.max(0, groups.length - 20);
   groups = groups.sort((a, b) => b.st.n - a.st.n).slice(0, 20).sort((a, b) => a.st.med - b.st.med);
-  const names = groups.map(x => x.name).filter(n => !/^no /.test(n));
-  let pre = names.length > 1 ? names.reduce((a, n) => { let i = 0; while (i < a.length && a[i] === n[i]) i++; return a.slice(0, i); }) : '';
-  pre = pre.slice(0, pre.search(/[^·\-,/ ]*$/));
-  if (names.some(n => n.length <= pre.length + 2)) pre = '';
+  const short = shortNamer(groups.map(x => x.name));
   const LW = Math.min(260, W * 0.3), RW = W < 560 ? 8 : 120, L = LW + 8, R = RW + 8, rowH = 34, T = 18, B = T + groups.length * rowH, H = B + 26;
   const sx = scale(dom[0], dom[1], L, W - R), clip = s => s.length > Math.floor(LW / 7) ? s.slice(0, Math.floor(LW / 7) - 1) + '…' : s;
   const rowsSvg = groups.map((gr, i) => { const y = T + i * rowH + rowH / 2, s = gr.st, iqr = s.q3 - s.q1;
     const wl = Math.min(...s.s.filter(v => v >= s.q1 - 1.5 * iqr)), wh = Math.max(...s.s.filter(v => v <= s.q3 + 1.5 * iqr));
-    return `<text x="${LW}" y="${y + 4}" text-anchor="end" class="glab"><title>${esc(gr.name)}</title>${esc(clip(pre && gr.name.startsWith(pre) ? '…' + gr.name.slice(pre.length) : gr.name))}</text>
+    return `<text x="${LW}" y="${y + 4}" text-anchor="end" class="glab"><title>${esc(gr.name)}</title>${esc(clip(short(gr.name)))}</text>
       <line class="whisk" x1="${sx(wl)}" x2="${sx(wh)}" y1="${y}" y2="${y}"></line>
       <line class="whisk" x1="${sx(wl)}" x2="${sx(wl)}" y1="${y - 6}" y2="${y + 6}"></line><line class="whisk" x1="${sx(wh)}" x2="${sx(wh)}" y1="${y - 6}" y2="${y + 6}"></line>
       <rect class="box" x="${sx(s.q1)}" width="${Math.max(2, sx(s.q3) - sx(s.q1))}" y="${y - 10}" height="20" tabindex="0"
@@ -864,11 +903,16 @@ function chartsPageHTML(list, machines, suppliers) {
   const expOut = lim && st.sd > 0 ? 100 * ((d.lo != null ? ncdf((d.lo - st.mean) / st.sd) : 0) + (d.hi != null ? 1 - ncdf((d.hi - st.mean) / st.sd) : 0)) : null;
   const card = (title, sub, body, extra) => `<div class="card chart"><div class="cardhead"><h2>${title}</h2>${extra || ''}</div><p class="sub">${sub}</p><div class="plot">${body}</div></div>`;
   const u = `${d.label} % ${d.unit}`;
+  // with every supplier in view, the distribution card compares them; one supplier picked shows its histogram
+  const perSup = !V.supplier && V.cdist !== 'all';
+  const distSeg = V.supplier ? '' : `<div class="seg" role="group" aria-label="Distribution"><button data-cdist="sup" aria-pressed="${perSup}">Each supplier</button><button data-cdist="all" aria-pressed="${!perSup}">All together</button></div>`;
   return head + summary
     + card(`Spread: ${u}`, `Each dot is a sample, tap one for its weights. Red = outside limits, amber = possible error. Green band = inside limits.${d.limNote ? ' ' + d.limNote : ''}`, bigDots(pts, d, dom, W))
-    + card(`Distribution curve: ${u}`, `Bars count the samples in each ${fmtT(binStep(vals, dom))} % step; the line is the normal (bell) curve with the same average and SD.
+    + (perSup ? card(`Distribution curve by supplier: ${u}`, `One bell curve per supplier, each with that supplier's own average and SD, as a share of its own samples so small and big suppliers compare.
+      A curve further right means higher ${d.label}; a wider, flatter curve means more scatter. Tap a name below to hide or show it.`, bigSupCurves(pts, d, dom, W), distSeg)
+      : card(`Distribution curve: ${u}`, `Bars count the samples in each ${fmtT(binStep(vals, dom))} % step; the line is the normal (bell) curve with the same average and SD.
       Average ${st.mean.toFixed(2)} %, SD ${st.sd.toFixed(2)}, so about two thirds of samples fall between ${(st.mean - st.sd).toFixed(2)} and ${(st.mean + st.sd).toFixed(2)} %.
-      ${expOut != null ? `The curve predicts ${expOut.toFixed(1)} % outside limits; actually ${st.out} of ${st.n} (${(100 * st.out / st.n).toFixed(1)} %).` : ''}${st.n < 15 ? ' With under 15 samples the curve is only a rough guide.' : ''}`, bigHist(vals, d, dom, W))
+      ${expOut != null ? `The curve predicts ${expOut.toFixed(1)} % outside limits; actually ${st.out} of ${st.n} (${(100 * st.out / st.n).toFixed(1)} %).` : ''}${st.n < 15 ? ' With under 15 samples the curve is only a rough guide.' : ''}`, bigHist(vals, d, dom, W), distSeg))
     + card(`By ${V.cgroup === 'machine' ? 'weighing machine' : 'supplier'}: ${u}`, `Box = middle half of the samples, thick line = median, whiskers = usual range; dots are the samples. Sorted by median. Hover a name for it in full.`, bigBoxes(pts, d, dom, W),
       `<div class="seg" role="group" aria-label="Group by"><button data-cgroup="supplier" aria-pressed="${V.cgroup !== 'machine'}">Supplier</button><button data-cgroup="machine" aria-pressed="${V.cgroup === 'machine'}">Machine</button></div>`);
 }
@@ -1223,6 +1267,8 @@ function wire() {
   const td = document.getElementById('tdir'); if (td) td.onclick = () => { V.dir = -V.dir; render(); };
   const tc = document.getElementById('tclear'); if (tc) tc.onclick = () => { Object.assign(V, { status: 'all', lim: '', machine: '', supplier: '', src: '', q: '' }); render(); };
   const lc0 = document.getElementById('climclear'); if (lc0) lc0.onclick = () => { V.lim = ''; render(); };
+  root.querySelectorAll('[data-cdist]').forEach(b => b.onclick = () => { V.cdist = b.dataset.cdist; store.set('res-cdist', V.cdist); render(); });
+  root.querySelectorAll('[data-chide]').forEach(b => b.onclick = () => { const n = b.dataset.chide; V.chide.has(n) ? V.chide.delete(n) : V.chide.add(n); render(); });
   root.querySelectorAll('[data-cgroup]').forEach(b => b.onclick = () => { V.cgroup = b.dataset.cgroup; store.set('res-cgroup', V.cgroup); render(); });
   root.querySelectorAll('tr[data-id], li[data-id], circle[data-id]').forEach(el => {
     el.onclick = () => detail(el.dataset.id);
@@ -1230,8 +1276,10 @@ function wire() {
   });
   root.querySelectorAll('[data-tip]').forEach(c => {
     const show = e => { tip.textContent = c.dataset.tip; tip.hidden = false; const r = c.getBoundingClientRect();
-      tip.style.left = Math.min(r.left, innerWidth - tip.offsetWidth - 8) + 'px'; tip.style.top = (r.top - tip.offsetHeight - 6) + 'px'; };
-    c.onmouseenter = show; c.onfocus = show; c.onmouseleave = c.onblur = () => { tip.hidden = true; };
+      // a curve spans the chart, so its tip follows the pointer
+      const x = c.tagName === 'path' && e.clientX ? e.clientX : r.left, y = c.tagName === 'path' && e.clientY ? e.clientY - 10 : r.top;
+      tip.style.left = Math.max(8, Math.min(x, innerWidth - tip.offsetWidth - 8)) + 'px'; tip.style.top = (y - tip.offsetHeight - 6) + 'px'; };
+    c.onmouseenter = show; if (c.tagName === 'path') c.onmousemove = show; c.onfocus = show; c.onmouseleave = c.onblur = () => { tip.hidden = true; };
   });
   const m = document.getElementById('machine'); if (m) m.onchange = () => { V.machine = m.value; render(); };
   const s = document.getElementById('supplier'); if (s) s.onchange = () => { V.supplier = s.value; render(); };
