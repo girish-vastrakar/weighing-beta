@@ -147,7 +147,7 @@
   .limgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 8px 16px; margin: 0 16px; }
   .limgrid label { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
   .limgrid input { width: 4.5em; font: inherit; padding: 6px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--ink); }
-  table.mist tbody tr { cursor: default; } .wrapcell { white-space: normal !important; min-width: 12em; }
+  .wrapcell { white-space: normal !important; min-width: 12em; }
 </style>
 </head>
 <body>
@@ -512,7 +512,6 @@ function render() {
       ${COLS.map(c => avgTile(c, c.basisFree ? 'moisture (as received)' : `${c.label} (${b})`)).join('')}
     </div>
     ${limitsHTML()}
-    ${mistakesHTML(list)}
     ${attentionHTML(list)}
     ${stripsHTML(list)}
     <div class="card">
@@ -641,35 +640,6 @@ async function saveLimits() {
     markOutliers(ROWS); V.limOpen = true; render();
     document.getElementById('limmsg').textContent = '✓ Saved. Phones use the new limits on their next sync.';
   } catch (e) { msg.textContent = '⚠ ' + (e.message === 'Failed to fetch' ? 'No internet connection.' : e.message); }
-}
-
-function mistakesHTML(list) {
-  const [a, b] = rangeBounds(), codes = new Set(list.map(r => r.id)), per = {}, kinds = {};
-  ROWS.filter(r => codes.has(r.id)).forEach(r => {
-    r.ev.forEach(e => {
-      if (isFinite(a) && (e.t < a || e.t >= b)) return;
-      const who = e.by || '?', w = per[who] = per[who] || { n: 0, saves: 0, bal: new Set(), samples: new Set() };
-      if (e.b) w.bal.add(e.b);
-      if (e.a === 'w') { w.saves++; return; }
-      if (!MISTAKE[e.a]) return;
-      w[e.a] = (w[e.a] || 0) + 1; w.n++; w.samples.add(r.code);
-      if (e.a === 'warn') { const kk = warnText(e.x) + ' · ' + (TNAME[e.k] || e.k); kinds[kk] = (kinds[kk] || 0) + 1; }
-    });
-    r.runs.forEach(x => { if (x.early && x.outAt && (!isFinite(a) || (x.outAt >= a && x.outAt < b))) { const kk = 'door opened early · ' + TNAME[x.test]; kinds[kk] = (kinds[kk] || 0) + 1 / (x.items || [1]).length; } });
-  });
-  const ws = Object.entries(per).sort((x, y) => y[1].n - x[1].n);
-  if (!ws.length) return '';
-  const ks = Object.keys(MISTAKE);
-  const kindList = Object.entries(kinds).map(([k, v]) => [k, Math.round(v)]).filter(x => x[1]).sort((x, y) => y[1] - x[1]);
-  return `<div class="card"><h2>Mistakes by worker</h2>
-    <p class="sub">From the bench app, in this view's time range. Tap a sample below to see its trail.</p>
-    <div class="scroll"><table class="list mist"><thead><tr><th>Worker</th><th class="num">Mistakes</th><th class="num">Weights saved</th>
-      ${ks.map(k => `<th class="num" title="${esc(MISTAKE[k].d)}">${MISTAKE[k].l}</th>`).join('')}<th>Balance</th><th>Samples</th></tr></thead>
-      <tbody>${ws.map(([who, w]) => `<tr><td><b>${esc(who)}</b></td><td class="num">${w.n ? `<b style="color:var(--bad)">${w.n}</b>` : '0'}</td>
-        <td class="num">${w.saves}</td>${ks.map(k => `<td class="num">${w[k] || ''}</td>`).join('')}
-        <td>${[...w.bal].sort().join(', ')}</td><td class="wrapcell">${[...w.samples].slice(0, 8).map(esc).join(', ')}${w.samples.size > 8 ? ' …' : ''}</td></tr>`).join('')}</tbody></table></div>
-    ${kindList.length ? `<p class="sub" style="margin-top:8px">Most common: ${kindList.slice(0, 6).map(([k, v]) => `${esc(k)} <b>×${v}</b>`).join(' · ')}</p>` : ''}
-  </div>`;
 }
 
 function attentionHTML(list) {
