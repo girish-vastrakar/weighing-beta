@@ -588,12 +588,20 @@ function loadGroups(k) {
   loadable(S.file || {}, k).forEach(x => { const tr = trayOf(x.h) || 'DISH'; (g[tr] = g[tr] || []).push(x); });
   return g;
 }
+function runBusy(f, r, now) {
+  const end = r.start + r.mins * 60000;
+  if (now - end > ABANDONED_MS) return false;
+  if (!(r.items || []).length) return now < end + 3 * 3600000;
+  return r.items.some(it => { const w = f.samples && f.samples[it.code] && f.samples[it.code].w && f.samples[it.code].w[r.test]; return !!w && w[1] != null && w[2] == null; });
+}
 async function startLoad(sec, test, minutes, pick) {
   if (S.starting) return; S.starting = true;
   const now = Date.now(), rid = `${new Date().toISOString().slice(0, 10)}-${sec.id}-${now.toString(36)}`;
   let bal = 0;
   const ok = await dataEdit(f => {
-    const busy = Object.values(f.runs || {}).some(r => r.place === sec.id && !r.cancelled && !r.outAt);
+    // busy only while a load is really in there: a load whose W3 is all weighed (or a plain timer long run out)
+    // counts as free even when nobody tapped Taken out, the same as the tile shows
+    const busy = Object.values(f.runs || {}).some(r => r.place === sec.id && !r.cancelled && !r.outAt && runBusy(f, r, now));
     if (busy) return false;
     // no pick: a plain timer with no samples, saved too so the weighing phones show the countdown
     const items = pick ? loadable(f, test).filter(pick).slice(0, sec.tests[test]) : [];
