@@ -1072,6 +1072,26 @@ if (navigator.serviceWorker) navigator.serviceWorker.addEventListener('message',
 });
 // time up: the phone of the balance the load belongs to rings too (the card's balance, or the one the supervisor picked)
 setInterval(alarmCheck, 5000);
+// A load the supervisor just started reaches this phone within 15 s, on any screen (the full list refresh only
+// runs on the home screen, once a minute). If-None-Match: an unchanged file costs a tiny 304, no download.
+let RUNTAG = '';
+async function runsPoll() {
+  if (document.visibilityState !== 'visible' || !S.data || S.busy || !KEY) return;
+  const started = Date.now();
+  try {
+    const res = await fetch(`${API}/contents/${GH.path}?ref=${GH.branch}`, { cache: 'no-store', credentials: 'omit',
+      headers: Object.assign({ Authorization: 'Bearer ' + KEY, Accept: 'application/vnd.github+json' }, RUNTAG ? { 'If-None-Match': RUNTAG } : {}) });
+    if (!res.ok) return;                                   // 304: nothing new
+    const meta = await res.json(), sha = meta.sha;
+    if (!meta.content) return;
+    RUNTAG = res.headers.get('ETag') || '';
+    if (isStale(sha) || wroteAt > started || S.busy) return;
+    takeFile(JSON.parse(b64decode(meta.content)), sha); rebuild();
+  } catch (e) { return; }
+  alarmCheck();
+  if (['home', 'run', 'card'].includes(S.view) && !S.modal && !SCAN) render();
+}
+setInterval(runsPoll, 15000);
 
 // the countdowns tick every second without redrawing the screen; at 0:00 the screen and the alarm catch up
 setInterval(() => {
