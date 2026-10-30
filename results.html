@@ -171,7 +171,6 @@
   svg .bar.bad { fill: var(--bad); }
   svg .bar:hover, svg .bar:focus { opacity: .85; outline: none; }
   svg .bell { fill: none; stroke: var(--run); stroke-width: 2.5; }
-  svg .roll { fill: none; stroke: var(--run); stroke-width: 2.5; opacity: .8; }
   svg .whisk { stroke: var(--ink2); stroke-width: 1.5; }
   svg .box { fill: var(--runbg); stroke: var(--run); stroke-width: 1.5; }
   svg .med { stroke: var(--ink); stroke-width: 3; }
@@ -738,8 +737,6 @@ function chartDef(k) {
   return { k, label: TNAME[k], val: c.val, unit: k === 'MC' ? 'as received' : V.basis === 'db' ? 'dry basis' : 'as received',
     lo: db && isNum(lo) ? lo : null, hi: db && isNum(hi) ? hi : null, limNote: db ? '' : 'Limits are on dry basis, so they are not drawn on as received values.' };
 }
-// time the test was finished (its W3), else the sample's last weighing
-const testTime = (r, k) => { const t = k === 'FC' ? null : ((r.ts[TSKEY[k]] || {}).W3 || {}).at; return (t && Date.parse(t)) || r.last; };
 const quant = (s, q) => { const i = (s.length - 1) * q, a = Math.floor(i); return s[a] + (s[Math.min(a + 1, s.length - 1)] - s[a]) * (i - a); };
 function statsOf(vals, lo, hi) {
   const s = vals.slice().sort((a, b) => a - b), n = s.length, m = avg(s);
@@ -819,26 +816,7 @@ function bigHist(vals, d, dom, W) {
     <line class="mean" x1="${sx(st.mean)}" x2="${sx(st.mean)}" y1="${T}" y2="${B}"></line><text class="meant" x="${sx(st.mean)}" y="${T - 6}" text-anchor="middle">avg ${st.mean.toFixed(2)}</text>
     ${xAxis(sx, B, W)}<text x="10" y="${(T + B) / 2}" transform="rotate(-90 10 ${(T + B) / 2})" text-anchor="middle">samples</text></svg>`;
 }
-// 3. value against the time the test finished, with a running average of the last 10
-function bigTrend(pts, d, dom, W) {
-  const H = 300, L = 44, R = 16, T = 14, B = H - 26, rows = pts.map(r => ({ r, v: d.val(r), t: testTime(r, d.k) })).filter(x => x.t != null).sort((a, b) => a.t - b.t);
-  if (rows.length < 2) return '<p class="sub">Needs at least two samples with a time.</p>';
-  const t0 = rows[0].t, t1 = rows[rows.length - 1].t, span = Math.max(t1 - t0, 36e5), pad = span * 0.03;
-  const sx = scale(t0 - pad, t1 + pad, L, W - R), sy = scale(dom[0], dom[1], B, T);
-  const nt = Math.max(3, Math.round(W / 110)), short = span < 48 * 36e5, ts = [];
-  if (short) { const st = [1, 2, 3, 4, 6, 12, 24].find(h => span / (h * 36e5) <= nt) * 36e5, d0 = new Date(t0 - pad); d0.setMinutes(0, 0, 0);
-    for (let t = d0.getTime() + st; t <= t1 + pad; t += st) if (t >= t0 - pad) ts.push(t); }
-  else { const days = Math.ceil(span / 864e5 / nt), d0 = new Date(t0 - pad); d0.setHours(24, 0, 0, 0);
-    for (const d = d0; d.getTime() <= t1 + pad; d.setDate(d.getDate() + days)) ts.push(d.getTime()); }
-  const xt = ts.map(t => `<line class="tick" x1="${sx(t)}" x2="${sx(t)}" y1="${B}" y2="${B + 5}"></line><text x="${sx(t)}" y="${B + 18}" text-anchor="middle">${short ? (new Date(t).getHours() ? hm(t) : dayLabel(t)) : dayLabel(t)}</text>`).join('');
-  const yt = ticksOf(dom[0], dom[1], 6).map(v => `<line class="grid" x1="${L}" x2="${W - R}" y1="${sy(v)}" y2="${sy(v)}"></line><text x="${L - 6}" y="${sy(v) + 4}" text-anchor="end">${fmtT(v)}</text>`).join('');
-  const roll = rows.map((x, i) => { const w = rows.slice(Math.max(0, i - 9), i + 1); return [x.t, avg(w.map(y => y.v))]; });
-  return `<svg viewBox="0 0 ${W} ${H}" style="height:${H}px" role="img" aria-label="${d.label} over time, ${rows.length} samples">
-    ${limMarks(d, sy, L, W - R, true)}${yt}<line class="base" x1="${L}" x2="${W - R}" y1="${B}" y2="${B}"></line>${xt}
-    ${rows.length > 3 ? `<path class="roll" d="${roll.map((p, i) => (i ? 'L' : 'M') + sx(p[0]).toFixed(1) + ' ' + sy(p[1]).toFixed(1)).join('')}"></path>` : ''}
-    ${rows.map(x => `<circle r="5" cx="${sx(x.t).toFixed(1)}" cy="${sy(x.v).toFixed(1)}" class="${dotCls(x.r, d.k)}" tabindex="0" data-id="${esc(x.r.id)}" data-tip="${dotTip(x.r, x.v, when(x.t))}"></circle>`).join('')}</svg>`;
-}
-// 4. box plot per supplier (or machine), with every sample as a dot on top
+// 3. box plot per supplier (or machine), with every sample as a dot on top
 function bigBoxes(pts, d, dom, W) {
   const by = V.cgroup === 'machine' ? r => r.machine || 'no machine' : r => r.supplier || 'no supplier', g = {};
   pts.forEach(r => (g[by(r)] = g[by(r)] || []).push(r));
@@ -891,7 +869,6 @@ function chartsPageHTML(list, machines, suppliers) {
     + card(`Distribution curve: ${u}`, `Bars count the samples in each ${fmtT(binStep(vals, dom))} % step; the line is the normal (bell) curve with the same average and SD.
       Average ${st.mean.toFixed(2)} %, SD ${st.sd.toFixed(2)}, so about two thirds of samples fall between ${(st.mean - st.sd).toFixed(2)} and ${(st.mean + st.sd).toFixed(2)} %.
       ${expOut != null ? `The curve predicts ${expOut.toFixed(1)} % outside limits; actually ${st.out} of ${st.n} (${(100 * st.out / st.n).toFixed(1)} %).` : ''}${st.n < 15 ? ' With under 15 samples the curve is only a rough guide.' : ''}`, bigHist(vals, d, dom, W))
-    + card(`Over time: ${u}`, `Each dot at the time the test was finished (W3). The line is the average of the last 10 samples, so drift shows up.`, bigTrend(pts, d, dom, W))
     + card(`By ${V.cgroup === 'machine' ? 'weighing machine' : 'supplier'}: ${u}`, `Box = middle half of the samples, thick line = median, whiskers = usual range; dots are the samples. Sorted by median. Hover a name for it in full.`, bigBoxes(pts, d, dom, W),
       `<div class="seg" role="group" aria-label="Group by"><button data-cgroup="supplier" aria-pressed="${V.cgroup !== 'machine'}">Supplier</button><button data-cgroup="machine" aria-pressed="${V.cgroup === 'machine'}">Machine</button></div>`);
 }
