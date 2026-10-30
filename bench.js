@@ -6,6 +6,7 @@
    Ash / VM: scan the JOB CARD (one QR per card) → the card with the sample codes in its circles → W1, scan the
              bag (must be the code in that circle), W2, spot 1, 2, 3 … (the walk). After heating: scan the card again → W3.
              W3 is never locked (like the old app): the worker weighs it whenever the crucibles are back on the bench.
+             Bag not found: "skip" moves the walk on (spot grey ↷ on the card); W1 · W2 on the card comes back to it.
              The Moisture card is paper only (codes + a box for the dish number): nothing to scan on it.
              Job cards are printed on the labels page from the Google Sheet allotment: one Ash card (10) and
              one VM card (18) per balance per batch (card "ASH W1-3" = Ash, balance W1, batch 3; spot "ASH W1-3-5").
@@ -62,7 +63,7 @@ const BL = {
       scanSub: 'bag · dish · job card', scanDish: 'scan an empty dish', start: 'start',
       onIt: 'on', wait: 'waiting to go in', inHeat: 'in', w3: 'W3 now', result: 'result',
       loadDish: 'Scan each dish as it goes in', loadTap: 'Tap a spot that stayed out', boardsWaiting: 'Waiting to go in',
-      changeDish: 'Change dish', supervisor: 'Supervisor', addCode: 'Add as new sample', done: 'Done'
+      changeDish: 'Change dish', skip: 'Bag not found: skip', supervisor: 'Supervisor', addCode: 'Add as new sample', done: 'Done'
     },
     labels: 'Print job cards and labels'
   },
@@ -92,7 +93,7 @@ const BL = {
       scanSub: 'બેગ · ડિશ · જોબ કાર્ડ', scanDish: 'ખાલી ડિશ સ્કેન કરો', start: 'શરૂ',
       onIt: 'પર', wait: 'અંદર જવાની રાહ', inHeat: 'માં', w3: 'હવે W3', result: 'પરિણામ',
       loadDish: 'દરેક ડિશ અંદર મૂકતી વખતે સ્કેન કરો', loadTap: 'બહાર રહેલું ખાનું ટેપ કરો', boardsWaiting: 'અંદર જવાની રાહ',
-      changeDish: 'ડિશ બદલો', supervisor: 'સુપરવાઇઝર', addCode: 'નવા સેમ્પલ તરીકે ઉમેરો', done: 'પૂરું'
+      changeDish: 'ડિશ બદલો', skip: 'બેગ નથી મળી: છોડો', supervisor: 'સુપરવાઇઝર', addCode: 'નવા સેમ્પલ તરીકે ઉમેરો', done: 'પૂરું'
     },
     labels: 'જોબ કાર્ડ અને લેબલ છાપો'
   }
@@ -136,6 +137,7 @@ const ICON = {
   check: svgI('<path d="M10 25l9 9 19-20" stroke-width="5"/>'),
   cross: svgI('<path d="M13 13l22 22M35 13L13 35" stroke-width="5"/>'),
   edit: svgI('<path d="M30 8l10 10-22 22H8V30z"/>'),
+  skip: svgI('<path d="M8 30c0-10 8-16 18-16h12M32 8l6 6-6 6M30 40h10" stroke-width="4"/>'),
   swap: svgI('<path d="M8 16h30l-6-6M40 32H10l6 6"/>'),
   thermo: svgI('<path d="M20 30V9a4 4 0 0 1 8 0v21a8 8 0 1 1-8 0z"/><circle cx="24" cy="36" r="3" fill="currentColor"/><path d="M24 33V16"/>'),
   hour: svgI('<path d="M14 6h20M14 42h20M16 6c0 10 16 12 16 18S16 32 16 42M32 6c0 10-16 12-16 18s16 8 16 18"/>'),
@@ -343,16 +345,27 @@ function cardSpot(code, k) {
 }
 // The newest load of a card that is still in the oven or still has W3 to do
 const cardRun = tray => runs().filter(r => r.tray === tray && runPhase(r) !== 'done').sort((a, b) => b.start - a.start)[0] || null;
-// Next spot of a card that still needs W1 or W2 (spots in order 1, 2, 3 …)
-function cardTodo(tray) {
+// Next spot of a card that still needs W1 or W2 (spots in order 1, 2, 3 …), leaving out the spots skipped in this walk
+function cardTodo(tray, skip) {
   const j = cards()[tray]; if (!j) return null;
   for (let i = 0; i < j.codes.length && i < CAP[j.test]; i++) {
     const code = j.codes[i]; if (!code) continue;
     const s = sample(code), st = s && s.tests[j.test];
-    if (!st || st.done < 2) return { code, pos: i + 1, id: `${tray}-${i + 1}` };
+    if ((!st || st.done < 2) && !(skip && skip.includes(i + 1))) return { code, pos: i + 1, id: `${tray}-${i + 1}` };
   }
   return null;
 }
+// Spots skipped because the bag was not found (this phone, until the card's W1 · W2 walk starts again)
+const skipped = tray => (S.skip && S.skip[tray]) || [];
+function skipSpot() {
+  const tray = S.walk && S.walk.card, h = holdOf(sample(S.code), S.test); if (!tray || !h) return;
+  const pos = hInfo(h).pos;
+  S.skip = S.skip || {}; S.skip[tray] = skipped(tray).concat(pos);
+  logWarn('skip', { value: tray + '-' + pos });
+  S.bagOk = null; walkNext();
+}
+const canSkip = () => !!(S.walk && S.walk.card && !S.walk.w3 && S.step <= 2 && !S.editing);
+const skipBtn = () => canSkip() ? `<button class="secondary skipbtn" data-act="skip">${ICON.skip}<small>${esc(B().small.skip)}</small></button>` : '';
 // Next spot of a card with W2 saved and W3 still to do (any time, not locked to the timer app)
 function cardW3(tray) {
   const j = cards()[tray]; if (!j) return null;
@@ -378,7 +391,7 @@ function cardNext() {
     if (!w) { S.walk = null; S.card = tray; S.view = 'card'; good(); render(); return; }
     goTest(w.code, j.test); return;
   }
-  const n = cardTodo(tray);
+  const n = cardTodo(tray, skipped(tray));
   if (!n) { S.walk = null; S.card = tray; S.view = 'card'; good(); render(); return; }
   if (!sample(n.code)) enqueue({ action: 'addCodes', codes: [n.code], worker: S.worker });
   if (holdOf(sample(n.code), j.test) !== n.id) enqueue({ action: 'hold', code: n.code, key: j.test, holder: n.id, bal: balNo(), worker: S.worker });
@@ -387,16 +400,18 @@ function cardNext() {
 function renderCard() {
   const t = B(), tray = S.card, j = cards()[tray];
   if (!j) { S.view = 'home'; return renderHomeB(); }
-  const k = j.test, i = hInfo(tray), r = cardRun(tray), ph = r && runPhase(r), todo = cardTodo(tray), w3 = !todo && cardW3(tray);
+  const k = j.test, i = hInfo(tray), r = cardRun(tray), ph = r && runPhase(r), todo = cardTodo(tray), sk = skipped(tray), w3 = (!todo || !cardTodo(tray, sk)) && cardW3(tray);
   const cell = pos => {
     const code = j.codes[pos - 1]; if (!code) return `<span class="bs off">${pos}</span>`;
     const s = sample(code), st = s && s.tests[k], d = st ? st.done : 0, onIt = s && holdOf(s, k) === `${tray}-${pos}`;
-    const cls = d === 3 ? 'w3' : d === 2 && onIt ? 'full' : d === 1 && onIt ? 'half' : '';
-    return `<span class="bs code ${cls}${todo && todo.pos === pos && !r ? ' lit' : ''}"><i>${pos}</i><b>${esc(code)}</b>${d === 3 ? '<em>✓</em>' : ''}</span>`;
+    const cls = d === 3 ? 'w3' : d === 2 && onIt ? 'full' : d < 2 && sk.includes(pos) ? 'skip' : d === 1 && onIt ? 'half' : '';
+    return `<span class="bs code ${cls}${todo && todo.pos === pos && !r ? ' lit' : ''}"><i>${pos}</i><b>${esc(code)}</b>${d === 3 ? '<em>✓</em>' : cls === 'skip' ? '<em>↷</em>' : ''}</span>`;
   };
   let act = '';
   // W3 is open at any time: the timer (if the supervisor started one) is only shown
-  if (w3) act = `${r && ph === 'heat' ? `<div class="bigtime">${ICON.hour}${cdHTML(r)}</div>` : ''}<button class="primary doorbtn" data-act="card-w3">${ICON.balance}<small>W3 · ${w3.pos}</small></button>`;
+  // skipped spots (bag not found): W1 · W2 again from them, and W3 for the rest meanwhile
+  if (w3) act = `${r && ph === 'heat' ? `<div class="bigtime">${ICON.hour}${cdHTML(r)}</div>` : ''}<button class="primary doorbtn" data-act="card-w3">${ICON.balance}<small>W3 · ${w3.pos}</small></button>`
+    + (todo ? `<button class="secondary doorbtn" data-act="card-go">${ICON.balance}<small>W1 · W2 · ${todo.pos} ↷</small></button>` : '');
   else if (todo) act = `<button class="primary doorbtn" data-act="card-go">${ICON.balance}<small>W1 · W2 · ${todo.pos}</small></button>`;
   else act = `<div class="bigtime">${ICON.furnace}${ICON.hour}</div>`;
   if (r) S.rid = r.rid;
@@ -492,7 +507,7 @@ function renderBagB() {
     <div class="stephead"><span class="ti">${ICON[k]}</span><b>${esc(s.code)}</b><span class="wn">W2</span></div>
     ${holderBanner()}
     <button class="primary scanbig" data-act="bag-scan"><span class="qr">${ICON.scan}</span><span class="sbags">${ICON.bag}</span><b class="bagcode">${esc(s.code)}</b></button>
-    <p class="sub center-t">${ICON.crucible} ${esc(String(i.pos))} = ${ICON.bag} ${esc(s.code)}</p></div>`;
+    <p class="sub center-t">${ICON.crucible} ${esc(String(i.pos))} = ${ICON.bag} ${esc(s.code)}</p>${skipBtn()}</div>`;
 }
 // W1 and W2 side by side at the top: a worker on the wrong one taps the other.
 // W1 is always open (a saved W1 is corrected); W2 opens once W1 is saved. W3 keeps its one badge.
@@ -523,6 +538,7 @@ function renderStepB() {
         placeholder="0.0000" value="${esc(S.draft)}" aria-label="W${step}"><span class="unit">g</span></label>
     <div class="live" id="live" aria-live="polite">${liveText()}</div>
     ${prev ? `<div class="pws">${prev}</div>` : ''}
+    ${skipBtn()}
     <div class="bar"><div class="inner"><button class="primary bigok" data-act="save">${ICON.check}</button></div></div>
   </div>`;
 }
@@ -907,7 +923,8 @@ function batchAct(el) {
     case 'card': openCard(el.dataset.tray); return true;
     case 'bag-scan': openScanner('bag'); return true;
     case 'go-w': goW(+el.dataset.step); return true;
-    case 'card-go': if (S.card) { S.walk = { card: S.card }; cardNext(); } return true;
+    case 'card-go': if (S.card) { if (S.skip) delete S.skip[S.card]; S.walk = { card: S.card }; cardNext(); } return true;
+    case 'skip': skipSpot(); return true;
     case 'card-w3': if (S.card) { S.walk = { card: S.card, w3: true }; cardNext(); } return true;
     case 'redish': openScanner('redish'); return true;
     case 'fix': S.modal = { type: 'fix', test: el.dataset.test }; render(); return true;
