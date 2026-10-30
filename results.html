@@ -78,6 +78,12 @@
   td.sus { color: var(--warn); font-weight: 700; }
   td .sm { color: var(--muted); font-size: .8rem; }
   .wrapcell { white-space: normal !important; min-width: 180px; max-width: 320px; }
+  .tbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 16px 10px; }
+  .tbar label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: .86rem; }
+  .tbar select, .tbar input { max-width: 100%; min-width: 0; }
+  .tbar input[type=search] { flex: 1 1 200px; }
+  .tbar .on { border-color: var(--ink); font-weight: 700; color: var(--ink); }
+  table.list th[data-sort] .hint { opacity: .45; font-size: .8em; }
   .pill { display: inline-block; border-radius: 999px; padding: 1px 9px; font-size: .8rem; font-weight: 700; white-space: nowrap; }
   .p-complete { background: var(--okbg); color: var(--ok); }
   .p-flag { background: var(--badbg); color: var(--bad); }
@@ -176,7 +182,7 @@ let OLDKEY = store.get('oldkey') || KEY;
   if (m) { OLDKEY = decodeURIComponent(m[1]).trim(); store.set('oldkey', OLDKEY); history.replaceState(null, '', location.pathname); }
 })();
 
-const V = { range: store.get('res-range') || '7d', status: 'all', machine: '', supplier: '', src: '', q: '',
+const V = { range: store.get('res-range') || '7d', status: 'all', machine: '', supplier: '', src: '', q: '', lim: '',
             basis: store.get('res-basis') || 'db', sort: 'done', dir: -1 };
 let DATA = null, LOADED = 0, ERR = null, OLDERR = null, ROWS = [];
 const SD = {};  // per source: { samples, ts, names, appr }
@@ -438,6 +444,9 @@ function filtered() {
   return ROWS.filter(r => {
     if (isFinite(a)) { const t = r.last; if (t == null || t < a || t >= b) return false; }
     if (V.status === 'complete' && r.state !== 'complete' && r.state !== 'approved') return false;
+    if (V.status === 'approved' && r.state !== 'approved') return false;
+    if (V.status === 'none' && r.state !== 'none') return false;
+    if (V.lim === 'any' ? !r.flagTests.size : V.lim === 'ok' ? r.flagTests.size || r.status !== 'complete' : V.lim && !r.flagTests.has(V.lim)) return false;
     if (V.status === 'running' && r.state !== 'running' && r.state !== 'none') return false;
     if (V.status === 'flag' && r.state !== 'flag') return false;
     if (V.status === 'checks' && !r.checks.length) return false;
@@ -509,6 +518,7 @@ function render() {
     <div class="card">
       <h2>Results</h2>
       <p class="sub">${list.length} sample${list.length === 1 ? '' : 's'} · VM, Ash and fixed carbon on ${b}, moisture as received · tap a row for the weights · red = outside limits (${limText()})</p>
+      ${tbarHTML(machines, suppliers, anyTm)}
       ${list.length ? tableHTML(list, anyTm) : `<div class="empty">No samples in this view.${V.range !== 'all' ? ' Try a longer time range.' : ''}</div>`}
     </div>`;
   wire();
@@ -709,8 +719,31 @@ function stripsHTML(list) {
     <div class="strips">${defs.map(strip).join('')}</div></div>`;
 }
 
+// Filter and sort bar right above the table; it shares V with the bar at the top of the page
+const SORTS = () => [['done', 'Last weighed'], ['code', 'Code'], ['name', 'Sample'], ['supplier', 'Supplier'], ['machine', 'Machine'], ['state', 'Status'],
+  ...COLS.map(c => [c.k, c.label + ' %'])];
+const sortDir0 = k => ['code', 'name', 'supplier', 'machine', 'state'].includes(k) ? 1 : -1;
+const isFiltered = () => V.status !== 'all' || V.lim || V.machine || V.supplier || V.src || V.q.trim();
+function tbarHTML(machines, suppliers, anyTm) {
+  const opt = (v, l, cur) => `<option value="${esc(v)}"${cur === v ? ' selected' : ''}>${esc(l)}</option>`;
+  const sel = (id, label, cur, opts) => `<select id="${id}" aria-label="${label}"${cur ? ' class="on"' : ''}>${opts.map(o => opt(o[0], o[1], cur)).join('')}</select>`;
+  const sorts = SORTS().concat(anyTm ? [['tm', 'Total moist. %']] : []);
+  return `<div class="tbar">
+    <input type="search" id="tq" placeholder="Search code, name, supplier" value="${esc(V.q)}" aria-label="Search results"${V.q.trim() ? ' class="on"' : ''}>
+    ${sel('tstatus', 'Status', V.status === 'all' ? '' : V.status, [['', 'Any status'], ['complete', 'Complete (incl. approved)'], ['approved', 'Out of limit, approved'],
+      ['flag', 'Out of limit, needs approval'], ['checks', 'Possible errors'], ['running', 'In progress'], ['none', 'Not started']])}
+    ${sel('tlim', 'Limits', V.lim, [['', 'Any result'], ['ok', 'All inside limits'], ['any', 'Any test out of limit'],
+      ...TESTS.filter(k => k !== 'TM' || anyTm).map(k => [k, TNAME[k] + ' out of limit'])])}
+    ${sel('tmachine', 'Machine', V.machine, [['', 'All machines'], ...machines.map(m => [m, m === 'ALL' ? 'ALL (any machine)' : 'Machine ' + m]), ['-', 'No machine in sheet']])}
+    ${suppliers.length ? sel('tsupplier', 'Supplier', V.supplier, [['', 'All suppliers'], ...suppliers.map(x => [x, x])]) : ''}
+    <label>Sort by ${sel('tsort', 'Sort by', V.sort, sorts)}</label>
+    <button class="btn" id="tdir" aria-label="Sort direction">${V.dir > 0 ? '▲ Low to high / A–Z' : '▼ High to low / Z–A'}</button>
+    ${isFiltered() ? '<button class="btn" id="tclear">✕ Clear filters</button>' : ''}
+  </div>`;
+}
+
 function tableHTML(list, anyTm) {
-  const th = (k, l, num) => `<th data-sort="${k}"${num ? ' class="num"' : ''}${V.sort === k ? ` aria-sort="${V.dir > 0 ? 'ascending' : 'descending'}"` : ''}>${l}${V.sort === k ? (V.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`;
+  const th = (k, l, num) => `<th data-sort="${k}"${num ? ' class="num"' : ''}${V.sort === k ? ` aria-sort="${V.dir > 0 ? 'ascending' : 'descending'}"` : ''} title="Sort by ${l}">${l}${V.sort === k ? (V.dir > 0 ? ' ▲' : ' ▼') : ' <span class="hint">⇅</span>'}</th>`;
   const cell = (r, c) => { const v = c.val(r), hi = c.k !== 'FC' && isHi(r, c.k), sus = !hi && r.suspect.has(c.k);
     return `<td class="num${hi ? ' hi' : sus ? ' sus' : ''}">${hi ? '⚠ ' : sus ? '? ' : ''}${f2(v)}</td>`; };
   return `<div class="scroll"><table class="list"><thead><tr>
@@ -1029,7 +1062,12 @@ function wire() {
   root.querySelectorAll('[data-status]').forEach(b => b.onclick = () => { V.status = V.status === b.dataset.status && b.classList.contains('tile') ? 'all' : b.dataset.status; render(); });
   root.querySelectorAll('[data-basis]').forEach(b => b.onclick = () => { V.basis = b.dataset.basis; store.set('res-basis', V.basis); render(); });
   root.querySelectorAll('th[data-sort]').forEach(t => t.onclick = () => { const k = t.dataset.sort;
-    if (V.sort === k) V.dir = -V.dir; else { V.sort = k; V.dir = ['code', 'name', 'supplier', 'machine', 'state'].includes(k) ? 1 : -1; } render(); });
+    if (V.sort === k) V.dir = -V.dir; else { V.sort = k; V.dir = sortDir0(k); } render(); });
+  const on = (id, f) => { const el = document.getElementById(id); if (el) el.onchange = () => { f(el.value); render(); }; };
+  on('tstatus', v => { V.status = v || 'all'; }); on('tlim', v => { V.lim = v; }); on('tmachine', v => { V.machine = v; }); on('tsupplier', v => { V.supplier = v; });
+  on('tsort', v => { V.sort = v; V.dir = sortDir0(v); });
+  const td = document.getElementById('tdir'); if (td) td.onclick = () => { V.dir = -V.dir; render(); };
+  const tc = document.getElementById('tclear'); if (tc) tc.onclick = () => { Object.assign(V, { status: 'all', lim: '', machine: '', supplier: '', src: '', q: '' }); render(); };
   root.querySelectorAll('tr[data-id], li[data-id], circle[data-id]').forEach(el => {
     el.onclick = () => detail(el.dataset.id);
     el.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); detail(el.dataset.id); } };
@@ -1044,8 +1082,8 @@ function wire() {
   const sr = document.getElementById('src'); if (sr) sr.onchange = () => { V.src = sr.value; render(); };
   const ok = document.getElementById('oldkey'); if (ok) ok.onclick = addOldKey;
   document.getElementById('paper').onclick = pickCode;
-  const q = document.getElementById('q');
-  q.oninput = () => { V.q = q.value; const pos = q.selectionStart; render(); const n = document.getElementById('q'); n.focus(); n.setSelectionRange(pos, pos); };
+  ['q', 'tq'].forEach(id => { const q = document.getElementById(id); if (q) q.oninput = () => { V.q = q.value; const pos = q.selectionStart; render();
+    const n = document.getElementById(id); n.focus({ preventScroll: true }); n.setSelectionRange(pos, pos); }; });
   document.getElementById('csv').onclick = () => csv(sorted(filtered()));
   const sl = document.getElementById('savelim'); if (sl) sl.onclick = saveLimits;
   const lc = root.querySelector('.limcard'); if (lc) lc.ontoggle = () => { V.limOpen = lc.open; };
