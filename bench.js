@@ -107,7 +107,7 @@ const settings = () => (S.data && S.data.settings) || {};
 const rangeFor = k => { const set = settings().range || {}, r = k in set ? set[k] : DEF_RANGE[k]; return r && +r[1] > 0 ? [+r[0] || 0, +r[1]] : null; };
 const minsFor = k => { const m = settings().mins; return (m && +m[k] > 0) ? +m[k] : DEF_MINS[k]; };
 const balNo = () => { const m = /^W([1-4])$/.exec(S.machine || ''); return m ? +m[1] : 0; };
-// Supervisor mode: anyone can turn it on in Setup (no PIN); it switches itself off after 30 minutes
+// Supervisor mode: needs the PIN (its hash is in data.json settings.pin) and switches itself off after 30 minutes
 const SUPER_MS = 30 * 60000;
 // Weighing machine of a sample (Name Tags sheet → names.json machine W1–W4): only that balance may weigh it.
 // Blank or ALL = any balance.
@@ -119,6 +119,24 @@ function machineOk(code) {
   return false;
 }
 const superOn = () => store.get('super') === '1' && Date.now() - (+store.get('superAt') || 0) < SUPER_MS;
+async function pinHash(pin) {
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('lab-pin:' + pin));
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+async function newPin() {
+  const p = (prompt('Choose a supervisor PIN (4 to 6 digits):') || '').trim();
+  if (!/^\d{4,6}$/.test(p)) { if (p) toast('The PIN must be 4 to 6 digits.'); return false; }
+  if ((prompt('Type the same PIN again:') || '').trim() !== p) { bad(); toast('The PINs were not the same.'); return false; }
+  enqueue({ action: 'setPin', pin: await pinHash(p), worker: S.worker }); toast('PIN saved.', true);
+  return true;
+}
+async function askPin() {
+  const set = settings().pin;
+  if (!set) return newPin();                         // first time: the supervisor chooses the PIN
+  const p = prompt('Supervisor PIN'); if (p == null) return false;
+  if (await pinHash(p.trim()) === set) return true;
+  bad(); toast('Wrong PIN.'); return false;
+}
 
 /* ---------- pictures (inline SVG, drawn in the current colour) ---------- */
 const svgI = (body, vb = '0 0 48 48') => `<svg viewBox="${vb}" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
@@ -937,8 +955,9 @@ function batchAct(el) {
     case 'red-again': S.modal = null; S.draft = ''; render(); return true;
     case 'red-override': { const m = S.modal; S.modal = null; if (m && m.value != null) doSave(m.value, m.why); return true; }
     case 'undo': undoSave(); return true;
-    case 'pick-bal':   // anyone may move the phone to another balance (no PIN)
-      S.view = 'bal'; render();
+    case 'pick-bal':   // each phone stays on its balance: only the supervisor (PIN) moves it
+      if (!balNo() || superOn()) { S.view = 'bal'; render(); }
+      else askPin().then(ok => { if (ok) { S.view = 'bal'; render(); } });
       return true;
     case 'set-bal': S.machine = 'W' + el.dataset.bal; store.set('machine', S.machine); good(); S.view = 'home'; render(); return true;
     case 'who': S.worker = el.dataset.name; store.set('worker', S.worker); good(); S.view = balNo() ? 'home' : 'bal'; render(); load(); return true;
