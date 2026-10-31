@@ -284,6 +284,7 @@ async function setApproval(r, approve) {
   const msg = document.getElementById('apmsg'), by = document.getElementById('apby'), note = document.getElementById('apnote');
   const who = by ? by.value.trim() : '';
   if (approve && !who) { msg.textContent = 'Type your name first.'; by.focus(); return; }
+  if (approve && r.checks.length && !(note && note.value.trim())) { msg.textContent = 'Write why the possible error is right (e.g. retest agreed).'; note.focus(); return; }
   let key = r.src === 'old' ? OLDKEY : KEY;
   if (!key) {
     key = (prompt('Approving saves to GitHub. Paste the lab GitHub key (the same one the phones use). It is saved on this device.') || '').trim();
@@ -304,7 +305,7 @@ async function setApproval(r, approve) {
       else if (g.status !== 404) throw new Error('GitHub error ' + g.status);
       f = f || { app: 'proximate-approvals', version: 1, approvals: {} };
       f.approvals = f.approvals || {}; f.limits = LIM();
-      if (approve) f.approvals[r.code] = { by: who, at: isoLocal(), flags: r.flags.join(', '), w: wSnap(r.w),
+      if (approve) f.approvals[r.code] = { by: who, at: isoLocal(), flags: r.flags.join(', '), ...(r.checks.length ? { checks: r.checks.join(', ') } : {}), w: wSnap(r.w),
         ...(note && note.value.trim() ? { note: note.value.trim() } : {}), via: 'results page' };
       else delete f.approvals[r.code];
       f.updated = isoLocal();
@@ -442,7 +443,12 @@ function markOutliers(rows) {
       }
     });
   });
-  rows.forEach(r => { if (r.checks.length && (r.state === 'complete' || r.state === 'running')) r.state = 'check'; });
+  // A possible error the supervisor approved (approval saved with its checks, weights unchanged) is no longer a retest
+  rows.forEach(r => {
+    r.checksOk = !!(r.checks.length && r.appr && r.appr.checks);
+    if (r.checksOk) { r.suspect = new Set(); if (r.state === 'complete') r.state = 'checked'; }
+    else if (r.checks.length && (r.state === 'complete' || r.state === 'running')) r.state = 'check';
+  });
 }
 
 /* ---------- helpers ---------- */
@@ -474,6 +480,7 @@ const STATE = {
   approved: { cls: 'p-appr', label: '✓ Out of limit, approved' },
   flag: { cls: 'p-flag', label: '⚠ Out of limit' },
   check: { cls: 'p-appr', label: '? Possible error' },
+  checked: { cls: 'p-appr', label: '✓ Possible error, approved' },
   running: { cls: 'p-run', label: '◔ In progress' },
   none: { cls: 'p-none', label: '○ Not started' },
 };
@@ -483,13 +490,13 @@ function filtered() {
   const [a, b] = rangeBounds(), q = V.q.trim().toLowerCase();
   return ROWS.filter(r => {
     if (isFinite(a)) { const t = r.last; if (t == null || t < a || t >= b) return false; }
-    if (V.status === 'complete' && r.state !== 'complete' && r.state !== 'approved') return false;
-    if (V.status === 'approved' && r.state !== 'approved') return false;
+    if (V.status === 'complete' && !['complete', 'approved', 'checked'].includes(r.state)) return false;
+    if (V.status === 'approved' && r.state !== 'approved' && r.state !== 'checked') return false;
     if (V.status === 'none' && r.state !== 'none') return false;
     if (V.lim === 'any' ? !r.flagTests.size : V.lim === 'ok' ? r.flagTests.size || r.status !== 'complete' : V.lim && !r.flagTests.has(V.lim)) return false;
     if (V.status === 'running' && r.state !== 'running' && r.state !== 'none') return false;
     if (V.status === 'flag' && r.state !== 'flag') return false;
-    if (V.status === 'checks' && !r.checks.length) return false;
+    if (V.status === 'checks' && (!r.checks.length || r.checksOk)) return false;
     if (V.machine && !(V.machine === '-' ? !r.machine : r.machine.split(/[^A-Z0-9]+/).includes(V.machine))) return false;
     if (V.supplier && r.supplier !== V.supplier) return false;
     if (V.src && r.src !== V.src) return false;
@@ -500,7 +507,7 @@ function filtered() {
 function sorted(list) {
   const col = COLS.find(c => c.k === V.sort), d = V.dir;
   const key = col ? col.val : { code: null, name: r => r.name, supplier: r => r.supplier, machine: r => r.machine,
-    state: r => ['flag', 'check', 'running', 'none', 'approved', 'complete'].indexOf(r.state), done: r => r.last, tm: r => r.tm }[V.sort];
+    state: r => ['flag', 'check', 'running', 'none', 'approved', 'checked', 'complete'].indexOf(r.state), done: r => r.last, tm: r => r.tm }[V.sort];
   return list.slice().sort((x, y) => {
     if (!key) return d * cmpCode(x.code, y.code);
     const a = key(x), b = key(y);
@@ -534,7 +541,7 @@ function render() {
   const list = sorted(filtered());
   const done = list.filter(r => r.status === 'complete');
   const accepted = done.filter(r => r.state !== 'flag');
-  const flagged = list.filter(r => r.state === 'flag'), checks = list.filter(r => r.checks.length);
+  const flagged = list.filter(r => r.state === 'flag'), checks = list.filter(r => r.checks.length && !r.checksOk);
   const running = list.filter(r => r.state === 'running');
   const machines = [...new Set(ROWS.flatMap(r => r.machine.split(/[^A-Z0-9]+/)).filter(Boolean))].sort();
   const suppliers = [...new Set(ROWS.map(r => r.supplier).filter(Boolean))].sort();
@@ -646,6 +653,9 @@ function trailHTML(r) {
       ? `📷 ${TNAME[p.test] || p.test} photo skipped${why ? ' (' + esc(why) + ')' : ''}`
       : `📷 ${TNAME[p.test] || p.test} photo${why ? ' (' + esc(why) + ')' : ''}${photoImg(r, p)}` });
   });
+  // the approval (approvals.json): who approved, when, what it covered and why
+  const ap = SD[r.src].appr[r.code];
+  if (ap && ap.at) items.push({ t: Date.parse(ap.at), by: ap.by, txt: `✓ Approved${r.stale ? ' (outdated: weights changed after)' : ''}: ${esc([ap.flags, ap.checks && 'possible error ' + ap.checks].filter(Boolean).join(' · ') || 'result')}${ap.note ? ' · “' + esc(ap.note) + '”' : ''}` });
   if (!items.length) return '';
   items.sort((a, b) => a.t - b.t);
   return `<h3 class="trh">Trail <span class="sub">every step, retest and correction · red = mistake</span></h3>
@@ -702,13 +712,13 @@ async function saveLimits() {
 }
 
 function attentionHTML(list) {
-  const items = list.filter(r => r.state === 'flag' || r.checks.length).sort((x, y) => (y.last || 0) - (x.last || 0));
+  const items = list.filter(r => r.state === 'flag' || (r.checks.length && !r.checksOk)).sort((x, y) => (y.last || 0) - (x.last || 0));
   if (!items.length) return '';
   return `<div class="card"><h2>Needs attention</h2>
-    <p class="sub">Red = outside limits: kept off the final results until approved in the weighing app or retested. Possible errors = weights or times that look like a slip (sample mass off, W3 heavier than W2, not heated long enough, value far from that supplier's usual).</p>
+    <p class="sub">Red = outside limits: kept off the final results until approved in the weighing app or retested. Possible errors = weights or times that look like a slip (sample mass off, W3 heavier than W2, not heated long enough, value far from that supplier's usual): retest, or approve once checked (e.g. a retest agreed).</p>
     <ul class="attn">${items.map(r => `<li data-id="${esc(r.id)}"><b>${esc(r.code)}</b>${r.photos.some(p => !p.skipped) ? ' <span title="photo in the trail">📷</span>' : ''}${SD.old ? ` <span class="sm">${SRC[r.src].label}</span>` : ''}
       ${r.flags.length ? `<span class="why">⚠ ${esc(r.flags.join(' · '))}</span>` : ''}${r.checks.length ? `<span class="why" style="color:var(--warn)">? ${esc(r.checks.join(' · '))}</span>` : ''}
-      <span class="what">${r.state === 'flag' ? 'Tap to approve, or retest ' : 'Retest '}${[...new Set([...(r.state === 'flag' ? r.flagTests : []), ...r.suspect])].map(k => TNAME[k]).join(', ')}${r.stale ? ' · approval outdated, weights changed' : ''}${r.name ? ' · ' + esc(r.name) : ''} · ${when(r.last)}</span></li>`).join('')}</ul></div>`;
+      <span class="what">${r.state === 'flag' || r.checks.length ? 'Tap to approve, or retest ' : 'Retest '}${[...new Set([...(r.state === 'flag' ? r.flagTests : []), ...r.suspect])].map(k => TNAME[k]).join(', ')}${r.stale ? ' · approval outdated, weights changed' : ''}${r.name ? ' · ' + esc(r.name) : ''} · ${when(r.last)}</span></li>`).join('')}</ul></div>`;
 }
 
 // One dot per sample on a 0–max line, with the limit marked: shows spread and outliers at a glance
@@ -966,7 +976,7 @@ function tableHTML(list, anyTm) {
       <td>${esc(r.machine) || '<span class="sm">–</span>'}</td><td>${pill(r)}</td>
       ${COLS.map(c => cell(r, c)).join('')}${anyTm ? `<td class="num${isHi(r, 'TM') ? ' hi' : ''}">${r.hasTm ? f2(r.tm) : '<span class="sm">–</span>'}</td>` : ''}
       <td class="wrapcell"><span class="sm">${esc([...(r.pending.length && r.status !== 'not started' ? ['waiting: ' + r.pending.map(k => TNAME[k]).join(', ')] : []),
-        ...r.flags, ...r.checks, ...(r.appr && r.flags.length ? ['approved by ' + (r.appr.by || '?')] : [])].join(' · '))}</span></td>
+        ...r.flags, ...r.checks, ...(r.appr && (r.flags.length || r.checksOk) ? ['approved by ' + (r.appr.by || '?')] : [])].join(' · '))}</span></td>
       <td>${when(r.last)}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
@@ -980,7 +990,8 @@ function detail(id) {
     <h2>${esc(r.code)} ${pill(r)}</h2>
     <p class="sub">${[SRC[r.src].label, r.name, r.supplier, r.date && 'sample date ' + r.date, r.machine && 'machine ' + r.machine].filter(Boolean).map(esc).join(' · ') || 'No name in the Name Tags sheet yet'}</p>
     ${r.flags.length ? `<div class="note ${r.appr ? 'warn' : 'bad'}">⚠ ${esc(r.flags.join(' · '))}${r.appr ? ` — approved by ${esc(r.appr.by || '?')} ${r.appr.at ? when(Date.parse(r.appr.at)) : ''}` : ` — retest ${[...r.flagTests].map(k => TNAME[k]).join(', ')} or approve below`}${r.stale ? ' (earlier approval is outdated: weights changed)' : ''}</div>` : ''}
-    ${r.checks.length ? `<div class="note warn">Possible error, retest ${[...r.suspect].map(k => TNAME[k]).join(', ')}: ${esc(r.checks.join(' · '))}</div>` : ''}
+    ${r.checks.length ? `<div class="note warn">${r.checksOk ? `? Possible error: ${esc(r.checks.join(' · '))} — approved by ${esc(r.appr.by || '?')} ${r.appr.at ? when(Date.parse(r.appr.at)) : ''}`
+      : `Possible error, retest ${[...r.suspect].map(k => TNAME[k]).join(', ')} or approve below: ${esc(r.checks.join(' · '))}`}${r.stale ? ' (earlier approval is outdated: weights changed)' : ''}</div>` : ''}
     ${!r.flags.length && !r.checks.length && r.status === 'complete' ? '<div class="note ok">✓ All tests done and within limits</div>' : ''}
     <div class="res">
       ${res('Moisture (ar)', r.mc, isHi(r, 'MC'))}
@@ -997,14 +1008,19 @@ function detail(id) {
     ${trailHTML(r)}
     <p class="sub" style="margin:0">VM (ar) = VM furnace loss ${f2(r.vml)} % − moisture. Dry basis = as received ÷ (100 − moisture) × 100. Fixed carbon by difference.${r.lastText ? '<br>Last entry: ' + esc(r.lastText) : ''}</p>
   </div>`;
-  if (r.flags.length) {
+  if (r.flags.length || r.checks.length) {
+    // one approval covers both: out of limit (flags) and possible errors (checks); an older approval without checks covers only the flags
+    const needs = (r.flags.length && !r.appr) || (r.checks.length && !r.checksOk), byLine = a => `By ${esc(a.by || '?')}${a.at ? ', ' + when(Date.parse(a.at)) : ''}${a.note ? ' · ' + esc(a.note) : ''}`;
     dlg.querySelector('.dlg').insertAdjacentHTML('beforeend', `<div class="apprbox">
-      <b>${r.appr ? 'Approved' : 'Approve this result'}</b>
-      <p class="sub" style="margin:2px 0 8px">${r.appr ? `By ${esc(r.appr.by || '?')}${r.appr.at ? ', ' + when(Date.parse(r.appr.at)) : ''}${r.appr.note ? ' · ' + esc(r.appr.note) : ''}. It goes into the final results.`
-        : 'Approve when the out-of-limit value is real (checked, not a weighing error). It then goes into the final results. If weights change later, the approval stops counting.'}</p>
-      ${r.appr ? `<button class="btn" id="unappr">Remove approval</button>`
+      <b>${needs ? 'Approve this result' : 'Approved'}</b>
+      <p class="sub" style="margin:2px 0 8px">${!needs ? `${byLine(r.appr)}. It goes into the final results.`
+        : (r.appr ? `Out of limit approved earlier (${byLine(r.appr)}); the possible error is not approved yet. ` : '')
+          + (r.checks.length ? 'Approve a possible error only when it was checked and is right (e.g. a retest gave the same result, or the photo shows the reading). Write why in the note. ' : '')
+          + (r.flags.length && !r.appr ? 'Approve an out-of-limit value when it is real (checked, not a weighing error). It then goes into the final results. ' : '')
+          + 'If weights change later, the approval stops counting.'}</p>
+      ${!needs ? `<button class="btn" id="unappr">Remove approval</button>`
         : `<div class="apprrow"><input id="apby" placeholder="Your name" value="${esc(store.get('supervisor'))}" aria-label="Your name">
-           <input id="apnote" placeholder="Note (optional)" aria-label="Note"><button class="btn primary" id="appr">✓ Approve</button></div>`}
+           <input id="apnote" placeholder="${r.checks.length ? 'Why it is right (e.g. retest agreed)' : 'Note (optional)'}" aria-label="Note"><button class="btn primary" id="appr">✓ Approve</button></div>`}
       <p class="sub" id="apmsg" style="margin:6px 0 0"></p></div>`);
     const go = approve => setApproval(r, approve);
     const a = document.getElementById('appr'), u = document.getElementById('unappr');
