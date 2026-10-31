@@ -652,7 +652,7 @@ function trailHTML(r) {
     <ol class="trail">${items.map(i => `<li class="${i.bad ? 'bad' : ''}"><span class="tt">${when(i.t)}</span><span>${i.txt}</span>
       <span class="tw">${esc(i.by || '?')}${i.b ? ' · balance ' + i.b : ''}</span></li>`).join('')}</ol>`;
 }
-/* ---------- result limits: shown to everyone, changed by anyone acting as supervisor (no PIN) ---------- */
+/* ---------- result limits: shown to everyone, changed by the supervisor (PIN from the weighing app) ---------- */
 const LIM_KEYS = ['MC', 'VM', 'ASH', 'FC'];
 const limRange = k => { const [lo, hi] = LIM()[k]; return isNum(lo) && isNum(hi) ? `${lo}–${hi}` : isNum(hi) ? `≤ ${hi}` : isNum(lo) ? `≥ ${lo}` : 'no limit'; };
 const limText = () => LIM_KEYS.map(k => `${TNAME[k]} ${limRange(k)} %${LIM_DB[k] ? ' db' : ''}`).join(', ');
@@ -662,12 +662,25 @@ function limitsHTML() {
     <p class="sub">A result outside these is flagged and needs approval, here, in the weighing app and in results.json. Moisture as received; VM, Ash and fixed carbon on dry basis. Empty = no limit.</p>
     <div class="limgrid">${LIM_KEYS.map(k => { const [lo, hi] = LIM()[k];
       return `<label><b>${TNAME[k]}${LIM_DB[k] ? ' (db)' : ''}</b><span><input id="lo-${k}" inputmode="decimal" placeholder="min" value="${isNum(lo) ? lo : ''}"> – <input id="hi-${k}" inputmode="decimal" placeholder="max" value="${isNum(hi) ? hi : ''}"> %</span></label>`; }).join('')}</div>
-    <div class="apprrow" style="margin:8px 16px"><button class="btn primary" id="savelim">Save limits</button><span class="sub" id="limmsg" style="margin:0"></span></div></details>`;
+    <div class="apprrow" style="margin:8px 16px"><button class="btn primary" id="savelim">Save limits (supervisor PIN)</button><span class="sub" id="limmsg" style="margin:0"></span></div></details>`;
+}
+async function pinHash(pin) {
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('lab-pin:' + pin));
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+// Supervisor PIN (set in the weighing app, hash in data.json settings.pin); msg shows why it stopped
+async function askPin(msg) {
+  const set = SD.qr.settings && SD.qr.settings.pin;
+  if (!set) { msg.textContent = 'Set the supervisor PIN in the weighing app first (Setup → Supervisor on).'; return false; }
+  const p = prompt('Supervisor PIN'); if (p == null) return false;
+  if (await pinHash(p.trim()) !== set) { msg.textContent = '⚠ Wrong PIN.'; return false; }
+  return true;
 }
 async function saveLimits() {
   const msg = document.getElementById('limmsg'), num = id => { const v = document.getElementById(id).value.trim(); return v === '' || !isFinite(+v) ? null : +v; };
   const lim = Object.fromEntries(LIM_KEYS.map(k => [k, [num('lo-' + k), num('hi-' + k)]]));
   if (LIM_KEYS.some(k => isNum(lim[k][0]) && isNum(lim[k][1]) && lim[k][0] > lim[k][1])) { msg.textContent = 'A lower limit is above its upper limit.'; return; }
+  if (!await askPin(msg)) return;
   if (!KEY) { KEY = (prompt('Saving needs the lab GitHub key (the same one the phones use). It is saved on this device.') || '').trim(); if (!KEY) return; store.set('ghkey', KEY); }
   msg.textContent = 'Saving…';
   const url = `https://api.github.com/repos/${GH.owner}/${SRC.qr.repo}/contents/data.json`, H = { Authorization: 'Bearer ' + KEY, Accept: 'application/vnd.github+json' };
@@ -1000,7 +1013,7 @@ function detail(id) {
   }
   if (r.src === 'qr') {
     dlg.querySelector('.dlg').insertAdjacentHTML('beforeend', `<div class="apprbox"><b>✎ Edit weights or type in paper weights</b>
-      <p class="sub" style="margin:2px 0 8px">Correct a wrong W1, W2 or W3, or type in weights from the paper sheet. Every change goes on the trail with your name and reason; old values are kept in corrections.json.</p>
+      <p class="sub" style="margin:2px 0 8px">Correct a wrong W1, W2 or W3, or type in weights from the paper sheet. Every change goes on the trail with your name and reason; old values are kept in corrections.json. Needs the supervisor PIN.</p>
       <div class="apprrow"><button class="btn" id="wedit">✎ Correct a weight</button><button class="btn" id="wpaper">📝 Type in from paper</button></div></div>`);
     document.getElementById('wedit').onclick = () => editWeights(r.code, 'edit');
     document.getElementById('wpaper').onclick = () => editWeights(r.code, 'paper');
@@ -1009,7 +1022,7 @@ function detail(id) {
   if (resettable.length) {
     dlg.querySelector('.dlg').insertAdjacentHTML('beforeend', `<details class="apprbox resetbox"><summary><b>↺ Reset a test for retest</b></summary>
       <p class="sub" style="margin:4px 0 8px">Clears W1, W2 and W3 of that test only, so the sample goes back to the bench and the test is done again from step 1.
-        The old weights stay in the trail above and in corrections.json.</p>
+        The old weights stay in the trail above and in corrections.json. Needs the supervisor PIN.</p>
       <div class="apprrow"><input id="rsby" placeholder="Your name" value="${esc(store.get('supervisor'))}" aria-label="Your name">
         <input id="rsnote" placeholder="Why (e.g. ash not burnt)" aria-label="Why"></div>
       <div class="apprrow" style="margin-top:8px">${resettable.map(k => `<button class="btn danger" data-reset="${k}">↺ Reset ${TNAME[k]}</button>`).join('')}</div>
@@ -1049,6 +1062,7 @@ async function resetTest(r, k) {
   const msg = document.getElementById('rsmsg'), who = document.getElementById('rsby').value.trim(), why = document.getElementById('rsnote').value.trim();
   if (!who) { msg.textContent = 'Type your name first.'; document.getElementById('rsby').focus(); return; }
   if (!confirm(`Reset ${TNAME[k]} for ${r.code}?\n\nW1, W2 and W3 of ${TNAME[k]} are cleared and the worker does this test again from step 1.`)) return;
+  if (!await askPin(msg)) return;
   if (!KEY) { KEY = (prompt('Saving needs the lab GitHub key (the same one the phones use). It is saved on this device.') || '').trim(); if (!KEY) return; store.set('ghkey', KEY); }
   store.set('supervisor', who);
   dlg.querySelectorAll('.resetbox button').forEach(b => b.disabled = true);
@@ -1180,6 +1194,7 @@ async function saveWeights(code, tests, snap, nw, via, isNew) {
   const list = changes.map(c => `${TNAME[c.k]} W${c.i + 1}: ${c.o == null ? '–' : c.o.toFixed(4)} → ${c.v == null ? 'removed' : c.v.toFixed(4)}`).join('\n');
   if (!confirm(`Save ${changes.length} change${changes.length === 1 ? '' : 's'} for ${code}${isNew ? ' (new code)' : ''}?\n\n${list}` +
     (odd.length ? `\n\n⚠ ${odd.map(k => TNAME[k]).join(', ')}: these weights look wrong (sample not ~1 g, or W3 outside W1–W2). Save anyway?` : ''))) return;
+  if (!await askPin(msg)) return;
   if (!KEY) { KEY = (prompt('Saving needs the lab GitHub key (the same one the phones use). It is saved on this device.') || '').trim(); if (!KEY) return; store.set('ghkey', KEY); }
   store.set('supervisor', who); if (wb) store.set('paper-wb', wb);
   dlg.querySelectorAll('#wsave, #wback').forEach(b => b.disabled = true);
