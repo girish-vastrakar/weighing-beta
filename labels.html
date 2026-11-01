@@ -75,6 +75,15 @@
   .bd.job.vm .ring i { font-size: 4mm; }
   .bd.job .ring.empty { opacity: .3; }
   body.onlyjobs .alllabels, body.nojobs #jobcards { display: none !important; }
+  /* reusable tag cards: 50 x 70 mm, 4 x 4 on A4, laminated, hole at the top for a rubber band or clip */
+  .tags { display: grid; grid-template-columns: repeat(auto-fill, 50mm); gap: 0; justify-content: center; }
+  .tag { width: 50mm; height: 70mm; box-sizing: border-box; border: .3mm dashed #999; padding: 3mm; display: flex; flex-direction: column; align-items: center; background: #fff; break-inside: avoid; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .tag .hole { width: 6mm; height: 6mm; border: .4mm solid #888; border-radius: 50%; flex: 0 0 auto; }
+  .tag .num { display: flex; align-items: baseline; gap: 1.5mm; background: #1f2a33; color: #fff; border-radius: 2.5mm; padding: .5mm 3mm; margin: 2mm 0; line-height: 1; }
+  .tag .num i { font-style: normal; font-size: 4mm; font-weight: 700; letter-spacing: .05em; } .tag .num b { font-size: 13mm; font-weight: 800; }
+  .tag svg { width: 38mm; height: 38mm; display: block; }
+  .tag small { font-size: 2.6mm; color: #555; margin-top: auto; }
+  body.onlytags .alllabels, body.onlytags #jobcards { display: none !important; }
   @media print {
     body { background: #fff; }
     .noprint, .betabar { display: none !important; }
@@ -84,6 +93,9 @@
     .dishes { grid-template-columns: repeat(8, 1fr); }
     .tmpl { border: 0; padding: 0 1mm; margin: 0; }
     .hideprint { display: none; }
+    body:not(.onlytags) #tagcards { display: none !important; }
+    .tags { gap: 0; justify-content: start; }
+    .tag { break-inside: avoid; }
   }
 </style>
 </head>
@@ -109,6 +121,13 @@
       <p class="sub" style="margin:0 0 6px">The cards already saved for this weighing machine. Reprint prints the same card again: nothing changes on the phones.</p>
       <div id="jold" class="sub">…</div>
     </div>
+    <div class="jobbox">
+      <h2 style="margin-top:0">Reusable sample tags</h2>
+      <p class="sub">Laminated cards that go on the reusable sample bags instead of stickers. Each QR holds only the tag number (TAG 07). The supervisor links a tag to a T code and frees it after MC, Ash and VM all have W3. Cards are 50 × 70 mm, 16 on an A4 page: print at 100% (no fit to page), cut on the dashed lines, laminate, then punch the circle. To replace a lost tag, print just its number.</p>
+      <div class="opts"><div><label for="tagnums">Tag numbers</label><input id="tagnums" value="1-50"></div></div>
+      <div class="row" style="margin-bottom:0"><button id="tagmake">Show tags</button><button class="primary" id="tagprint">Print tags</button></div>
+      <p class="sub" style="margin:8px 0 0">The weighing phones do not read tags yet: hand them out once the tag screens are live.</p>
+    </div>
     <div class="alllabels">
     <p class="sub">Sample labels hold just the sample code, which is what the app reads.</p>
     <label for="codes"><b>Sample codes</b></label>
@@ -125,6 +144,7 @@
     </div>
   </div>
   <div id="jobcards"></div>
+  <div class="grid tags" id="tagcards"></div>
   <div class="alllabels">
   <h2>Samples</h2>
   <div class="grid samples" id="samples"></div>
@@ -175,6 +195,17 @@ function make() {
 document.getElementById('codes').value = '';
 document.getElementById('make').addEventListener('click', make);
 make();
+
+/* ---------- reusable tags: QR text "TAG 07", read later by the phones as a tag, never a sample code ---------- */
+const tagId = n => 'TAG ' + String(n).padStart(2, '0');
+const tagCard = n => `<div class="tag"><span class="hole"></span><div class="num"><i>TAG</i><b>${esc(String(n).padStart(2, '0'))}</b></div>${svg(tagId(n))}<small>Reusable · back to supervisor</small></div>`;
+function makeTags() {
+  const nums = parseList(document.getElementById('tagnums').value).map(Number).filter(n => n >= 1 && n <= 99).sort((a, b) => a - b);
+  document.getElementById('tagcards').innerHTML = nums.map(tagCard).join('');
+  return nums.length;
+}
+document.getElementById('tagmake').addEventListener('click', makeTags);
+document.getElementById('tagprint').addEventListener('click', () => { if (makeTags()) { document.body.classList.add('onlytags'); window.print(); } });
 
 /* ---------- job cards: data.json cards["ASH W1-3"] = { test, bal, batch, codes, at, by }, read by the weighing phones ---------- */
 const GH = { owner: 'girish-vastrakar', repo: 'weighing_data_QR', path: 'data.json', names: 'names.json', branch: 'main' };
@@ -300,7 +331,7 @@ document.getElementById('jbal').addEventListener('change', listOld);
 listOld();
 document.getElementById('jnext').addEventListener('click', fillNext);
 document.getElementById('jprint').addEventListener('click', printJobs);
-window.addEventListener('afterprint', () => document.body.classList.remove('onlyjobs', 'nojobs'));
+window.addEventListener('afterprint', () => document.body.classList.remove('onlyjobs', 'nojobs', 'onlytags'));
 </script>
 </body>
 </html>
