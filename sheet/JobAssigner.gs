@@ -4,7 +4,8 @@
  * GitHub key and menu.
  *
  * Every morning the supervisor:
- *   1. fills the "Today" tab: which balances work today, the worker at each, how many batches each does
+ *   1. fills the "Today" tab: which balances work today, the worker at each, how many samples each does,
+ *      and the Batch mode (G1): "Each card full" (default) or "Fixed 10" 
  *   2. menu Weighing app → Assign today's jobs  (fills Machine, Job batch, Assigned on, Job status in Name Tags
  *      and writes the "Plan" tab)
  *   3. checks the Plan tab (to move a sample: change its Machine and Job batch cells)
@@ -13,8 +14,11 @@
  *
  * Rules (agreed with Girish 2026-11-01):
  *   - Order: retests first, then URGENT samples, then oldest Date, then code number.
- *   - One sample = one balance for all its tests. A batch = 10 samples (the Ash card).
- *   - Batches go round the working balances (W1 batch 1, W2 batch 1, W1 batch 2 …).
+ *   - One sample = one balance for all its tests.
+ *   - Batch mode "Each card full" (Girish 2026-11-01 04:20): only Machine is filled; the labels page fills each card
+ *     to its own size (Moisture 12, Ash 10, VM 18) from that balance's samples, as before.
+ *     Batch mode "Fixed 10": batches of 10 samples (the Ash card), the same 10 on all three cards (Job batch column).
+ *   - Samples go round the working balances 10 at a time (W1, W2, W1 …) until each has its Samples today.
  *   - A retest goes to a different balance from the one that weighed the first test ("Retest of" column).
  *   - Samples already on a card, being weighed or done are never moved.
  *   - Samples the script assigned on an earlier day but never put on a card go back to the pool.
@@ -30,6 +34,7 @@ const JA = {
   today: 'Today',
   plan: 'Plan',
   batchSize: 10,
+  modes: ['Each card full', 'Fixed 10'],
   tests: ['MC', 'ASH', 'VM'],
   balances: [1, 2, 3, 4],
   // extra Name Tags columns (lower-case titles; first match wins). The first title is the one created.
@@ -53,19 +58,22 @@ function setupToday() {
   if (String(sh.getRange('A1').getValue()).trim().toLowerCase() !== 'balance') {
     sh.clear();
     sh.getRange(1, 1, 5, 4).setValues([
-      ['Balance', 'Working today', 'Worker', 'Batches today'],
-      ['W1', 'Yes', '', 2], ['W2', 'Yes', '', 2], ['W3', 'No', '', 2], ['W4', 'No', '', 2]]);
+      ['Balance', 'Working today', 'Worker', 'Samples today'],
+      ['W1', 'Yes', '', 20], ['W2', 'Yes', '', 20], ['W3', 'No', '', 20], ['W4', 'No', '', 20]]);
     sh.getRange(1, 1, 1, 4).setFontWeight('bold');
     sh.setFrozenRows(1);
   }
+  if (!String(sh.getRange('G1').getValue()).trim()) sh.getRange(1, 6, 1, 2).setValues([['Batch mode', JA.modes[0]]]);
+  sh.getRange('F1').setFontWeight('bold');
+  sh.getRange('G1').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(JA.modes, true).build());
   sh.getRange('B2:B5').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['Yes', 'No'], true).build());
-  sh.getRange('D2:D5').setDataValidation(SpreadsheetApp.newDataValidation().requireNumberBetween(0, 20).build());
+  sh.getRange('D2:D5').setDataValidation(SpreadsheetApp.newDataValidation().requireNumberBetween(0, 200).build());
   try {
     const workers = ((readData_().settings || {}).workers || []).map(w => w.name).filter(Boolean);
     if (workers.length) sh.getRange('C2:C5').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(workers, true).setAllowInvalid(true).build());
   } catch (e) { /* worker list is only a help */ }
   ss.setActiveSheet(sh);
-  SpreadsheetApp.getUi().alert('The Today tab is ready. Set who works today and how many batches, then use "Assign today\'s jobs".');
+  SpreadsheetApp.getUi().alert('The Today tab is ready. Set who works today and how many samples (and the Batch mode in G1), then use "Assign today\'s jobs".');
 }
 
 function assignToday() {
@@ -83,16 +91,18 @@ function sendAssignment() {
 
 function assign_() {
   const today = Utilities.formatDate(new Date(), CFG.tz, 'yyyy-MM-dd');
-  const work = readToday_();
-  if (!work.length) return 'No balance is working in the "' + JA.today + '" tab (Working today = Yes, Batches today 1 or more). Use "Set up the Today tab" first.';
+  const td = readToday_(), work = td.work, fixed = td.fixed;
+  if (!work.length) return 'No balance is working in the "' + JA.today + '" tab (Working today = Yes, Samples today 1 or more). Use "Set up the Today tab" first.';
 
   const f = readData_();
   const t = readTags_();
   const st = sampleState_(f);
 
-  // Batch slots, round the working balances: W1 #n, W2 #m, W1 #n+1 …
-  const slots = [], most = Math.max.apply(null, work.map(w => w.batches));
-  for (let i = 0; i < most; i++) work.forEach(w => { if (i < w.batches) slots.push({ bal: w.bal, batch: st.nextBatch(w.bal) + i, worker: w.worker, codes: [] }); });
+  // Slots of 10 round the working balances: W1, W2, W1 … (the last one of a balance can be smaller).
+  // Fixed 10: each slot is a batch (same samples on all three cards). Each card full: no batch number.
+  const slots = [], most = Math.max.apply(null, work.map(w => Math.ceil(w.samples / JA.batchSize)));
+  for (let i = 0; i < most; i++) work.forEach(w => { const room = Math.min(JA.batchSize, w.samples - i * JA.batchSize);
+    if (room > 0) slots.push({ bal: w.bal, batch: fixed ? st.nextBatch(w.bal) + i : '', worker: w.worker, room: room, codes: [] }); });
 
   const rows = t.rows.map(r => Object.assign(r, { state: st.status(r.code, r.tests) }));
   const free = r => r.state === 'Waiting';
@@ -103,7 +113,7 @@ function assign_() {
   // 1. hand-typed machines: into that balance's batches
   sortPriority_(hand).forEach(r => {
     const b = balOf_(r.machine);
-    const s = slots.find(x => x.bal === b && x.codes.length < JA.batchSize);
+    const s = slots.find(x => x.bal === b && x.codes.length < x.room);
     if (s) { s.codes.push(r.code); r.out = { bal: b, batch: s.batch }; }
     else { r.out = { keep: true }; notes.push(r.code + ' stays on ' + r.machine + ' (typed by hand) but ' + (work.some(w => w.bal === b) ? 'its batches are full' : r.machine + ' is not working today') + '.'); }
   });
@@ -112,9 +122,9 @@ function assign_() {
   let left = [];
   sortPriority_(pool).forEach(r => {
     const avoid = r.retest ? st.balanceOf(r.retestOf) : null;
-    let s = slots.find(x => x.codes.length < JA.batchSize && x.bal !== avoid);
+    let s = slots.find(x => x.codes.length < x.room && x.bal !== avoid);
     if (!s && avoid) {
-      s = slots.find(x => x.codes.length < JA.batchSize);
+      s = slots.find(x => x.codes.length < x.room);
       if (s) notes.push(r.code + ' is a retest of ' + r.retestOf + ' but goes to the same balance W' + avoid + ': no other balance has room.');
     }
     if (s) { s.codes.push(r.code); r.out = { bal: s.bal, batch: s.batch }; }
@@ -125,9 +135,9 @@ function assign_() {
   t.write(rows, today);
 
   // 4. the Plan tab
-  writePlan_(today, slots, left, notes, rows);
+  writePlan_(today, slots, left, notes, rows, fixed);
   const n = slots.reduce((a, s) => a + s.codes.length, 0);
-  return n + ' samples assigned in ' + slots.filter(s => s.codes.length).length + ' batches. ' +
+  return n + ' samples assigned' + (fixed ? ' in ' + slots.filter(s => s.codes.length).length + ' batches of 10' : ' (each card full)') + '. ' +
     (left.length ? left.length + ' wait for another day (no room). ' : '') +
     'Check the "' + JA.plan + '" tab, then use "Send assignment to phones".';
 }
@@ -140,12 +150,17 @@ function sortPriority_(list) {
 const codeNum_ = c => +((String(c).match(/\d+/) || [0])[0]);
 const balOf_ = m => { const x = /W([1-4])/.exec(String(m || '').toUpperCase()); return x ? +x[1] : null; };
 
+/** Working balances with their samples for today, and the batch mode (G1). An old "Batches today" column counts 10 a batch. */
 function readToday_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(JA.today);
-  if (!sh) return [];
-  return sh.getDataRange().getDisplayValues().slice(1)
-    .map(r => ({ bal: balOf_(r[0]), on: /^y/i.test(String(r[1]).trim()), worker: String(r[2] || '').trim(), batches: Math.max(0, Math.floor(+r[3] || 0)) }))
-    .filter(w => w.bal && w.on && w.batches > 0);
+  if (!sh) return { work: [], fixed: false };
+  const v = sh.getDataRange().getDisplayValues();
+  const per = /batch/i.test(String(v[0][3] || '')) ? JA.batchSize : 1;
+  const fixed = /fixed/i.test(String(v[0][6] || ''));
+  const work = v.slice(1)
+    .map(r => ({ bal: balOf_(r[0]), on: /^y/i.test(String(r[1]).trim()), worker: String(r[2] || '').trim(), samples: Math.max(0, Math.floor(+r[3] || 0)) * per }))
+    .filter(w => w.bal && w.on && w.samples > 0);
+  return { work, fixed };
 }
 
 /** data.json from the app's repository (needs the GitHub key set in NameSync). */
@@ -259,14 +274,21 @@ function refreshStatus_() {
   t.writeStatus(t.rows.map(r => Object.assign(r, { state: st.status(r.code, r.tests) })));
 }
 
-function writePlan_(today, slots, left, notes, rows) {
+function writePlan_(today, slots, left, notes, rows, fixed) {
   const ss = SpreadsheetApp.getActive();
   const sh = ss.getSheetByName(JA.plan) || ss.insertSheet(JA.plan);
   sh.clear();
   const byCode = {}; rows.forEach(r => { byCode[r.code] = r; });
   const tag = c => { const r = byCode[c]; return c + (r.retest ? ' (retest)' : r.urgent ? ' (urgent)' : ''); };
-  const out = [['Plan for ' + today, '', '', '', ''], ['Balance', 'Batch', 'Worker', 'Samples', 'Codes']];
-  slots.filter(s => s.codes.length).forEach(s => out.push(['W' + s.bal, s.batch, s.worker, s.codes.length, s.codes.map(tag).join(', ')]));
+  const out = [['Plan for ' + today + (fixed ? ' · Fixed 10: same samples on all three cards' : ' · Each card full: Moisture 12, Ash 10, VM 18'), '', '', '', ''],
+    ['Balance', fixed ? 'Batch' : 'Cards', 'Worker', 'Samples', 'Codes']];
+  if (fixed) slots.filter(s => s.codes.length).forEach(s => out.push(['W' + s.bal, s.batch, s.worker, s.codes.length, s.codes.map(tag).join(', ')]));
+  else {
+    const by = {};
+    slots.forEach(s => { by[s.bal] = by[s.bal] || { worker: s.worker, codes: [] }; by[s.bal].codes = by[s.bal].codes.concat(s.codes); });
+    Object.keys(by).sort().forEach(b => { const c = by[b].codes, need = k => c.filter(x => !byCode[x].tests || byCode[x].tests.indexOf(k) >= 0).length;
+      if (c.length) out.push(['W' + b, 'Moisture ' + Math.ceil(need('MC') / 12) + ' · Ash ' + Math.ceil(need('ASH') / 10) + ' · VM ' + Math.ceil(need('VM') / 18), by[b].worker, c.length, c.map(tag).join(', ')]); });
+  }
   out.push(['', '', '', '', '']);
   out.push(['Waiting for another day', '', '', left.length, left.join(', ')]);
   notes.forEach(n => out.push(['Note', '', '', '', n]));
