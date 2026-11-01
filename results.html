@@ -606,6 +606,8 @@ function evLine(e) {
     case 'override': return `${t}${st} = ${g4(e.v)} g saved after red screen${e.x ? ': ' + esc(warnText(e.x)) : ''}`;
     case 'reset': { const o = e.o || [], p = e.k === 'ASH' ? residuePct(o) : lossPct(o);
       return `${t} retest: cleared W1 ${g4(o[0])} · W2 ${g4(o[1])} · W3 ${g4(o[2])} g${p == null ? '' : ` = <b>${p.toFixed(2)} %</b> ${e.k === 'ASH' ? 'residue' : 'loss'}`}${e.via ? ' (supervisor, results page)' : ''}${e.n ? ': ' + esc(e.n) : ''}`; }
+    case 'tag': return `reusable tag ${esc(e.x)} put on the bag`;
+    case 'untag': return `reusable tag ${esc(e.x)} taken off${e.o ? ` before ${esc(String(e.o).split(',').map(k => TNAME[k] || k).join(', '))} W3: ${esc(e.n || '')}` : ''}`;
     case 'warn': return `${t}${st} red screen: ${esc(warnText(e.x))}${isNum(e.v) ? ' (' + g4(e.v) + ' g)' : ''}`;
   }
   return esc(e.a);
