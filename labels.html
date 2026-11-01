@@ -74,6 +74,7 @@
   .bd.job.vm .ring { width: 27mm; height: 27mm; font-size: 6.5mm; }
   .bd.job.vm .ring i { font-size: 4mm; }
   .bd.job .ring.empty { opacity: .3; }
+  .bd.job .ring u, .bd.mc .mcell u { text-decoration: none; font-size: 3.6mm; font-weight: 700; margin-top: .8mm; color: #333; }
   body.onlyjobs .alllabels, body.nojobs #jobcards { display: none !important; }
   /* reusable tag cards: 50 x 70 mm, 4 x 4 on A4, laminated, hole at the top for a rubber band or clip */
   .tags { display: grid; grid-template-columns: repeat(auto-fill, 50mm); gap: 0; justify-content: center; }
@@ -123,10 +124,10 @@
     </div>
     <div class="jobbox">
       <h2 style="margin-top:0">Reusable sample tags</h2>
-      <p class="sub">Laminated cards that go on the reusable sample bags instead of stickers. Each QR holds only the tag number (TAG 07). The supervisor links a tag to a T code and frees it after MC, Ash and VM all have W3. Cards are 50 × 70 mm, 16 on an A4 page: print at 100% (no fit to page), cut on the dashed lines, laminate, then punch the circle. To replace a lost tag, print just its number.</p>
+      <p class="sub">Laminated cards that go on the reusable sample bags instead of stickers. Each QR holds only the tag number (TAG 07). The supervisor puts a tag on a sample in the weighing app and takes it off after MC, Ash and VM all have W3. Old sample stickers keep working. Cards are 50 × 70 mm, 16 on an A4 page: print at 100% (no fit to page), cut on the dashed lines, laminate, then punch the circle. To replace a lost tag, print just its number.</p>
       <div class="opts"><div><label for="tagnums">Tag numbers</label><input id="tagnums" value="1-50"></div></div>
       <div class="row" style="margin-bottom:0"><button id="tagmake">Show tags</button><button class="primary" id="tagprint">Print tags</button></div>
-      <p class="sub" style="margin:8px 0 0">The weighing phones do not read tags yet: hand them out once the tag screens are live.</p>
+      <p class="sub" style="margin:8px 0 0">Supervisor: weighing app → Supervisor on → Tags on the home screen. Put the tags on the bags before printing the job cards, so the cards show each tag number.</p>
     </div>
     <div class="alllabels">
     <p class="sub">Sample labels hold just the sample code, which is what the app reads.</p>
@@ -223,6 +224,10 @@ async function readJSON(path) {
   return { f, sha: meta.sha };
 }
 const codeNum = c => +((String(c).match(/\d+/) || [0])[0]);
+// Reusable tag on each sample (data.json tags["TAG 07"] = { code }), shown under the code on the job cards
+let TAGSOF = {};
+const setTags = f => { TAGSOF = {}; Object.keys(f.tags || {}).forEach(id => { TAGSOF[f.tags[id].code] = id; }); };
+const tagLine = c => TAGSOF[c] ? `<u>${esc(TAGSOF[c])}</u>` : '';
 const nextBatch = (f, bal) => 1 + Math.max(0, ...Object.values(f.cards || {}).filter(j => +j.bal === bal).map(j => +j.batch || 0));
 // Codes the Google Sheet gives this machine, not on a card yet for this test and not weighed yet.
 // Older codes that never came into this app were weighed in the old app: only codes after the newest one
@@ -269,13 +274,13 @@ function jobCard(tray, j) {
   const k = j.test, rows = Math.ceil(CAP[k] / COLS[k]), when = new Date(j.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   if (k === 'MC') {
     const cells = Array.from({ length: CAP.MC }, (x, i) => { const c = j.codes[i];
-      return `<div class="mcell${c ? '' : ' empty'}"><i>${i + 1}</i><b>${c ? esc(c) : '—'}</b>${c ? '<span>Dish <em class="dish"></em></span><span>In <em class="tick"></em> Out <em class="tick"></em></span>' : ''}</div>`; }).join('');
+      return `<div class="mcell${c ? '' : ' empty'}"><i>${i + 1}</i><b>${c ? esc(c) : '—'}</b>${c ? tagLine(c) : ''}${c ? '<span>Dish <em class="dish"></em></span><span>In <em class="tick"></em> Out <em class="tick"></em></span>' : ''}</div>`; }).join('');
     return `<div class="bd job mc"><div class="bh"><div class="big"><b>W${esc(j.bal)}</b><i>#${esc(j.batch)}</i></div>
       <div class="bt">${esc(TNAME.MC)}<small>Balance W${esc(j.bal)} · batch ${esc(j.batch)}<br>${when} · ${j.codes.filter(Boolean).length} samples</small></div></div>
       <div class="cells" style="grid-template-columns:repeat(${COLS.MC},1fr);grid-template-rows:repeat(${rows},auto)">${cells}</div></div>`;
   }
   const cells = Array.from({ length: CAP[k] }, (x, i) => { const c = j.codes[i];
-    return `<div class="cell"><div class="ring${c ? '' : ' empty'}"><i>${i + 1}</i>${c ? esc(c) : ''}</div></div>`; }).join('');
+    return `<div class="cell"><div class="ring${c ? '' : ' empty'}"><i>${i + 1}</i>${c ? esc(c) : ''}${c ? tagLine(c) : ''}</div></div>`; }).join('');
   return `<div class="bd job ${k.toLowerCase()}"><div class="bh"><div class="qr">${svg(tray)}<b>${esc(tray)}</b></div>
     <div class="big"><b>W${esc(j.bal)}</b><i>#${esc(j.batch)}</i></div>
     <div class="bt">${esc(TNAME[k])}<small>Balance W${esc(j.bal)} · batch ${esc(j.batch)}<br>${when} · ${j.codes.filter(Boolean).length} samples</small></div></div>
@@ -290,7 +295,7 @@ async function printJobs() {
   let made = {}, note = '';
   try {
     for (let attempt = 0; ; attempt++) {
-      const { f, sha } = await readJSON(GH.path);
+      const { f, sha } = await readJSON(GH.path); setTags(f);
       const batch = +document.getElementById('jbatch').value || nextBatch(f, bal);
       f.cards = f.cards || {}; made = {};
       ['MC', 'ASH', 'VM'].forEach(k => { if (!want[k].length) return;
@@ -313,7 +318,7 @@ let OLD = {};
 async function listOld() {
   const el = document.getElementById('jold'), bal = +document.getElementById('jbal').value;
   if (!store.get('ghkey')) { el.textContent = 'Open the weighing app setup link on this computer once so it has the lab key.'; return; }
-  try { OLD = (await readJSON(GH.path)).f.cards || {}; } catch (e) { el.textContent = '⚠ ' + (e.message === 'Failed to fetch' ? 'No internet.' : e.message); return; }
+  try { const { f } = await readJSON(GH.path); setTags(f); OLD = f.cards || {}; } catch (e) { el.textContent = '⚠ ' + (e.message === 'Failed to fetch' ? 'No internet.' : e.message); return; }
   const by = {};
   Object.keys(OLD).filter(tr => +OLD[tr].bal === bal).forEach(tr => (by[OLD[tr].batch] = by[OLD[tr].batch] || []).push(tr));
   const order = { MC: 0, ASH: 1, VM: 2 }, batches = Object.keys(by).sort((a, b) => b - a);
