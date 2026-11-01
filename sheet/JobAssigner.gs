@@ -12,7 +12,7 @@
  *   5. labels page → Fill → Save and print, for each balance: the same 10 samples are on its Moisture, Ash and VM cards.
  *
  * Rules (agreed with Girish 2026-11-01):
- *   - Order: retests first, then Jumbo bag samples, then oldest Date, then code number.
+ *   - Order: retests first, then URGENT samples, then oldest Date, then code number.
  *   - One sample = one balance for all its tests. A batch = 10 samples (the Ash card).
  *   - Batches go round the working balances (W1 batch 1, W2 batch 1, W1 batch 2 …).
  *   - A retest goes to a different balance from the one that weighed the first test ("Retest of" column).
@@ -21,10 +21,9 @@
  *   - A Machine typed by hand (no "Assigned on") is kept and gets a batch on that balance.
  *
  * Name Tags columns the script adds at the end of the header row when missing:
- *   Bag (type Jumbo for jumbo bag samples) · Tests (blank = all three, or e.g. "VM") · Retest of (the first code)
+ *   Priority (type URGENT to put a sample first) · Tests (blank = all three, or e.g. "VM") · Retest of (the first code)
  *   · Job batch · Assigned on · Job status
- * Jumbo is also recognised from "Jumbo" or "-JB<number>" in the sample name or supplier,
- * and a retest from "Retest" or " R<number>" in the name or supplier.
+ * A retest is also recognised from "Retest" or " R<number>" in the name or supplier.
  */
 
 const JA = {
@@ -35,14 +34,14 @@ const JA = {
   balances: [1, 2, 3, 4],
   // extra Name Tags columns (lower-case titles; first match wins). The first title is the one created.
   cols: {
-    bag:      ['bag', 'bag type'],
+    urgent:   ['priority'],
     tests:    ['tests'],
     retestOf: ['retest of', 'original code'],
     batch:    ['job batch'],
     assigned: ['assigned on'],
     status:   ['job status'],
   },
-  titles: { bag: 'Bag', tests: 'Tests', retestOf: 'Retest of', batch: 'Job batch', assigned: 'Assigned on', status: 'Job status' },
+  titles: { urgent: 'Priority', tests: 'Tests', retestOf: 'Retest of', batch: 'Job batch', assigned: 'Assigned on', status: 'Job status' },
 };
 
 /* ------------------------------ menu actions ------------------------------ */
@@ -133,9 +132,9 @@ function assign_() {
     'Check the "' + JA.plan + '" tab, then use "Send assignment to phones".';
 }
 
-/** Retests first, then Jumbo, then oldest date, then code number. */
+/** Retests first, then URGENT, then oldest date, then code number. */
 function sortPriority_(list) {
-  return list.slice().sort((a, b) => (b.retest - a.retest) || (b.jumbo - a.jumbo) ||
+  return list.slice().sort((a, b) => (b.retest - a.retest) || (b.urgent - a.urgent) ||
     String(a.date || '9999').localeCompare(String(b.date || '9999')) || codeNum_(a.code) - codeNum_(b.code));
 }
 const codeNum_ = c => +((String(c).match(/\d+/) || [0])[0]);
@@ -223,7 +222,7 @@ function readTags_() {
     rows.push({ r, code, machine: g('machine').toUpperCase(), assigned: toISO_(g('assigned'), g('assigned')), date: idx.date === undefined ? '' : toISO_(raw[r][idx.date], g('date')),
       tests: testsOf(g('tests')), retestOf,
       retest: retestOf || /retest|\sR\d+\b/i.test(text) ? 1 : 0,
-      jumbo: /jumbo/i.test(g('bag')) || /jumbo|-JB\d/i.test(text) ? 1 : 0 });
+      urgent: /urgent/i.test(g('urgent')) ? 1 : 0 });
   }
 
   return {
@@ -265,7 +264,7 @@ function writePlan_(today, slots, left, notes, rows) {
   const sh = ss.getSheetByName(JA.plan) || ss.insertSheet(JA.plan);
   sh.clear();
   const byCode = {}; rows.forEach(r => { byCode[r.code] = r; });
-  const tag = c => { const r = byCode[c]; return c + (r.retest ? ' (retest)' : r.jumbo ? ' (jumbo)' : ''); };
+  const tag = c => { const r = byCode[c]; return c + (r.retest ? ' (retest)' : r.urgent ? ' (urgent)' : ''); };
   const out = [['Plan for ' + today, '', '', '', ''], ['Balance', 'Batch', 'Worker', 'Samples', 'Codes']];
   slots.filter(s => s.codes.length).forEach(s => out.push(['W' + s.bal, s.batch, s.worker, s.codes.length, s.codes.map(tag).join(', ')]));
   out.push(['', '', '', '', '']);
