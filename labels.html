@@ -196,27 +196,39 @@ const nextBatch = (f, bal) => 1 + Math.max(0, ...Object.values(f.cards || {}).fi
 // Codes the Google Sheet gives this machine, not on a card yet for this test and not weighed yet.
 // Older codes that never came into this app were weighed in the old app: only codes after the newest one
 // started here count, plus codes already in this app's list.
-function allotted(f, names, bal, k) {
+// names[c].tests (sheet Tests column, e.g. "VM") limits a code to those tests; blank = all three.
+// names[c].batch (sheet Batch column, set by "Assign today's jobs"): when given, only that batch's codes.
+const wantsTest = (n, k) => !n.tests || String(n.tests).toUpperCase().split(/[^A-Z]+/).map(t => t === 'MOISTURE' || t === 'MT' ? 'MC' : t).includes(k);
+function allotted(f, names, bal, k, batch) {
   const on = new Set(Object.values(f.cards || {}).filter(j => j.test === k).flatMap(j => j.codes));
   const started = c => { const s = f.samples && f.samples[c], w = s && s.w && s.w[k]; return !!w && w[0] != null; };
   const here = new Set(f.codes || []), floor = Math.max(0, ...(f.codes || []).filter(started).map(codeNum));
   return Object.keys(names).filter(c => String(names[c].machine || '').toUpperCase().split(/[^A-Z0-9]+/).includes('W' + bal))
-    .filter(c => !on.has(c) && !started(c) && (here.has(c) || codeNum(c) > floor))
+    .filter(c => batch == null || +names[c].batch === batch)
+    .filter(c => wantsTest(names[c], k) && !on.has(c) && !started(c) && (here.has(c) || codeNum(c) > floor))
     .sort((a, b) => codeNum(a) - codeNum(b));
+}
+// Lowest sheet batch of this balance that still has codes to put on a card (null = sheet has no batches: old way)
+function sheetBatch(f, names, bal) {
+  const nums = [...new Set(Object.keys(names).filter(c => +names[c].batch > 0 && String(names[c].machine || '').toUpperCase().split(/[^A-Z0-9]+/).includes('W' + bal)).map(c => +names[c].batch))].sort((a, b) => a - b);
+  return nums.find(n => ['MC', 'ASH', 'VM'].some(k => allotted(f, names, bal, k, n).length)) ?? null;
 }
 async function fillNext() {
   const bal = +document.getElementById('jbal').value; jmsg('Reading the Google Sheet allotment…');
   try {
     const [{ f }, { f: n }] = await Promise.all([readJSON(GH.path), readJSON(GH.names)]);
     const names = n.names || {};
-    document.getElementById('jbatch').value = nextBatch(f, bal);
-    document.getElementById('jmc').value = allotted(f, names, bal, 'MC').slice(0, CAP.MC).join(', ');
-    document.getElementById('jash').value = allotted(f, names, bal, 'ASH').slice(0, CAP.ASH).join(', ');
-    document.getElementById('jvm').value = allotted(f, names, bal, 'VM').slice(0, CAP.VM).join(', ');
+    // Sheet batch (same samples on all three cards) when the sheet assigned one; its number unless already used
+    const sb = sheetBatch(f, names, bal), used = sb != null && Object.values(f.cards || {}).some(j => +j.bal === bal && +j.batch === sb);
+    const num = sb != null && !used ? sb : nextBatch(f, bal);
+    document.getElementById('jbatch').value = num;
+    document.getElementById('jmc').value = allotted(f, names, bal, 'MC', sb).slice(0, CAP.MC).join(', ');
+    document.getElementById('jash').value = allotted(f, names, bal, 'ASH', sb).slice(0, CAP.ASH).join(', ');
+    document.getElementById('jvm').value = allotted(f, names, bal, 'VM', sb).slice(0, CAP.VM).join(', ');
     const got = ['jmc', 'jash', 'jvm'].some(id => document.getElementById(id).value);
     // nothing new: say why, so it does not look broken
     const inSheet = Object.keys(names).filter(c => String(names[c].machine || '').toUpperCase().split(/[^A-Z0-9]+/).includes('W' + bal)).length;
-    jmsg(got ? `W${bal} batch ${nextBatch(f, bal)}: check the codes, then Save and print.`
+    jmsg(got ? `W${bal} batch ${num}${sb != null ? ' (from the sheet assignment)' : ''}: check the codes, then Save and print.`
       : `No new codes for W${bal} in the Google Sheet: its ${inSheet} W${bal} codes are all on a saved card or weighed already (here or in the old app). Put new codes on W${bal} in the sheet (Machine column), wait for the sheet to sync, then Fill again. To print an old card again, use Reprint below.`);
   } catch (e) { jmsg('⚠ ' + (e.message === 'Failed to fetch' ? 'No internet.' : e.message) + ' Open the weighing app setup link on this computer once so it has the lab key.'); }
 }
