@@ -72,8 +72,12 @@ function setupToday() {
     const workers = ((readData_().settings || {}).workers || []).map(w => w.name).filter(Boolean);
     if (workers.length) sh.getRange('C2:C5').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(workers, true).setAllowInvalid(true).build());
   } catch (e) { /* worker list is only a help */ }
+  // Name Tags: add Priority, Tests, Retest of, Job batch, Assigned on, Job status now (not only at the first Assign)
+  const t = readTags_();
+  t.sheet.getRange(t.headerRow + 2, t.idx.urgent + 1, Math.max(1, t.sheet.getMaxRows() - t.headerRow - 1), 1)
+    .setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['URGENT'], true).setAllowInvalid(true).build());
   ss.setActiveSheet(sh);
-  SpreadsheetApp.getUi().alert('The Today tab is ready. Set who works today and how many samples (and the Batch mode in G1), then use "Assign today\'s jobs".');
+  SpreadsheetApp.getUi().alert('The Today tab is ready, and Name Tags now has the Priority, Tests, Retest of, Job batch, Assigned on and Job status columns. Set who works today and how many samples (and the Batch mode in G1), then use "Assign today\'s jobs".');
 }
 
 function assignToday() {
@@ -241,7 +245,7 @@ function readTags_() {
   }
 
   return {
-    rows,
+    rows, sheet: sh, headerRow: hr, idx,
     write(list, today) {
       const n = shown.length - hr - 1;
       if (n <= 0) return;
