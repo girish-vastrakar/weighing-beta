@@ -2252,7 +2252,7 @@ document.addEventListener('click', e => {
     }
     case 'try-sound': { const v = document.getElementById('snd-' + el.dataset.test).value;
       try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
-      if (window.LabSounds) LabSounds.play(v, 'beep', AC); break; }
+      if (window.LabSounds) { LabSounds.stop(); LabSounds.play(v, 'beep', AC); } break; }
     case 'save-sounds': {
       if (!superOn()) break;
       const sounds = {}; ['MC', 'VM', 'ASH'].forEach(k => { sounds[k] = document.getElementById('snd-' + k).value; });

@@ -1077,10 +1077,10 @@ function alarmShow(r) {
     <span class="al-door">${ICON.doorOpen}</span>
     <small>${esc(placeName(r.place))} · ${esc(B().timeUp)}</small></button>`;
   el.querySelector('button').onclick = () => alarmStop(r.rid);
-  clearInterval(alarmSnd); alarmPlay(r.test); alarmSnd = setInterval(() => alarmPlay(r.test), 2600);
+  clearInterval(alarmSnd); if (window.LabSounds) LabSounds.stop(); alarmPlay(r.test); alarmSnd = setInterval(() => alarmPlay(r.test), 2600);
 }
 function alarmHide() {
-  clearInterval(alarmSnd); alarmSnd = null; alarmRid = null;
+  clearInterval(alarmSnd); alarmSnd = null; alarmRid = null; if (window.LabSounds) LabSounds.stop();
   if (navigator.vibrate) navigator.vibrate(0);
   const el = document.getElementById('alarm'); if (el) el.remove();
 }

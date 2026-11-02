@@ -688,7 +688,7 @@ let ringKey = null;
 function ring(test) {
   const key = soundFor(test) || 'kitchen';
   if (soundTimer && ringKey === key) return;
-  clearInterval(soundTimer); ringKey = key;
+  clearInterval(soundTimer); ringKey = key; if (window.LabSounds) LabSounds.stop();
   const play = () => {
     if (AC && AC.state === 'running') {
       if (window.LabSounds) LabSounds.play(key, 'kitchen', AC);
@@ -698,7 +698,7 @@ function ring(test) {
   };
   play(); soundTimer = setInterval(play, 2600);
 }
-function stopSound() { clearInterval(soundTimer); soundTimer = null; ringKey = null; if (navigator.vibrate) navigator.vibrate(0); }
+function stopSound() { clearInterval(soundTimer); soundTimer = null; ringKey = null; if (window.LabSounds) LabSounds.stop(); if (navigator.vibrate) navigator.vibrate(0); }
 let wake = null;
 async function keepAwake() {
   if (!('wakeLock' in navigator) || wake) return;
@@ -1022,7 +1022,7 @@ document.addEventListener('click', e => {
       break;
     }
     case 'try-sound': { const v = document.getElementById('snd-' + el.dataset.test).value;
-      if (window.LabSounds) LabSounds.play(v, 'kitchen', AC); break; }
+      if (window.LabSounds) { LabSounds.stop(); LabSounds.play(v, 'kitchen', AC); } break; }
     case 'sup-sounds': {
       const sounds = {}; ['MC', 'VM', 'ASH'].forEach(k => { sounds[k] = document.getElementById('snd-' + k).value; });
       dataEdit(f => { f.settings = f.settings || {}; f.settings.sounds = Object.assign({}, f.settings.sounds, sounds); return true; }, 'alarm sounds')
