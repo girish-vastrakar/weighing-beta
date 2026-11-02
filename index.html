@@ -1662,6 +1662,9 @@ function supervisorHTML() {
       <div class="toggle"><button aria-pressed="${!on}" data-act="super" data-val="0">Off</button><button aria-pressed="${on}" data-act="super" data-val="1">On</button></div>
       <p class="sub" style="margin:6px 0 0">${settings().pin ? 'Needs the supervisor PIN. Turns itself off after 30 minutes.' : 'No PIN yet: turning it on asks you to choose one.'}
         ${on && settings().pin ? ' <button class="link" data-act="pin-change">Change PIN</button>' : ''}</p></div>
+    ${on ? `<div class="row" style="display:block"><b>Reusable tags</b>
+      <p class="sub" style="margin:4px 0 8px">Put a laminated TAG card on a sample bag, or take it off after every W3. ${Object.keys((S.data && S.data.tags) || {}).length} tags on bags now. (Also on the home screen while Supervisor is on.)</p>
+      <button class="primary" data-act="tags" style="width:100%">🏷 Open tags</button></div>` : ''}
     ${on ? `<div class="row" style="display:block"><b>Workers (sign-in list)</b>
       <p class="sub" style="margin:4px 0 8px">Each worker taps their own symbol at the start. The name goes with every weight and into the results page.</p>
       ${ws.map((w, i) => `<div style="display:flex;align-items:center;gap:8px;margin:4px 0"><span style="font-size:1.8rem">${w.sym}</span><b style="flex:1">${esc(w.name)}</b>
