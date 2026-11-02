@@ -402,6 +402,7 @@
 <body>
 <button id="sync" type="button" hidden></button>
 <input type="file" id="photofile" accept="image/*" capture="environment" hidden>
+<input type="file" id="soundfile" accept="audio/*,.mp3,.m4a,.wav,.ogg,.aac" hidden>
 <div class="wrap" id="app"><div class="empty">Loading…</div></div>
 
 <script src="lib/sounds.js"></script>
@@ -1596,6 +1597,37 @@ function renderName() {
 }
 
 /* ---------- supervisor setup screen ---------- */
+/* ---------- the supervisor's own alarm music ----------
+   Uploaded to the data repository (sounds/<key>.<ext>) and listed in data.json settings.soundFiles; every phone and
+   the lab timer download it once (lib/sounds.js). Checked first that this phone can play it. */
+const MUSIC_MAX = 8e6;
+async function uploadSound(file) {
+  if (!file || !superOn()) return;
+  if (file.size > MUSIC_MAX) { toast(`Too big (${(file.size / 1e6).toFixed(1)} MB). Use a file under 8 MB, or a shorter clip.`); return; }
+  const base = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim().slice(0, 40) || 'Music';
+  const name = ((prompt('Name for this sound', base) || '').trim() || base).slice(0, 40);
+  try {
+    const dec = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 1, 44100), b = await file.arrayBuffer();
+    await new Promise((ok, no) => { const q = dec.decodeAudioData(b, ok, no); if (q && q.catch) q.catch(() => {}); });
+  } catch (e) { toast('This phone cannot play that file. Try an MP3.'); return; }
+  const key = 'u' + Date.now().toString(36), m = /\.([a-z0-9]{2,4})$/i.exec(file.name), path = `sounds/${key}.${m ? m[1].toLowerCase() : 'mp3'}`;
+  S.soundBusy = true; render();
+  try {
+    await gh('PUT', `${API}/contents/${path}`, { message: `alarm sound: ${name} by ${S.worker || 'supervisor'}`, branch: GH.branch, content: await blobB64(file) });
+    enqueue({ action: 'addSoundFile', file: { key, name, path, by: S.worker || '', at: Date.now() }, worker: S.worker });
+    toast(`♪ ${name} uploaded. Pick it for a test and tap Save alarm sounds.`, true);
+  } catch (e) { toast(e.code === 'OFFLINE' ? 'No internet. Upload again when online.' : 'Upload failed: ' + (e.message || e)); }
+  S.soundBusy = false; render();
+}
+async function removeSound(key) {
+  const u = (settings().soundFiles || []).find(x => x.key === key); if (!u) return;
+  enqueue({ action: 'delSoundFile', key, worker: S.worker });
+  toast(`♪ ${u.name} removed. A test that used it now plays Standard.`, true); render();
+  try {   // the file itself too (best effort; the list above is what counts)
+    const meta = await (await gh('GET', `${API}/contents/${u.path}?ref=${GH.branch}`)).json();
+    await gh('DELETE', `${API}/contents/${u.path}`, { message: `alarm sound removed: ${u.name}`, branch: GH.branch, sha: meta.sha });
+  } catch (e) {}
+}
 function confirmTap(el) {            // second tap within 4 s confirms a risky action
   if (el.dataset.armed) return true;
   el.dataset.armed = '1'; const old = el.textContent; el.textContent = 'Tap again to confirm';
@@ -1655,6 +1687,7 @@ function renderSetup() {
 }
 // Supervisor on this phone (PIN, off by itself after 30 minutes), the workers' sign-in list and the heating times
 function supervisorHTML() {
+  syncSounds();
   const on = superOn(), ws = settings().workers || [], used = new Set(ws.map(w => w.sym));
   const m = settings().mins || {};
   return `<div class="prev" style="margin-top:0">
@@ -1681,7 +1714,14 @@ function supervisorHTML() {
       ${['MC', 'VM', 'ASH'].map(k => `<div class="typerow" style="align-items:center"><b style="flex:0 0 5.5em">${esc(lbl(k))}</b>
         <select class="field" id="snd-${k}">${window.LabSounds ? LabSounds.options((settings().sounds || {})[k] || '') : ''}</select>
         <button class="secondary" style="flex:0 0 56px;margin:0" data-act="try-sound" data-test="${k}" aria-label="Play">▶</button></div>`).join('')}
-      <button class="secondary" data-act="save-sounds" style="width:100%">Save alarm sounds</button></div>
+      <button class="secondary" data-act="save-sounds" style="width:100%">Save alarm sounds</button>
+      <p class="sub" style="margin:12px 0 6px"><b>Your music</b> (♪ in the lists above). Any song or recording from this phone, up to 8 MB.</p>
+      ${(settings().soundFiles || []).map(u => `<div style="display:flex;align-items:center;gap:8px;margin:4px 0">
+        <button class="secondary" style="flex:0 0 56px;margin:0" data-act="try-music" data-key="${esc(u.key)}" aria-label="Play">▶</button>
+        <b style="flex:1;min-width:0;overflow-wrap:anywhere">♪ ${esc(u.name)}</b>
+        <button class="link" data-act="music-rename" data-key="${esc(u.key)}">Rename</button>
+        <button class="link" data-act="music-del" data-key="${esc(u.key)}">Remove</button></div>`).join('') || '<p class="sub" style="margin:0 0 6px">None yet.</p>'}
+      <button class="secondary" data-act="music-add" style="width:100%" ${S.soundBusy ? 'disabled' : ''}>${S.soundBusy ? 'Uploading…' : '＋ Upload music'}</button></div>
     <div class="row" style="display:block"><b>Sample weight range (g)</b>
       <p class="sub" style="margin:4px 0 8px">W2 − W1 must be inside this range, or the worker gets a red screen and weighs again. Leave TM empty to not check it.</p>
       ${['MC', 'VM', 'ASH', 'TM'].map(k => { const r = rangeFor(k) || ['', ''];
@@ -1926,6 +1966,7 @@ document.addEventListener('change', e => {
 });
 
 document.getElementById('photofile').addEventListener('change', e => { takePhoto(e.target.files && e.target.files[0]); });
+document.getElementById('soundfile').addEventListener('change', e => { uploadSound(e.target.files && e.target.files[0]); });
 
 function renderModal() {
   const m = S.modal;
@@ -2252,7 +2293,19 @@ document.addEventListener('click', e => {
     }
     case 'try-sound': { const v = document.getElementById('snd-' + el.dataset.test).value;
       try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
-      if (window.LabSounds) { LabSounds.stop(); LabSounds.play(v, 'beep', AC); } break; }
+      if (window.LabSounds) { syncSounds(); LabSounds.stop(); LabSounds.play(v, 'beep', AC); } break; }
+    case 'try-music': if (window.LabSounds) { syncSounds(); LabSounds.stop();
+      try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+      if (!LabSounds.ready(el.dataset.key)) toast('Downloading the music… tap ▶ again in a moment.', true);
+      LabSounds.play(el.dataset.key, 'beep', AC); } break;
+    case 'music-add': if (superOn() && !S.soundBusy) { const inp = document.getElementById('soundfile'); inp.value = ''; inp.click(); } break;
+    case 'music-del': if (superOn() && confirmTap(el)) removeSound(el.dataset.key); break;
+    case 'music-rename': {
+      if (!superOn()) break;
+      const u = (settings().soundFiles || []).find(x => x.key === el.dataset.key); if (!u) break;
+      const name = ((prompt('New name', u.name) || '').trim()).slice(0, 40); if (!name || name === u.name) break;
+      enqueue({ action: 'addSoundFile', file: Object.assign({}, u, { name }), worker: S.worker }); render(); break;
+    }
     case 'save-sounds': {
       if (!superOn()) break;
       const sounds = {}; ['MC', 'VM', 'ASH'].forEach(k => { sounds[k] = document.getElementById('snd-' + k).value; });

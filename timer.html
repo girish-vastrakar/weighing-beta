@@ -684,8 +684,17 @@ function beep(f, at, d) {
 }
 // the sound the supervisor picked for this test (data.json settings.sounds), else the timer's own kitchen-timer beeps
 const soundFor = k => { const m = S.file && S.file.settings && S.file.settings.sounds; return (m && m[k]) || ''; };
+// the supervisor's uploaded music (data.json settings.soundFiles): downloaded once with this device's key
+function syncSounds() {
+  if (!window.LabSounds) return;
+  LabSounds.setUser((S.file && S.file.settings && S.file.settings.soundFiles) || [], path =>
+    fetch(`https://api.github.com/repos/${GH.owner}/${GH.repo}/contents/${path}?ref=${GH.branch}`,
+      { cache: 'no-store', headers: { Authorization: 'Bearer ' + KEY, Accept: 'application/vnd.github.raw+json' } })
+      .then(r => { if (!r.ok) throw new Error('GitHub ' + r.status); return r.arrayBuffer(); }));
+}
 let ringKey = null;
 function ring(test) {
+  syncSounds();
   const key = soundFor(test) || 'kitchen';
   if (soundTimer && ringKey === key) return;
   clearInterval(soundTimer); ringKey = key; if (window.LabSounds) LabSounds.stop();
@@ -877,6 +886,7 @@ function render() {
   if (!KEY) { renderKey(); return; }
   const t = T();
   document.documentElement.lang = S.lang; document.title = t.title;
+  syncSounds();
   const active = live().some(b => b.state === 'run');
   const soundBlocked = active && (!AC || AC.state !== 'running');
   // keep the half-typed time if the sheet is open
@@ -893,7 +903,7 @@ function render() {
       <div style="display:flex;gap:8px;flex-wrap:wrap">${['MC', 'VM', 'ASH'].map(k => `<label style="flex:1;min-width:90px;font-weight:700">${esc(t.test[k])}<br>
         <input id="smin-${k}" inputmode="numeric" value="${minsFor(k)}" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;font:inherit"> <span class="meta">${esc(t.m)}</span></label>`).join('')}</div>
       <button class="primary" style="width:100%;margin-top:10px" data-act="sup-mins">Save heating times</button></div>
-    <div class="card" style="margin-top:12px"><h2>Alarm sounds (supervisor)</h2><p class="sub">A different sound for each test, so you know which load is ready without looking. The weighing phones play it too. ▶ plays it here.</p>
+    <div class="card" style="margin-top:12px"><h2>Alarm sounds (supervisor)</h2><p class="sub">A different sound for each test, so you know which load is ready without looking. The weighing phones play it too. ▶ plays it here. ♪ = your music: upload, rename or remove it in the weighing app (Setup → Supervisor on → Alarm sounds).</p>
       ${['MC', 'VM', 'ASH'].map(k => `<div style="display:flex;gap:8px;align-items:center;margin:6px 0"><b style="flex:0 0 5.5em">${esc(t.test[k])}</b>
         <select id="snd-${k}" style="flex:1;min-width:0;padding:10px;border:1px solid var(--line);border-radius:10px;font:inherit;background:var(--surface);color:inherit">${window.LabSounds ? LabSounds.options(soundFor(k)) : ''}</select>
         <button class="secondary" style="flex:0 0 52px;padding:10px 0" data-act="try-sound" data-test="${k}" aria-label="Play">▶</button></div>`).join('')}

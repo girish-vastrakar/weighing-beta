@@ -19,7 +19,7 @@
               samples[code].ev = the trail: every weight, fix, undo, reset, pairing and red-screen warning.
               runs[rid] = { rid, place, test, tray, items: [{ h, code, w2 }], start, mins, bal, by, outAt, outBy, early, cancelled }.
               cards[tray] = { test, bal, batch, codes: [code on spot 1, spot 2 …], at, by }   (job cards, labels page)
-              settings = { mins: { MC, VM, ASH }, sounds: { MC, VM, ASH } (alarm sound keys, lib/sounds.js), workers: [{ name, sym }] }   (set by the supervisor)
+              settings = { mins: { MC, VM, ASH }, sounds: { MC, VM, ASH } (alarm sound keys, lib/sounds.js), soundFiles: [{ key, name, path }] (uploaded music), workers: [{ name, sym }] }   (set by the supervisor)
    Loaded before the main script: only declarations here, nothing that runs at load time. */
 
 const CAP = { MC: 12, VM: 18, ASH: 10 };          // dishes per oven load, spots per board (= one furnace load)
@@ -251,6 +251,10 @@ function batchApply(f, j) {
   if (j.action === 'setLimits') { f.settings = f.settings || {}; f.settings.limits = Object.assign({}, f.settings.limits, j.limits); return true; }
   if (j.action === 'setPin') { f.settings = f.settings || {}; f.settings.pin = j.pin; return true; }
   if (j.action === 'setTemp') { f.settings = f.settings || {}; f.settings.temp = Object.assign({}, f.settings.temp, j.temp); return true; }
+  if (j.action === 'addSoundFile') { f.settings = f.settings || {}; f.settings.soundFiles = (f.settings.soundFiles || []).filter(u => u.key !== j.file.key).concat([j.file]); return true; }
+  if (j.action === 'delSoundFile') { f.settings = f.settings || {};
+    f.settings.soundFiles = (f.settings.soundFiles || []).filter(u => u.key !== j.key);
+    const m = f.settings.sounds || {}; Object.keys(m).forEach(k => { if (m[k] === j.key) m[k] = ''; }); return true; }
   if (j.action === 'setSounds') { f.settings = f.settings || {}; f.settings.sounds = Object.assign({}, f.settings.sounds, j.sounds); return true; }
   if (j.action === 'setMins') { f.settings = f.settings || {}; f.settings.mins = Object.assign({}, f.settings.mins, j.mins); return true; }
   if (j.action === 'setWorkers') { f.settings = f.settings || {}; f.settings.workers = j.workers; return true; }
@@ -1049,7 +1053,13 @@ const heatingMine = () => !!S.data && runs().some(r => myRun(r) && ['heat', 'war
 
 // the sound the supervisor picked for this test (Setup or the lab timer), else the phone's own beep beep
 const soundFor = test => { const m = settings().sounds; return (m && m[test]) || ''; };
+// uploaded music (settings.soundFiles): tell lib/sounds.js the list and how to download a file with this phone's key
+function syncSounds() {
+  if (window.LabSounds) LabSounds.setUser(settings().soundFiles || [],
+    path => gh('GET', `${API}/contents/${path}?ref=${GH.branch}`, null, 'application/vnd.github.raw+json').then(r => r.arrayBuffer()));
+}
 function alarmPlay(test) {
+  syncSounds();
   try {
     AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === 'suspended') AC.resume();
     if (window.LabSounds) LabSounds.play(soundFor(test), 'beep', AC);
@@ -1108,6 +1118,7 @@ function closeNote(rid) {
 const NOTED = {};
 function alarmCheck() {
   if (typeof S === 'undefined' || !S.data || !S.worker) return;
+  syncSounds();
   const due = dueRuns();
   if (document.visibilityState === 'visible') {
     if (due.length) alarmShow(due.find(r => r.rid === alarmRid) || due[0]);
