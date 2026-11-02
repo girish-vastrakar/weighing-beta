@@ -129,6 +129,7 @@
 <body>
 <div class="wrap" id="app"><p>Loading…</p></div>
 
+<script src="lib/sounds.js"></script>
 <script>
 /* ====== SETTINGS ====== */
 const GH = { owner: 'girish-vastrakar', repo: 'weighing_data_QR', branch: 'main', data: 'data.json', ts: 'timestamps.json', log: 'timerlog.json' };
@@ -681,15 +682,23 @@ function beep(f, at, d) {
   g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(0.35, at + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, at + d);
   o.start(at); o.stop(at + d + 0.02);
 }
-function ring() {
-  if (soundTimer) return;
+// the sound the supervisor picked for this test (data.json settings.sounds), else the timer's own kitchen-timer beeps
+const soundFor = k => { const m = S.file && S.file.settings && S.file.settings.sounds; return (m && m[k]) || ''; };
+let ringKey = null;
+function ring(test) {
+  const key = soundFor(test) || 'kitchen';
+  if (soundTimer && ringKey === key) return;
+  clearInterval(soundTimer); ringKey = key;
   const play = () => {
-    if (AC && AC.state === 'running') { const t = AC.currentTime; [0, .25, .5].forEach(o => beep(1046, t + o, .18)); beep(1318, t + .8, .35); }
+    if (AC && AC.state === 'running') {
+      if (window.LabSounds) LabSounds.play(key, 'kitchen', AC);
+      else { const t = AC.currentTime; [0, .25, .5].forEach(o => beep(1046, t + o, .18)); beep(1318, t + .8, .35); }
+    }
     if (navigator.vibrate) navigator.vibrate([400, 150, 400, 150, 700]);
   };
-  play(); soundTimer = setInterval(play, 2500);
+  play(); soundTimer = setInterval(play, 2600);
 }
-function stopSound() { clearInterval(soundTimer); soundTimer = null; if (navigator.vibrate) navigator.vibrate(0); }
+function stopSound() { clearInterval(soundTimer); soundTimer = null; ringKey = null; if (navigator.vibrate) navigator.vibrate(0); }
 let wake = null;
 async function keepAwake() {
   if (!('wakeLock' in navigator) || wake) return;
@@ -851,7 +860,7 @@ function sheetHTML() {
 function alarmHTML() {
   const b = live().filter(x => x.state === 'run' && x.end <= Date.now() && !muted(x)).sort((a, c) => a.end - c.end)[0];
   if (!b) { stopSound(); return ''; }
-  ring();
+  ring(b.test);
   const t = T(), sec = SECTIONS.find(s => s.id === b.section), over = Math.floor((Date.now() - b.end) / 60000);
   return `<div class="alarm" role="alertdialog" aria-modal="true"><div class="box">
     <div style="font-size:3rem" aria-hidden="true">🔔</div>
@@ -884,6 +893,11 @@ function render() {
       <div style="display:flex;gap:8px;flex-wrap:wrap">${['MC', 'VM', 'ASH'].map(k => `<label style="flex:1;min-width:90px;font-weight:700">${esc(t.test[k])}<br>
         <input id="smin-${k}" inputmode="numeric" value="${minsFor(k)}" style="width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;font:inherit"> <span class="meta">${esc(t.m)}</span></label>`).join('')}</div>
       <button class="primary" style="width:100%;margin-top:10px" data-act="sup-mins">Save heating times</button></div>
+    <div class="card" style="margin-top:12px"><h2>Alarm sounds (supervisor)</h2><p class="sub">A different sound for each test, so you know which load is ready without looking. The weighing phones play it too. ▶ plays it here.</p>
+      ${['MC', 'VM', 'ASH'].map(k => `<div style="display:flex;gap:8px;align-items:center;margin:6px 0"><b style="flex:0 0 5.5em">${esc(t.test[k])}</b>
+        <select id="snd-${k}" style="flex:1;min-width:0;padding:10px;border:1px solid var(--line);border-radius:10px;font:inherit;background:var(--surface);color:inherit">${window.LabSounds ? LabSounds.options(soundFor(k)) : ''}</select>
+        <button class="secondary" style="flex:0 0 52px;padding:10px 0" data-act="try-sound" data-test="${k}" aria-label="Play">▶</button></div>`).join('')}
+      <button class="primary" style="width:100%;margin-top:10px" data-act="sup-sounds">Save alarm sounds</button></div>
     <p class="meta" style="margin-top:14px">${esc(t.keepOpen)} ${S.loaded ? '· ' + esc(t.updated(hm(S.loaded))) : ''}</p>
     <p class="meta"><a href="./" style="color:inherit">Weighing app</a> · <a href="results.html" style="color:inherit">Results</a></p>
     ${sheetHTML()}${alarmHTML()}`;
@@ -1005,6 +1019,14 @@ document.addEventListener('click', e => {
       const mins = {}; ['MC', 'VM', 'ASH'].forEach(k => { const v = +document.getElementById('smin-' + k).value; if (v > 0) mins[k] = v; });
       dataEdit(f => { f.settings = f.settings || {}; f.settings.mins = Object.assign({}, f.settings.mins, mins); return true; }, 'heating times')
         .then(ok => toast(ok ? 'Heating times saved.' : 'Could not save. Check the internet.'));
+      break;
+    }
+    case 'try-sound': { const v = document.getElementById('snd-' + el.dataset.test).value;
+      if (window.LabSounds) LabSounds.play(v, 'kitchen', AC); break; }
+    case 'sup-sounds': {
+      const sounds = {}; ['MC', 'VM', 'ASH'].forEach(k => { sounds[k] = document.getElementById('snd-' + k).value; });
+      dataEdit(f => { f.settings = f.settings || {}; f.settings.sounds = Object.assign({}, f.settings.sounds, sounds); return true; }, 'alarm sounds')
+        .then(ok => toast(ok ? 'Alarm sounds saved.' : 'Could not save. Check the internet.'));
       break;
     }
     case 'pick': {

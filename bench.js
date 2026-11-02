@@ -19,7 +19,7 @@
               samples[code].ev = the trail: every weight, fix, undo, reset, pairing and red-screen warning.
               runs[rid] = { rid, place, test, tray, items: [{ h, code, w2 }], start, mins, bal, by, outAt, outBy, early, cancelled }.
               cards[tray] = { test, bal, batch, codes: [code on spot 1, spot 2 …], at, by }   (job cards, labels page)
-              settings = { mins: { MC, VM, ASH }, workers: [{ name, sym }] }   (set by the supervisor)
+              settings = { mins: { MC, VM, ASH }, sounds: { MC, VM, ASH } (alarm sound keys, lib/sounds.js), workers: [{ name, sym }] }   (set by the supervisor)
    Loaded before the main script: only declarations here, nothing that runs at load time. */
 
 const CAP = { MC: 12, VM: 18, ASH: 10 };          // dishes per oven load, spots per board (= one furnace load)
@@ -251,6 +251,7 @@ function batchApply(f, j) {
   if (j.action === 'setLimits') { f.settings = f.settings || {}; f.settings.limits = Object.assign({}, f.settings.limits, j.limits); return true; }
   if (j.action === 'setPin') { f.settings = f.settings || {}; f.settings.pin = j.pin; return true; }
   if (j.action === 'setTemp') { f.settings = f.settings || {}; f.settings.temp = Object.assign({}, f.settings.temp, j.temp); return true; }
+  if (j.action === 'setSounds') { f.settings = f.settings || {}; f.settings.sounds = Object.assign({}, f.settings.sounds, j.sounds); return true; }
   if (j.action === 'setMins') { f.settings = f.settings || {}; f.settings.mins = Object.assign({}, f.settings.mins, j.mins); return true; }
   if (j.action === 'setWorkers') { f.settings = f.settings || {}; f.settings.workers = j.workers; return true; }
   if (!/^run/.test(j.action)) return false;
@@ -1046,16 +1047,21 @@ const dueRuns = () => !S.data ? [] : runs().filter(r => myRun(r) && runPhase(r) 
   && !(Date.now() - (ackAll()[r.rid] || 0) < ALARM_AGAIN)).sort((a, b) => runEnd(a) - runEnd(b));
 const heatingMine = () => !!S.data && runs().some(r => myRun(r) && ['heat', 'warm'].includes(runPhase(r)));
 
-function alarmPlay() {
+// the sound the supervisor picked for this test (Setup or the lab timer), else the phone's own beep beep
+const soundFor = test => { const m = settings().sounds; return (m && m[test]) || ''; };
+function alarmPlay(test) {
   try {
     AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === 'suspended') AC.resume();
-    const t = AC.currentTime;
-    [0, .3, .6, 1.2, 1.5, 1.8].forEach((o, i) => {
-      const os = AC.createOscillator(), g = AC.createGain();
-      os.type = 'square'; os.frequency.value = i % 2 ? 1318 : 988; os.connect(g); g.connect(AC.destination);
-      g.gain.setValueAtTime(0.0001, t + o); g.gain.exponentialRampToValueAtTime(0.5, t + o + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + o + 0.25);
-      os.start(t + o); os.stop(t + o + 0.27);
-    });
+    if (window.LabSounds) LabSounds.play(soundFor(test), 'beep', AC);
+    else {
+      const t = AC.currentTime;
+      [0, .3, .6, 1.2, 1.5, 1.8].forEach((o, i) => {
+        const os = AC.createOscillator(), g = AC.createGain();
+        os.type = 'square'; os.frequency.value = i % 2 ? 1318 : 988; os.connect(g); g.connect(AC.destination);
+        g.gain.setValueAtTime(0.0001, t + o); g.gain.exponentialRampToValueAtTime(0.5, t + o + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + o + 0.25);
+        os.start(t + o); os.stop(t + o + 0.27);
+      });
+    }
   } catch (e) { /* no sound on this phone */ }
   if (navigator.vibrate) navigator.vibrate([600, 200, 600, 200, 900]);
 }
@@ -1071,7 +1077,7 @@ function alarmShow(r) {
     <span class="al-door">${ICON.doorOpen}</span>
     <small>${esc(placeName(r.place))} · ${esc(B().timeUp)}</small></button>`;
   el.querySelector('button').onclick = () => alarmStop(r.rid);
-  clearInterval(alarmSnd); alarmPlay(); alarmSnd = setInterval(alarmPlay, 2600);
+  clearInterval(alarmSnd); alarmPlay(r.test); alarmSnd = setInterval(() => alarmPlay(r.test), 2600);
 }
 function alarmHide() {
   clearInterval(alarmSnd); alarmSnd = null; alarmRid = null;
