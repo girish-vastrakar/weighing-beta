@@ -18,7 +18,6 @@
  *   - Batch mode "Each card full" (Girish 2026-11-01 04:20): only Machine is filled; the labels page fills each card
  *     to its own size (Moisture 12, Ash 10, VM 18) from that balance's samples, as before.
  *     Batch mode "Fixed 10": batches of 10 samples (the Ash card), the same 10 on all three cards (Job batch column).
- *   - Job type per balance (Today column E): Both (default), New samples (no retests) or Retest (only retests).
  *   - Samples go round the working balances 10 at a time (W1, W2, W1 …) until each has its Samples today.
  *   - A retest goes to a different balance from the one that weighed the first test ("Retest of" column).
  *   - Samples already on a card, being weighed or done are never moved.
@@ -36,7 +35,6 @@ const JA = {
   plan: 'Plan',
   batchSize: 10,
   modes: ['Each card full', 'Fixed 10'],
-  kinds: ['Both', 'New samples', 'Retest'],
   tests: ['MC', 'ASH', 'VM'],
   balances: [1, 2, 3, 4],
   // extra Name Tags columns (lower-case titles; first match wins). The first title is the one created.
@@ -70,12 +68,6 @@ function setupToday() {
   sh.getRange('G1').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(JA.modes, true).build());
   sh.getRange('B2:B5').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['Yes', 'No'], true).build());
   sh.getRange('D2:D5').setDataValidation(SpreadsheetApp.newDataValidation().requireNumberBetween(0, 200).build());
-  // Job type per balance (column E): New samples only, Retest only, or Both
-  if (!String(sh.getRange('E1').getValue()).trim()) {
-    sh.getRange('E1').setValue('Job type').setFontWeight('bold');
-    sh.getRange('E2:E5').setValues([[JA.kinds[0]], [JA.kinds[0]], [JA.kinds[0]], [JA.kinds[0]]]);
-  }
-  sh.getRange('E2:E5').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(JA.kinds, true).build());
   try {
     const workers = ((readData_().settings || {}).workers || []).map(w => w.name).filter(Boolean);
     if (workers.length) sh.getRange('C2:C5').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(workers, true).setAllowInvalid(true).build());
@@ -114,7 +106,7 @@ function assign_() {
   // Fixed 10: each slot is a batch (same samples on all three cards). Each card full: no batch number.
   const slots = [], most = Math.max.apply(null, work.map(w => Math.ceil(w.samples / JA.batchSize)));
   for (let i = 0; i < most; i++) work.forEach(w => { const room = Math.min(JA.batchSize, w.samples - i * JA.batchSize);
-    if (room > 0) slots.push({ bal: w.bal, batch: fixed ? st.nextBatch(w.bal) + i : '', worker: w.worker + (w.kind === 'both' ? '' : ' (' + (w.kind === 'retest' ? 'retests only' : 'new only') + ')'), kind: w.kind, room: room, codes: [] }); });
+    if (room > 0) slots.push({ bal: w.bal, batch: fixed ? st.nextBatch(w.bal) + i : '', worker: w.worker, room: room, codes: [] }); });
 
   const rows = t.rows.map(r => Object.assign(r, { state: st.status(r.code, r.tests) }));
   const free = r => r.state === 'Waiting';
@@ -134,10 +126,9 @@ function assign_() {
   let left = [];
   sortPriority_(pool).forEach(r => {
     const avoid = r.retest ? st.balanceOf(r.retestOf) : null;
-    const fits = x => x.codes.length < x.room && (x.kind === 'both' || (x.kind === 'retest') === !!r.retest);
-    let s = slots.find(x => fits(x) && x.bal !== avoid);
+    let s = slots.find(x => x.codes.length < x.room && x.bal !== avoid);
     if (!s && avoid) {
-      s = slots.find(fits);
+      s = slots.find(x => x.codes.length < x.room);
       if (s) notes.push(r.code + ' is a retest of ' + r.retestOf + ' but goes to the same balance W' + avoid + ': no other balance has room.');
     }
     if (s) { s.codes.push(r.code); r.out = { bal: s.bal, batch: s.batch }; }
@@ -171,8 +162,7 @@ function readToday_() {
   const per = /batch/i.test(String(v[0][3] || '')) ? JA.batchSize : 1;
   const fixed = /fixed/i.test(String(v[0][6] || ''));
   const work = v.slice(1)
-    .map(r => ({ bal: balOf_(r[0]), on: /^y/i.test(String(r[1]).trim()), worker: String(r[2] || '').trim(), samples: Math.max(0, Math.floor(+r[3] || 0)) * per,
-      kind: /retest/i.test(r[4]) ? 'retest' : /new/i.test(r[4]) ? 'new' : 'both' }))
+    .map(r => ({ bal: balOf_(r[0]), on: /^y/i.test(String(r[1]).trim()), worker: String(r[2] || '').trim(), samples: Math.max(0, Math.floor(+r[3] || 0)) * per }))
     .filter(w => w.bal && w.on && w.samples > 0);
   return { work, fixed };
 }
