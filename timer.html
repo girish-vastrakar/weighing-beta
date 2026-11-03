@@ -358,7 +358,7 @@ const appAll = () => Object.values((S.file && S.file.runs) || {}).filter(r => !r
 // the dish / spot still holds the sample that went in (not reset or moved since)
 const itemLive = (r, it) => { const s = S.file.samples && S.file.samples[it.code];
   return !!s && s.h && s.h[r.test] === it.h && ((s.ha && s.ha[r.test]) || 0) <= r.start; };
-const runLabel = r => !r.items.length ? T().test[r.test] : r.tray ? r.tray.replace(/^ASH /, T().test.ASH + ' ').replace(/^VM /, 'VM ') : T().dishes(r.items.length);
+const runLabel = r => !r.items.length ? T().test[r.test] : r.tray && /^(ASH|VM) W\d-\d+$/.test(r.tray) ? trayLabel(r.tray) : r.tray ? r.tray.replace(/^ASH /, T().test.ASH + ' ').replace(/^VM /, 'VM ') : T().dishes(r.items.length);
 // loaded and timed, with a sample still waiting for W3
 function appBatches() {
   return appAll().filter(r => r.start && r.mins && SECTIONS.some(x => x.id === r.place))
@@ -570,7 +570,10 @@ async function clockCheck(w) {
    With nothing picked, Start saves a plain timer (no samples) there too, so the phones still show the countdown. Ash / VM go in a whole job card (or old board) at a time. */
 // "ASH W1-3-5" → job card "ASH W1-3"; "VM 2A-7" → board "VM 2A"; a dish has no group
 const trayOf = h => /^(ASH|VM)\b/.test(h || '') ? String(h).replace(/\s*-\s*\d+$/, '') : null;
-const trayLabel = tr => { const m = /^(ASH|VM) W(\d)-(\d+)$/.exec(tr || ''); return m ? `${T().test[m[1]]} · W${m[2]} · batch ${m[3]}` : String(tr).replace(/^ASH /, T().test.ASH + ' '); };
+// job card "ASH W1-8": the day's batch number when the card has one (lab-v54), else the serial printed on older cards
+const trayLabel = tr => { const m = /^(ASH|VM) W(\d)-(\d+)$/.exec(tr || ''); if (!m) return String(tr).replace(/^ASH /, T().test.ASH + ' ');
+  const j = S.file && S.file.cards && S.file.cards[tr], day = j && j.dn && j.day ? new Date(j.day + 'T12:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' ' : '';
+  return `${T().test[m[1]]} · W${m[2]} · ${day}batch ${j && j.dn ? j.dn : m[3]}`; };
 const spotNo = h => +(/-(\d+)$/.exec(h || '') || [0, 0])[1];
 // On a dish / spot with W2 saved, no W3, not in a load yet (read from file f)
 function loadable(f, k) {

@@ -9,7 +9,9 @@
              Bag not found: "skip" moves the walk on (spot grey ↷ on the card); W1 · W2 on the card comes back to it.
              The Moisture card is paper only (codes + a box for the dish number): nothing to scan on it.
              Job cards are printed on the labels page from the Google Sheet allotment: one Ash card (10) and
-             one VM card (18) per balance per batch (card "ASH W1-3" = Ash, balance W1, batch 3; spot "ASH W1-3-5").
+             one VM card (18) per balance per batch (card "ASH W1-3" = Ash, balance W1, card serial 3; spot "ASH W1-3-5").
+             Since lab-v54 batches are numbered per day (cards[tray].dn: 1, 2, 3 … every day), and the card and the
+             phones show that number ("#1"); the serial in the QR stays unique and never changes.
    Ovens and furnaces: the workers do nothing there in the app. The supervisor puts a card / dishes in a free
              oven or furnace in the timer app (timer.html) and taps Taken out. The phone shows that status, and rings on that load's balance when time is up.
    Boards "ASH 2A-5" (balance 2, board A, spot 5) and old paper templates ("ASH A-5") still work for samples
@@ -18,7 +20,7 @@
    data.json: samples[code].h[test] = dish / spot, .ha[test] = when, .hb[test] = balance at pairing.
               samples[code].ev = the trail: every weight, fix, undo, reset, pairing and red-screen warning.
               runs[rid] = { rid, place, test, tray, items: [{ h, code, w2 }], start, mins, bal, by, outAt, outBy, early, cancelled }.
-              cards[tray] = { test, bal, batch, codes: [code on spot 1, spot 2 …], at, by }   (job cards, labels page)
+              cards[tray] = { test, bal, batch (serial), day ("2026-11-03"), dn (batch of that day), codes: [code on spot 1, spot 2 …], at, by }   (job cards, labels page)
               settings = { mins: { MC, VM, ASH }, sounds: { MC, VM, ASH } (alarm sound keys, lib/sounds.js), soundFiles: [{ key, name, path }] (uploaded music), workers: [{ name, sym }] }   (set by the supervisor)
    Loaded before the main script: only declarations here, nothing that runs at load time. */
 
@@ -198,7 +200,8 @@ function holderFromText(txt) {
   if (m) {
     const bal = +m[2], batch = +m[3], tray = `${m[1]} W${bal}-${batch}`, pos = m[4] ? +m[4] : 0;
     if (pos > CAP[m[1]]) return null;
-    return { id: pos ? `${tray}-${pos}` : null, test: m[1], bal, letter: '#' + batch, batch, pos: pos || undefined, tray, card: true };
+    const dn = cardDayNo(tray);      // the day's batch number printed big on the card (older cards: the serial)
+    return { id: pos ? `${tray}-${pos}` : null, test: m[1], bal, letter: '#' + (dn || batch), batch, dn, pos: pos || undefined, tray, card: true };
   }
   m = up.match(/^(ASH|VM)\s*[-_ ]?\s*([1-4]?)\s*([A-Z])\s*[-_ ]?\s*0*(\d{1,2})$/);
   if (m && +m[4] >= 1 && +m[4] <= CAP[m[1]]) {
@@ -209,8 +212,14 @@ function holderFromText(txt) {
   if (m) { const bal = m[2] ? +m[2] : 0; return { id: null, test: m[1], bal, letter: m[3], tray: `${m[1]} ${bal || ''}${m[3]}` }; }
   return null;
 }
+// Batch number of the day of a saved job card (0 for cards printed before lab-v54), and its day
+function cardDayNo(tray) { try { const j = S.data && S.data.cards && S.data.cards[tray]; return (j && +j.dn) || 0; } catch (e) { return 0; } }
+function cardDayOf(tray) { try { const j = S.data && S.data.cards && S.data.cards[tray]; return (j && j.dn && j.day) || ''; } catch (e) { return ''; } }
 const hInfo = id => holderFromText(id) || { id, test: 'MC', n: id };
-const trayName = tr => { const i = hInfo(tr); return i.card ? B().boardName(i.test, 'W' + i.bal, ' #' + i.batch) : B().boardName(i.test, i.bal, i.letter); };
+// a card carried over from an earlier day also shows its day ("Ash W1 #1 · 2 Nov"), as today's #1 can be on the bench too
+const dayTag = tr => { const d = cardDayOf(tr), now = new Date(), t = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return d && d !== t ? ' · ' + new Date(d + 'T12:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : ''; };
+const trayName = tr => { const i = hInfo(tr); return i.card ? B().boardName(i.test, 'W' + i.bal, ' ' + i.letter) + dayTag(tr) : B().boardName(i.test, i.bal, i.letter); };
 const hName = id => { const i = hInfo(id); return i.test === 'MC' ? `${B().dish} ${i.n}` : `${trayName(i.tray)} · ${i.pos}`; };
 const hBig = id => { const i = hInfo(id); return String(i.test === 'MC' ? i.n : i.pos); };
 
