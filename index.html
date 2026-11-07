@@ -406,6 +406,7 @@
 <div class="wrap" id="app"><div class="empty">Loading…</div></div>
 
 <script src="lib/sounds.js"></script>
+<script src="lib/retest.js"></script>
 <script src="bench.js"></script>
 <script>
 /* ====== SETTINGS: where the results are stored (a PRIVATE GitHub repository) ====== */
@@ -1008,7 +1009,10 @@ async function setApproval(s, approve) {
       const f = file || { app: 'proximate-approvals', version: 1, limits: limits(), approvals: {} };
       f.approvals = f.approvals || {}; f.limits = limits();
       if (approve) f.approvals[s.code] = { by: S.worker, at: isoLocal(), flags: flagsOf(s).map(k => `${k} ${(LIM_DB[k] ? stOf(s, k).db : stOf(s, k).pct).toFixed(2)} %${LIM_DB[k] ? ' db' : ''}`).join(', '), w: wSnap(s) };
-      else delete f.approvals[s.code];
+      else {
+        if (f.approvals[s.code] && f.approvals[s.code].auto) { f.noAuto = f.noAuto || {}; f.noAuto[s.code] = wSnap(s); }
+        delete f.approvals[s.code];
+      }
       f.updated = isoLocal();
       try { await ghWrite(f, sha, `approvals: ${s.code} ${approve ? 'approved' : 'unapproved'} by ${S.worker}`, GH.apprPath); APPR = f.approvals; store.set('approvals', JSON.stringify(f)); break; }
       catch (e) { if (e.code !== 'CONFLICT' || attempt >= 4) throw e; }
@@ -1019,11 +1023,53 @@ async function setApproval(s, approve) {
 }
 function approvalHTML(s) {
   if (!flagsOf(s).length) return '';
-  const t = T(), a = approvalOf(s);
-  if (a) return `<div class="apprbox ok"><p>${esc(t.apprBy(a.by, fmtDate(a.at)))}</p>
+  const t = T(), a = approvalOf(s), rt = retestOf(s);
+  const rtLine = rt ? `<p class="sub" style="margin:4px 0 8px">${esc((rt.agree ? '✓ Retest agrees: ' : '⚠ Retest does not agree: ') + RETEST.text(rt) + (rt.missing.length ? ` · not retested yet: ${rt.missing.map(k => RETEST.NAME[k]).join(', ')}` : ''))}</p>` : '';
+  if (a) return `<div class="apprbox ok"><p>${esc(a.auto ? `✓ Confirmed by retest · ${fmtDate(a.at)}` : t.apprBy(a.by, fmtDate(a.at)))}</p>${a.auto && a.note ? `<p class="sub" style="margin:4px 0 8px">${esc(a.note)}</p>` : ''}
       <button class="secondary" data-act="unapprove">${esc(t.apprUndo)}</button></div>`;
-  return `<div class="apprbox"><p>${esc(APPR[s.code] ? t.apprStale : t.apprNeed)}</p>
+  return `<div class="apprbox"><p>${esc(APPR[s.code] ? t.apprStale : t.apprNeed)}</p>${rtLine}
       <button class="primary" data-act="approve">${esc(t.apprBtn)}</button></div>`;
+}
+
+/* ---------- confirmed by retest (lib/retest.js) ----------
+   A flagged sample whose retest agrees with the earlier result (within settings.retestGap) is approved by itself:
+   an approval with auto: true goes into approvals.json, so results.json takes it like any approval.
+   Removing such an approval puts the weights in approvals.json noAuto, so it is not approved again for them. */
+function retestCtx() {
+  const byCode = {}; (S.data ? S.data.samples : []).forEach(x => { byCode[RETEST.norm(x.code)] = x; });
+  const names = {}; Object.keys(NAMES).forEach(c => { names[RETEST.norm(c)] = NAMES[c]; });
+  return { find: c => byCode[c] ? byCode[c].code : null, w: c => { const x = byCode[RETEST.norm(c)]; return x ? wSnap(x) : null; },
+           ev: c => { const x = byCode[RETEST.norm(c)]; return x ? x.ev : []; }, names, settings: settings() };
+}
+function retestOf(s, ctx) { return flagsOf(s).length ? RETEST.confirm(s.code, flagsOf(s), ctx || retestCtx()) : null; }
+let autoAt = 0, autoBusy = false;
+async function autoConfirm() {
+  if (!KEY || autoBusy || Date.now() - autoAt < 60000 || !S.data) return;
+  autoAt = Date.now();
+  const ctx = retestCtx(), same = (a, b) => !!a && JSON.stringify(a) === JSON.stringify(b);
+  const todo = S.data.samples.filter(s => s.status === 'Complete' && flagsOf(s).length && !approvalOf(s))
+    .map(s => ({ s, rt: retestOf(s, ctx) })).filter(x => x.rt && x.rt.agree);
+  if (!todo.length) return;
+  autoBusy = true;
+  try {
+    for (let attempt = 0; ; attempt++) {
+      const { file, sha } = await ghRead(GH.apprPath);
+      const f = file || { app: 'proximate-approvals', version: 1, limits: limits(), approvals: {} };
+      f.approvals = f.approvals || {};
+      const now = todo.filter(({ s }) => !same((f.approvals[s.code] || {}).w, wSnap(s)) && !same((f.noAuto || {})[s.code], wSnap(s)));
+      if (!now.length) { APPR = f.approvals; break; }
+      now.forEach(({ s, rt }) => {
+        f.approvals[s.code] = { by: 'Retest agreed (auto)', at: isoLocal(), auto: true,
+          flags: flagsOf(s).map(k => `${k} ${(LIM_DB[k] ? stOf(s, k).db : stOf(s, k).pct).toFixed(2)} %${LIM_DB[k] ? ' db' : ''}`).join(', '),
+          note: RETEST.text(rt), w: wSnap(s), via: 'retest' };
+      });
+      f.updated = isoLocal();
+      try { await ghWrite(f, sha, `approvals: ${now.map(x => x.s.code).join(', ')} confirmed by retest (auto)`, GH.apprPath); APPR = f.approvals; store.set('approvals', JSON.stringify(f)); break; }
+      catch (e) { if (e.code !== 'CONFLICT' || attempt >= 4) throw e; }
+    }
+    if (!S.modal && S.view !== 'setup' && S.view !== 'step') render();
+  } catch (e) { /* approvals are extra; try again on a later refresh */ }
+  autoBusy = false;
 }
 
 /* ---------- photos of out-of-range results (Ash) ----------
@@ -1736,6 +1782,11 @@ function supervisorHTML() {
           <input class="field" id="lmin-${k}" type="number" inputmode="decimal" step="0.1" placeholder="min" value="${isNum(l[0]) ? l[0] : ''}">
           <span>–</span><input class="field" id="lmax-${k}" type="number" inputmode="decimal" step="0.1" placeholder="max" value="${isNum(l[1]) ? l[1] : ''}"></div>`; }).join('')}
       <button class="secondary" data-act="save-limits" style="width:100%">Save result limits</button></div>
+    <div class="row" style="display:block"><b>Retest agreement (± % points)</b>
+      <p class="sub" style="margin:4px 0 8px">When a flagged result is retested and the two results are this close or closer, it is approved by itself as "Confirmed by retest". Compared as weighed: moisture and VM loss %, Ash residue %. The results page uses the same numbers.</p>
+      ${['MC', 'VM', 'ASH'].map(k => `<div class="typerow" style="align-items:center"><b style="flex:0 0 4.5em">${esc(lbl(k))}</b>
+          <span>±</span><input class="field" id="gap-${k}" type="number" inputmode="decimal" step="0.05" min="0" value="${RETEST.gapOf(settings(), k)}"></div>`).join('')}
+      <button class="secondary" data-act="save-gap" style="width:100%">Save retest agreement</button></div>
     <div class="row" style="display:block"><b>Ash photo limit (% as received)</b>
       <p class="sub" style="margin:4px 0 8px">After Ash W3, the worker is asked for a photo of the crucible on the balance when Ash as received is outside this, or looks like a possible error.</p>
       <div class="typerow" style="align-items:center"><b style="flex:0 0 4.5em">${esc(lbl('ASH'))} ar</b>
@@ -2088,6 +2139,7 @@ async function load(showToast) {
     if (!S.modal && S.view !== 'setup' && !(S.view === 'step' && document.activeElement && document.activeElement.id === 'w')) render();
     if (showToast) toast(T().updated, true);
     sync();
+    autoConfirm();
   } catch (err) {
     S.syncErr = err; showSync();
     if (S.data) { if (showToast) toast(err.code === 'KEY' ? T().keyBad : T().cachedList); return; }
@@ -2274,6 +2326,11 @@ document.addEventListener('click', e => {
       const lim = {}, num = id => { const v = document.getElementById(id).value.trim(); return v === '' || !isFinite(+v) ? null : +v; };
       ['MC', 'VM', 'ASH', 'FC'].forEach(k => { lim[k] = [num('lmin-' + k), num('lmax-' + k)]; });
       enqueue({ action: 'setLimits', limits: lim, worker: S.worker }); toast('Saved.', true); render(); break;
+    }
+    case 'save-gap': {
+      const gap = {};
+      ['MC', 'VM', 'ASH'].forEach(k => { const v = document.getElementById('gap-' + k).value.trim(); if (v !== '' && isFinite(+v) && +v >= 0) gap[k] = +v; });
+      enqueue({ action: 'setRetestGap', retestGap: gap, worker: S.worker }); toast('Saved.', true); render(); break;
     }
     case 'save-photolim': {
       const num = id => { const v = document.getElementById(id).value.trim(); return v === '' || !isFinite(+v) ? null : +v; };

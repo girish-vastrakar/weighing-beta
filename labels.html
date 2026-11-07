@@ -232,7 +232,7 @@ const codeNum = c => +((String(c).match(/\d+/) || [0])[0]);
 let TAGSOF = {};
 const setTags = f => { TAGSOF = {}; Object.keys(f.tags || {}).forEach(id => { TAGSOF[f.tags[id].code] = id; }); };
 const tagLine = c => TAGSOF[c] ? `<u>${esc(TAGSOF[c])}</u>` : '';
-// cards[tray].batch is the card's serial (the "ASH W1-8" in its QR, never reused); since lab-v54 a card also has
+// cards[tray].batch is the card's serial (the "ASH W1-8" in its QR, never reused); since lab-v56 a card also has
 // day ("2026-11-03", lab computer's date) and dn (batch number of that day for that balance: 1, 2, 3 … every day).
 // Older cards have no dn and keep showing the batch number printed on them.
 const nextBatch = (f, bal) => 1 + Math.max(0, ...Object.values(f.cards || {}).filter(j => +j.bal === bal).map(j => +j.batch || 0));
@@ -247,7 +247,9 @@ function batchesOf(f, bal) {
   const c = f.cards || {}, by = {};
   Object.keys(c).filter(tr => +c[tr].bal === bal).forEach(tr => (by[c[tr].batch] = by[c[tr].batch] || []).push(tr));
   return Object.keys(by).map(n => { const trs = by[n], js = trs.map(tr => c[tr]);
-    let done = 0, total = 0; js.forEach(j => j.codes.filter(Boolean).forEach(x => { total++; if (hasW3(f, x, j.test)) done++; }));
+    // a code reset on the results page after this card was printed goes on a new card: it no longer counts here
+    const gone = (x, j) => ((f.samples && f.samples[x] && f.samples[x].ev) || []).some(e => e.a === 'reset' && e.k === j.test && (+e.t || 0) > (+j.at || 0));
+    let done = 0, total = 0; js.forEach(j => j.codes.filter(x => x && !gone(x, j)).forEach(x => { total++; if (hasW3(f, x, j.test)) done++; }));
     return { serial: +n, day: cardDay(js[0]), dn: +js[0].dn || 0, trays: trs, at: Math.max(...js.map(j => j.at || 0)), done, total }; })
     .sort((a, b) => b.at - a.at || b.serial - a.serial);
 }
@@ -266,7 +268,9 @@ let FILLED = {};
 // names[c].batch (sheet Batch column, set by "Assign today's jobs"): when given, only that batch's codes.
 const wantsTest = (n, k) => !n.tests || String(n.tests).toUpperCase().split(/[^A-Z]+/).map(t => t === 'MOISTURE' || t === 'MT' ? 'MC' : t).includes(k);
 function allotted(f, names, bal, k, batch) {
-  const on = new Set(Object.values(f.cards || {}).filter(j => j.test === k).flatMap(j => j.codes));
+  // a card from before a results-page reset of that test no longer counts: the code must go on a new card
+  const resetAt = c => Math.max(0, ...((f.samples && f.samples[c] && f.samples[c].ev) || []).filter(e => e.a === 'reset' && e.k === k).map(e => +e.t || 0));
+  const on = new Set(Object.values(f.cards || {}).filter(j => j.test === k).flatMap(j => j.codes.filter(c => c && (+j.at || 0) > resetAt(c))));
   const started = c => { const s = f.samples && f.samples[c], w = s && s.w && s.w[k]; return !!w && w[0] != null; };
   const here = new Set(f.codes || []), floor = Math.max(0, ...(f.codes || []).filter(started).map(codeNum));
   return Object.keys(names).filter(c => String(names[c].machine || '').toUpperCase().split(/[^A-Z0-9]+/).includes('W' + bal))

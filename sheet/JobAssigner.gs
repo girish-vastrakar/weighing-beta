@@ -13,21 +13,23 @@
  *   5. labels page → Fill → Save and print, for each balance: the same 10 samples are on its Moisture, Ash and VM cards.
  *
  * Rules (agreed with Girish 2026-11-01):
- *   - Order: retests first, then URGENT samples, then oldest Date, then code number.
+ *   - Order: retests first, then URGENT samples, then part-done samples (only their remaining tests), then oldest Date.
  *   - One sample = one balance for all its tests.
  *   - Batch mode "Each card full" (Girish 2026-11-01 04:20): only Machine is filled; the labels page fills each card
  *     to its own size (Moisture 12, Ash 10, VM 18) from that balance's samples, as before.
  *     Batch mode "Fixed 10": batches of 10 samples (the Ash card), the same 10 on all three cards (Job batch column).
+ *   - Job type per balance (Today column E): Both (default), New samples (no retests) or Retest (only retests).
  *   - Samples go round the working balances 10 at a time (W1, W2, W1 …) until each has its Samples today.
- *   - A retest goes to a different balance from the one that weighed the first test ("Retest of" column).
+ *   - A retest goes to any balance with room (Girish 2026-11-07: no "different balance" rule, keep it simple).
  *   - Samples already on a card, being weighed or done are never moved.
  *   - Samples the script assigned on an earlier day but never put on a card go back to the pool.
  *   - A Machine typed by hand (no "Assigned on") is kept and gets a batch on that balance.
  *
  * Name Tags columns the script adds at the end of the header row when missing:
- *   Priority (type URGENT to put a sample first) · Tests (blank = all three, or e.g. "VM") · Retest of (the first code)
+ *   Priority (type URGENT to put a sample first) · Tests (blank = all three, or e.g. "VM")
  *   · Job batch · Assigned on · Job status
- * A retest is also recognised from "Retest" or " R<number>" in the name or supplier.
+ * A retest is ONLY a sample reset on the results page (no "Retest of" column, Girish 2026-11-07). Names are not read
+ * ("R1" in a sample name means something else, Girish 2026-11-07).
  */
 
 const JA = {
@@ -35,18 +37,18 @@ const JA = {
   plan: 'Plan',
   batchSize: 10,
   modes: ['Each card full', 'Fixed 10'],
+  kinds: ['Both', 'New samples', 'Retest'],
   tests: ['MC', 'ASH', 'VM'],
   balances: [1, 2, 3, 4],
   // extra Name Tags columns (lower-case titles; first match wins). The first title is the one created.
   cols: {
     urgent:   ['priority'],
     tests:    ['tests'],
-    retestOf: ['retest of', 'original code'],
     batch:    ['job batch'],
     assigned: ['assigned on'],
     status:   ['job status'],
   },
-  titles: { urgent: 'Priority', tests: 'Tests', retestOf: 'Retest of', batch: 'Job batch', assigned: 'Assigned on', status: 'Job status' },
+  titles: { urgent: 'Priority', tests: 'Tests', batch: 'Job batch', assigned: 'Assigned on', status: 'Job status' },
 };
 
 /* ------------------------------ menu actions ------------------------------ */
@@ -68,12 +70,22 @@ function setupToday() {
   sh.getRange('G1').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(JA.modes, true).build());
   sh.getRange('B2:B5').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['Yes', 'No'], true).build());
   sh.getRange('D2:D5').setDataValidation(SpreadsheetApp.newDataValidation().requireNumberBetween(0, 200).build());
+  // Job type per balance (column E): New samples only, Retest only, or Both
+  if (!String(sh.getRange('E1').getValue()).trim()) {
+    sh.getRange('E1').setValue('Job type').setFontWeight('bold');
+    sh.getRange('E2:E5').setValues([[JA.kinds[0]], [JA.kinds[0]], [JA.kinds[0]], [JA.kinds[0]]]);
+  }
+  sh.getRange('E2:E5').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(JA.kinds, true).build());
   try {
     const workers = ((readData_().settings || {}).workers || []).map(w => w.name).filter(Boolean);
     if (workers.length) sh.getRange('C2:C5').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(workers, true).setAllowInvalid(true).build());
   } catch (e) { /* worker list is only a help */ }
+  // Name Tags: add Priority, Tests, Job batch, Assigned on, Job status now (not only at the first Assign)
+  const t = readTags_();
+  t.sheet.getRange(t.headerRow + 2, t.idx.urgent + 1, Math.max(1, t.sheet.getMaxRows() - t.headerRow - 1), 1)
+    .setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['URGENT'], true).setAllowInvalid(true).build());
   ss.setActiveSheet(sh);
-  SpreadsheetApp.getUi().alert('The Today tab is ready. Set who works today and how many samples (and the Batch mode in G1), then use "Assign today\'s jobs".');
+  SpreadsheetApp.getUi().alert('The Today tab is ready, and Name Tags now has the Priority, Tests, Job batch, Assigned on and Job status columns. Set who works today and how many samples (and the Batch mode in G1), then use "Assign today\'s jobs".');
 }
 
 function assignToday() {
@@ -102,33 +114,42 @@ function assign_() {
   // Fixed 10: each slot is a batch (same samples on all three cards). Each card full: no batch number.
   const slots = [], most = Math.max.apply(null, work.map(w => Math.ceil(w.samples / JA.batchSize)));
   for (let i = 0; i < most; i++) work.forEach(w => { const room = Math.min(JA.batchSize, w.samples - i * JA.batchSize);
-    if (room > 0) slots.push({ bal: w.bal, batch: fixed ? st.nextBatch(w.bal) + i : '', worker: w.worker, room: room, codes: [] }); });
+    if (room > 0) slots.push({ bal: w.bal, batch: fixed ? st.nextBatch(w.bal) + i : '', worker: w.worker + (w.kind === 'both' ? '' : ' (' + (w.kind === 'retest' ? 'retests only' : 'new only') + ')'), kind: w.kind, room: room, codes: [] }); });
 
-  const rows = t.rows.map(r => Object.assign(r, { state: st.status(r.code, r.tests) }));
+  // a sample reset on the results page counts as a retest
+  const rows = t.rows.map(r => Object.assign(r, { state: st.status(r.code, r.tests) },
+    st.wasReset(r.code) ? { retest: 1 } : {}));
   const free = r => r.state === 'Waiting';
-  const hand = rows.filter(r => free(r) && r.machine && !r.assigned);                 // typed by hand: keep the balance
-  const pool = rows.filter(r => free(r) && (!r.machine || r.assigned));               // blank, or assigned by the script before
   const notes = [];
-
-  // 1. hand-typed machines: into that balance's batches
-  sortPriority_(hand).forEach(r => {
-    const b = balOf_(r.machine);
-    const s = slots.find(x => x.bal === b && x.codes.length < x.room);
-    if (s) { s.codes.push(r.code); r.out = { bal: b, batch: s.batch }; }
-    else { r.out = { keep: true }; notes.push(r.code + ' stays on ' + r.machine + ' (typed by hand) but ' + (work.some(w => w.bal === b) ? 'its batches are full' : r.machine + ' is not working today') + '.'); }
+  // Job type of each working balance (Today column E): a hand-typed Machine that does not fit it goes back to the pool
+  const kindOf = {}; work.forEach(w => { kindOf[w.bal] = w.kind; });
+  const fitsKind = (k, r) => !k || k === 'both' || (k === 'retest') === !!r.retest;
+  // A part-done sample (e.g. Ash left from yesterday) stays on its balance so all its tests are weighed on one balance
+  rows.forEach(r => { if (free(r)) { r.rest = st.rest(r.code, r.tests); r.partial = r.rest.length ? 1 : 0; } });
+  const hand = [], pool = rows.filter(r => free(r) && (!r.machine || (r.assigned && !r.partial)));   // blank, or assigned by the script before
+  rows.filter(r => free(r) && r.machine && (!r.assigned || r.partial)).forEach(r => {   // typed by hand or part done: keep the balance
+    const k = kindOf[balOf_(r.machine)];
+    if (fitsKind(k, r)) { hand.push(r); return; }
+    notes.push(r.code + ' was on ' + r.machine + (r.partial ? ' (part done)' : ' (typed by hand)') + ' but ' + r.machine + ' does ' + (k === 'retest' ? 'retests only' : 'new samples only') + ' today: moved.');
+    r.assigned = 'moved'; pool.push(r);
   });
 
-  // 2. the pool, by priority; a retest avoids the balance of its first test
+  // Two rounds so priority wins: first retests, URGENT and part-done samples, then the rest.
+  // In each round: 1. hand-typed (or part-done) machines into that balance, 2. the pool into the first balance with room whose Job type fits
+  const high = r => r.retest || r.urgent || r.partial;
   let left = [];
-  sortPriority_(pool).forEach(r => {
-    const avoid = r.retest ? st.balanceOf(r.retestOf) : null;
-    let s = slots.find(x => x.codes.length < x.room && x.bal !== avoid);
-    if (!s && avoid) {
-      s = slots.find(x => x.codes.length < x.room);
-      if (s) notes.push(r.code + ' is a retest of ' + r.retestOf + ' but goes to the same balance W' + avoid + ': no other balance has room.');
-    }
-    if (s) { s.codes.push(r.code); r.out = { bal: s.bal, batch: s.batch }; }
-    else { r.out = { clear: true }; left.push(r.code); }
+  [true, false].forEach(round => {
+    sortPriority_(hand.filter(r => !!high(r) === round)).forEach(r => {
+      const b = balOf_(r.machine);
+      const s = slots.find(x => x.bal === b && x.codes.length < x.room);
+      if (s) { s.codes.push(r.code); r.out = { bal: b, batch: s.batch }; }
+      else { r.out = { keep: true }; notes.push(r.code + ' stays on ' + r.machine + (r.partial ? ' (part done)' : ' (typed by hand)') + ' but ' + (work.some(w => w.bal === b) ? 'its batches are full' : r.machine + ' is not working today') + '.'); }
+    });
+    sortPriority_(pool.filter(r => !!high(r) === round)).forEach(r => {
+      const s = slots.find(x => x.codes.length < x.room && fitsKind(x.kind, r));
+      if (s) { s.codes.push(r.code); r.out = { bal: s.bal, batch: s.batch }; }
+      else { r.out = { clear: true }; left.push(r.code); }
+    });
   });
 
   // 3. write the columns
@@ -142,9 +163,9 @@ function assign_() {
     'Check the "' + JA.plan + '" tab, then use "Send assignment to phones".';
 }
 
-/** Retests first, then URGENT, then oldest date, then code number. */
+/** Retests first, then URGENT, then part-done samples (remaining tests), then oldest date, then code number. */
 function sortPriority_(list) {
-  return list.slice().sort((a, b) => (b.retest - a.retest) || (b.urgent - a.urgent) ||
+  return list.slice().sort((a, b) => (b.retest - a.retest) || (b.urgent - a.urgent) || (b.partial - a.partial) ||
     String(a.date || '9999').localeCompare(String(b.date || '9999')) || codeNum_(a.code) - codeNum_(b.code));
 }
 const codeNum_ = c => +((String(c).match(/\d+/) || [0])[0]);
@@ -158,7 +179,8 @@ function readToday_() {
   const per = /batch/i.test(String(v[0][3] || '')) ? JA.batchSize : 1;
   const fixed = /fixed/i.test(String(v[0][6] || ''));
   const work = v.slice(1)
-    .map(r => ({ bal: balOf_(r[0]), on: /^y/i.test(String(r[1]).trim()), worker: String(r[2] || '').trim(), samples: Math.max(0, Math.floor(+r[3] || 0)) * per }))
+    .map(r => ({ bal: balOf_(r[0]), on: /^y/i.test(String(r[1]).trim()), worker: String(r[2] || '').trim(), samples: Math.max(0, Math.floor(+r[3] || 0)) * per,
+      kind: /retest/i.test(r[4]) ? 'retest' : /new/i.test(r[4]) ? 'new' : 'both' }))
     .filter(w => w.bal && w.on && w.samples > 0);
   return { work, fixed };
 }
@@ -174,11 +196,15 @@ function readData_() {
   return JSON.parse(r.getContentText());
 }
 
-/** What the app knows about each code: status, balance of its first weighing, next batch number per balance. */
+/** What the app knows about each code: status, reset, next batch number per balance. */
 function sampleState_(f) {
   const samples = f.samples || {}, cards = f.cards || {};
+  // Reset on the results page: the test's weights are cleared and it must be weighed again (a card from before the reset no longer counts)
+  const resetAt = {};
+  Object.keys(samples).forEach(c => (samples[c].ev || []).forEach(e => { if (e.a === 'reset' && e.k) resetAt[c + '|' + e.k] = Math.max(resetAt[c + '|' + e.k] || 0, +e.t || 0); }));
   const on = {};
-  Object.keys(cards).forEach(tr => (cards[tr].codes || []).forEach(c => { if (c) on[c + '|' + cards[tr].test] = true; }));
+  Object.keys(cards).forEach(tr => (cards[tr].codes || []).forEach(c => { const key = c + '|' + cards[tr].test;
+    if (c && (+cards[tr].at || 0) > (resetAt[key] || 0)) on[key] = true; }));
   const w = (c, k) => { const s = samples[c]; return (s && s.w && s.w[k]) || []; };
   const started = (c, k) => w(c, k)[0] != null, done = (c, k) => w(c, k)[2] != null;
   // Codes older than the newest started one that never came into this app were weighed in the old app
@@ -188,15 +214,18 @@ function sampleState_(f) {
     status(c, tests) {
       if (!here[c] && codeNum_(c) <= floor) return '';
       const ks = JA.tests.filter(k => !tests || tests.indexOf(k) >= 0);
-      if (ks.every(k => done(c, k))) return 'Done';
-      if (ks.some(k => started(c, k))) return 'Weighing';
-      if (ks.some(k => on[c + '|' + k])) return 'On card';
+      const left = ks.filter(k => !done(c, k));
+      if (!left.length) return 'Done';
+      if (left.some(k => started(c, k))) return 'Weighing';
+      if (left.some(k => on[c + '|' + k])) return 'On card';
       return 'Waiting';
     },
-    balanceOf(c) {
-      const ev = ((samples[c] || {}).ev || []).filter(e => e.a === 'w' && e.b);
-      return ev.length ? +ev[0].b : null;
+    // Tests still to weigh when the sample is part done (e.g. Moisture and VM weighed, Ash left): [] when nothing is done yet
+    rest(c, tests) {
+      const ks = JA.tests.filter(k => !tests || tests.indexOf(k) >= 0), left = ks.filter(k => !done(c, k));
+      return left.length < ks.length && !this.wasReset(c) ? left : [];
     },
+    wasReset(c) { return JA.tests.some(k => resetAt[c + '|' + k] && !done(c, k)); },
     nextBatch(bal) {
       return 1 + Math.max.apply(null, [0].concat(Object.keys(cards).map(k => cards[k]).filter(j => +j.bal === bal).map(j => +j.batch || 0)));
     },
@@ -232,16 +261,13 @@ function readTags_() {
     const g = k => idx[k] === undefined ? '' : String(shown[r][idx[k]] || '').trim();
     const code = g('code').toUpperCase().replace(/\s+/g, '');
     if (!code) continue;
-    const text = g('name') + ' ' + g('supplier');
-    const retestOf = g('retestOf').toUpperCase().replace(/\s+/g, '');
     rows.push({ r, code, machine: g('machine').toUpperCase(), assigned: toISO_(g('assigned'), g('assigned')), date: idx.date === undefined ? '' : toISO_(raw[r][idx.date], g('date')),
-      tests: testsOf(g('tests')), retestOf,
-      retest: retestOf || /retest|\sR\d+\b/i.test(text) ? 1 : 0,
+      tests: testsOf(g('tests')), retest: 0,
       urgent: /urgent/i.test(g('urgent')) ? 1 : 0 });
   }
 
   return {
-    rows,
+    rows, sheet: sh, headerRow: hr, idx,
     write(list, today) {
       const n = shown.length - hr - 1;
       if (n <= 0) return;
@@ -279,7 +305,7 @@ function writePlan_(today, slots, left, notes, rows, fixed) {
   const sh = ss.getSheetByName(JA.plan) || ss.insertSheet(JA.plan);
   sh.clear();
   const byCode = {}; rows.forEach(r => { byCode[r.code] = r; });
-  const tag = c => { const r = byCode[c]; return c + (r.retest ? ' (retest)' : r.urgent ? ' (urgent)' : ''); };
+  const tag = c => { const r = byCode[c]; return c + (r.retest ? ' (retest)' : r.urgent ? ' (urgent)' : r.partial ? ' (rest: ' + r.rest.map(k => ({ MC: 'Moisture', ASH: 'Ash', VM: 'VM' })[k]).join(', ') + ')' : ''); };
   const out = [['Plan for ' + today + (fixed ? ' · Fixed 10: same samples on all three cards' : ' · Each card full: Moisture 12, Ash 10, VM 18'), '', '', '', ''],
     ['Balance', fixed ? 'Batch' : 'Cards', 'Worker', 'Samples', 'Codes']];
   if (fixed) slots.filter(s => s.codes.length).forEach(s => out.push(['W' + s.bal, s.batch, s.worker, s.codes.length, s.codes.map(tag).join(', ')]));

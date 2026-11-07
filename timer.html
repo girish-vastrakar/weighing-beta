@@ -570,7 +570,7 @@ async function clockCheck(w) {
    With nothing picked, Start saves a plain timer (no samples) there too, so the phones still show the countdown. Ash / VM go in a whole job card (or old board) at a time. */
 // "ASH W1-3-5" → job card "ASH W1-3"; "VM 2A-7" → board "VM 2A"; a dish has no group
 const trayOf = h => /^(ASH|VM)\b/.test(h || '') ? String(h).replace(/\s*-\s*\d+$/, '') : null;
-// job card "ASH W1-8": the day's batch number when the card has one (lab-v54), else the serial printed on older cards
+// job card "ASH W1-8": the day's batch number when the card has one (lab-v56), else the serial printed on older cards
 const trayLabel = tr => { const m = /^(ASH|VM) W(\d)-(\d+)$/.exec(tr || ''); if (!m) return String(tr).replace(/^ASH /, T().test.ASH + ' ');
   const j = S.file && S.file.cards && S.file.cards[tr], day = j && j.dn && j.day ? new Date(j.day + 'T12:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) + ' ' : '';
   return `${T().test[m[1]]} · W${m[2]} · ${day}batch ${j && j.dn ? j.dn : m[3]}`; };

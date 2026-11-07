@@ -10,7 +10,7 @@
              The Moisture card is paper only (codes + a box for the dish number): nothing to scan on it.
              Job cards are printed on the labels page from the Google Sheet allotment: one Ash card (10) and
              one VM card (18) per balance per batch (card "ASH W1-3" = Ash, balance W1, card serial 3; spot "ASH W1-3-5").
-             Since lab-v54 batches are numbered per day (cards[tray].dn: 1, 2, 3 … every day), and the card and the
+             Since lab-v56 batches are numbered per day (cards[tray].dn: 1, 2, 3 … every day), and the card and the
              phones show that number ("#1"); the serial in the QR stays unique and never changes.
    Ovens and furnaces: the workers do nothing there in the app. The supervisor puts a card / dishes in a free
              oven or furnace in the timer app (timer.html) and taps Taken out. The phone shows that status, and rings on that load's balance when time is up.
@@ -212,7 +212,7 @@ function holderFromText(txt) {
   if (m) { const bal = m[2] ? +m[2] : 0; return { id: null, test: m[1], bal, letter: m[3], tray: `${m[1]} ${bal || ''}${m[3]}` }; }
   return null;
 }
-// Batch number of the day of a saved job card (0 for cards printed before lab-v54), and its day
+// Batch number of the day of a saved job card (0 for cards printed before lab-v56), and its day
 function cardDayNo(tray) { try { const j = S.data && S.data.cards && S.data.cards[tray]; return (j && +j.dn) || 0; } catch (e) { return 0; } }
 function cardDayOf(tray) { try { const j = S.data && S.data.cards && S.data.cards[tray]; return (j && j.dn && j.day) || ''; } catch (e) { return ''; } }
 const hInfo = id => holderFromText(id) || { id, test: 'MC', n: id };
@@ -257,6 +257,7 @@ function batchApply(f, j) {
   if (j.action === 'warn') { trailAdd(f, j.code, j, { a: 'warn', k: j.key, s: j.step, v: j.value, x: j.kind, b: j.bal || 0 }); return true; }
   if (j.action === 'setRange') { f.settings = f.settings || {}; f.settings.range = Object.assign({}, f.settings.range, j.range); return true; }
   if (j.action === 'setPhotoLim') { f.settings = f.settings || {}; f.settings.photoLim = Object.assign({}, f.settings.photoLim, j.photoLim); return true; }
+  if (j.action === 'setRetestGap') { f.settings = f.settings || {}; f.settings.retestGap = Object.assign({}, f.settings.retestGap, j.retestGap); return true; }
   if (j.action === 'setLimits') { f.settings = f.settings || {}; f.settings.limits = Object.assign({}, f.settings.limits, j.limits); return true; }
   if (j.action === 'setPin') { f.settings = f.settings || {}; f.settings.pin = j.pin; return true; }
   if (j.action === 'setTemp') { f.settings = f.settings || {}; f.settings.temp = Object.assign({}, f.settings.temp, j.temp); return true; }

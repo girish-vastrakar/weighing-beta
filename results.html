@@ -195,6 +195,7 @@
 <div id="tip" hidden></div>
 <dialog id="dlg"></dialog>
 
+<script src="lib/retest.js"></script>
 <script>
 /* Supervisor results page. Reads the lab data straight from girish-vastrakar/weighing_data_QR
    (public, so no key is needed), plus the old app's girish-vastrakar/weighing-data (private: only with a key
@@ -271,6 +272,14 @@ async function load() {
     DATA = true; LOADED = Date.now();
   }
   render();
+  if (DATA && (KEY || OLDKEY)) {
+    const before = JSON.stringify(Object.keys(SD).map(k => SD[k].appr));
+    await autoConfirm();
+    if (JSON.stringify(Object.keys(SD).map(k => SD[k].appr)) !== before) {
+      ROWS = Object.keys(SD).flatMap(src => Object.entries(SD[src].samples).map(([c, s]) => compute(c, s, src)));
+      markOutliers(ROWS); if (!dlg.open) render();
+    }
+  }
 }
 /* ---------- approvals: same approvals.json the weighing app writes (approval holds the weights it covered) ---------- */
 function isoLocal(ms) {
@@ -307,7 +316,10 @@ async function setApproval(r, approve) {
       f.approvals = f.approvals || {}; f.limits = LIM();
       if (approve) f.approvals[r.code] = { by: who, at: isoLocal(), flags: r.flags.join(', '), ...(r.checks.length ? { checks: r.checks.join(', ') } : {}), w: wSnap(r.w),
         ...(note && note.value.trim() ? { note: note.value.trim() } : {}), via: 'results page' };
-      else delete f.approvals[r.code];
+      else {
+        if (f.approvals[r.code] && f.approvals[r.code].auto) { f.noAuto = f.noAuto || {}; f.noAuto[r.code] = wSnap(r.w); }
+        delete f.approvals[r.code];
+      }
       f.updated = isoLocal();
       const body = { message: `approvals: ${r.code} ${approve ? 'approved' : 'unapproved'} by ${who || store.get('supervisor') || 'supervisor'} (results page)`,
         branch: GH.branch, content: b64(JSON.stringify(f, null, 1)), ...(sha ? { sha } : {}) };
@@ -443,12 +455,66 @@ function markOutliers(rows) {
       }
     });
   });
+  // Retest agreement for the flagged and doubtful tests (lib/retest.js)
+  const ctx = {};
+  rows.forEach(r => {
+    const keys = [...new Set([...r.flagTests, ...r.suspect])];
+    if (!keys.length || !SD[r.src]) return;
+    const c = ctx[r.src] || (ctx[r.src] = retestCtx(r.src));
+    r.rt = RETEST.confirm(r.code, keys, c);
+  });
   // A possible error the supervisor approved (approval saved with its checks, weights unchanged) is no longer a retest
   rows.forEach(r => {
     r.checksOk = !!(r.checks.length && r.appr && r.appr.checks);
     if (r.checksOk) { r.suspect = new Set(); if (r.state === 'complete') r.state = 'checked'; }
     else if (r.checks.length && (r.state === 'complete' || r.state === 'running')) r.state = 'check';
   });
+}
+
+function retestCtx(src) {
+  const D = SD[src], byCode = {};
+  Object.keys(D.samples).forEach(c => { byCode[normCode(c)] = c; });
+  return { find: c => byCode[c] || null, w: c => { const x = D.samples[byCode[normCode(c)]]; return x ? x.w : null; },
+           ev: c => { const x = D.samples[byCode[normCode(c)]]; return x ? x.ev : []; }, names: D.names, settings: (SD.qr && SD.qr.settings) || {} };
+}
+/* A flagged or doubtful result whose retest agrees is approved by itself (auto: true), when this device has the key.
+   The weighing app does the same for out-of-limit results; this page also covers possible errors.
+   An auto approval removed by hand is kept in noAuto with its weights, and not given again for them. */
+let autoBusy = false;
+async function autoConfirm() {
+  if (autoBusy) return;
+  for (const src of Object.keys(SD)) {
+    const key = src === 'old' ? OLDKEY : KEY; if (!key) continue;
+    const todo = ROWS.filter(r => r.src === src && r.status === 'complete' && r.rt && r.rt.agree
+      && ((r.flags.length && !r.appr) || (r.checks.length && !r.checksOk && (!r.appr || r.appr.auto))));
+    if (!todo.length) continue;
+    autoBusy = true;
+    const url = `https://api.github.com/repos/${GH.owner}/${SRC[src].repo}/contents/approvals.json`;
+    const H = { Authorization: 'Bearer ' + key, Accept: 'application/vnd.github+json' };
+    const same = (a, b) => !!a && JSON.stringify(a) === JSON.stringify(b);
+    try {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        const g = await fetch(url + '?ref=' + GH.branch, { cache: 'no-store', headers: H });
+        let f = null, sha = null;
+        if (g.ok) { const meta = await g.json(); sha = meta.sha; f = JSON.parse(unb64(meta.content)); }
+        else if (g.status !== 404) break;
+        f = f || { app: 'proximate-approvals', version: 1, approvals: {} };
+        f.approvals = f.approvals || {};
+        const now = todo.filter(r => { const a = f.approvals[r.code];
+          return !same((f.noAuto || {})[r.code], wSnap(r.w)) && !(same(a && a.w, wSnap(r.w)) && (!r.checks.length || a.checks || !a.auto)); });
+        if (!now.length) { SD[src].appr = f.approvals; break; }
+        now.forEach(r => { f.approvals[r.code] = { by: 'Retest agreed (auto)', at: isoLocal(), auto: true, flags: r.flags.join(', '),
+          ...(r.checks.length ? { checks: r.checks.join(', ') } : {}), note: RETEST.text(r.rt), w: wSnap(r.w), via: 'retest' }; });
+        f.updated = isoLocal();
+        const put = await fetch(url, { method: 'PUT', headers: H, body: JSON.stringify({ branch: GH.branch,
+          message: `approvals: ${now.map(r => r.code).join(', ')} confirmed by retest (auto, results page)`,
+          content: b64(JSON.stringify(f, null, 1)), ...(sha ? { sha } : {}) }) });
+        if (put.ok) { SD[src].appr = f.approvals; break; }
+        if (put.status !== 409 && put.status !== 422) break;
+      }
+    } catch (e) { /* tried again on the next refresh */ }
+    autoBusy = false;
+  }
 }
 
 /* ---------- helpers ---------- */
@@ -484,7 +550,8 @@ const STATE = {
   running: { cls: 'p-run', label: '◔ In progress' },
   none: { cls: 'p-none', label: '○ Not started' },
 };
-const pill = r => `<span class="pill ${STATE[r.state].cls}">${STATE[r.state].label}</span>`;
+const stLabel = r => r.appr && r.appr.auto && ['approved', 'checked'].includes(r.state) ? '✓ Confirmed by retest' : STATE[r.state].label;
+const pill = r => `<span class="pill ${STATE[r.state].cls}">${stLabel(r)}</span>`;
 
 function filtered() {
   const [a, b] = rangeBounds(), q = V.q.trim().toLowerCase();
@@ -994,6 +1061,7 @@ function detail(id) {
     ${r.flags.length ? `<div class="note ${r.appr ? 'warn' : 'bad'}">⚠ ${esc(r.flags.join(' · '))}${r.appr ? ` — approved by ${esc(r.appr.by || '?')} ${r.appr.at ? when(Date.parse(r.appr.at)) : ''}` : ` — retest ${[...r.flagTests].map(k => TNAME[k]).join(', ')} or approve below`}${r.stale ? ' (earlier approval is outdated: weights changed)' : ''}</div>` : ''}
     ${r.checks.length ? `<div class="note warn">${r.checksOk ? `? Possible error: ${esc(r.checks.join(' · '))} — approved by ${esc(r.appr.by || '?')} ${r.appr.at ? when(Date.parse(r.appr.at)) : ''}`
       : `Possible error, retest ${[...r.suspect].map(k => TNAME[k]).join(', ')} or approve below: ${esc(r.checks.join(' · '))}`}${r.stale ? ' (earlier approval is outdated: weights changed)' : ''}</div>` : ''}
+    ${r.rt ? `<div class="note ${r.rt.agree ? 'ok' : 'bad'}">${r.rt.agree ? '✓ Retest agrees' : '⚠ Retest does not agree, test again or decide'}: ${esc(RETEST.text(r.rt))}${r.rt.missing.length ? ` · not retested yet: ${r.rt.missing.map(k => TNAME[k]).join(', ')}` : ''}</div>` : ''}
     ${!r.flags.length && !r.checks.length && r.status === 'complete' ? '<div class="note ok">✓ All tests done and within limits</div>' : ''}
     <div class="res">
       ${res('Moisture (ar)', r.mc, isHi(r, 'MC'))}
@@ -1279,7 +1347,7 @@ async function saveWeights(code, tests, snap, nw, via, isNew) {
 function csv(list) {
   const head = ['App', 'Code', 'Sample name', 'Supplier', 'Sample date', 'Machine', 'Status', 'Waiting for', 'Moisture % (ar)', 'Total moisture %',
     'VM loss %', 'VM % (ar)', 'VM % (db)', 'Ash % (ar)', 'Ash % (db)', 'FC % (ar)', 'FC % (db)', 'Flags', 'Possible errors', 'Retest', 'Approved by', 'Approved at', 'Last weighed', 'Weighed by'];
-  const rows = list.map(r => [SRC[r.src].label, r.code, r.name, r.supplier, r.date, r.machine, STATE[r.state].label.replace(/^\S+ /, ''), r.pending.map(k => TNAME[k]).join(' '),
+  const rows = list.map(r => [SRC[r.src].label, r.code, r.name, r.supplier, r.date, r.machine, stLabel(r).replace(/^\S+ /, ''), r.pending.map(k => TNAME[k]).join(' '),
     r.mc, r.tm, r.vml, r.vmAr, r.vmDb, r.ashAr, r.ashDb, r.fcAr, r.fcDb, r.flags.join('; '), r.checks.join('; '), [...new Set([...(r.state === 'flag' ? r.flagTests : []), ...r.suspect])].map(k => TNAME[k]).join(' '),
     r.appr ? r.appr.by : '', r.appr ? r.appr.at : '', r.last ? new Date(r.last).toLocaleString('en-GB') : '', r.who.join(' ')]);
   const q = v => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
