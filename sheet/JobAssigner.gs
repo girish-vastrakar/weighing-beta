@@ -26,9 +26,9 @@
  *   - A Machine typed by hand (no "Assigned on") is kept and gets a batch on that balance.
  *
  * Name Tags columns the script adds at the end of the header row when missing:
- *   Priority (type URGENT to put a sample first) · Tests (blank = all three, or e.g. "VM") · Retest of (the first code)
+ *   Priority (type URGENT to put a sample first) · Tests (blank = all three, or e.g. "VM")
  *   · Job batch · Assigned on · Job status
- * A retest is ONLY a sample reset on the results page, or a row with a code in "Retest of". Names are not read
+ * A retest is ONLY a sample reset on the results page (no "Retest of" column, Girish 2026-11-07). Names are not read
  * ("R1" in a sample name means something else, Girish 2026-11-07).
  */
 
@@ -44,12 +44,11 @@ const JA = {
   cols: {
     urgent:   ['priority'],
     tests:    ['tests'],
-    retestOf: ['retest of', 'original code'],
     batch:    ['job batch'],
     assigned: ['assigned on'],
     status:   ['job status'],
   },
-  titles: { urgent: 'Priority', tests: 'Tests', retestOf: 'Retest of', batch: 'Job batch', assigned: 'Assigned on', status: 'Job status' },
+  titles: { urgent: 'Priority', tests: 'Tests', batch: 'Job batch', assigned: 'Assigned on', status: 'Job status' },
 };
 
 /* ------------------------------ menu actions ------------------------------ */
@@ -81,12 +80,12 @@ function setupToday() {
     const workers = ((readData_().settings || {}).workers || []).map(w => w.name).filter(Boolean);
     if (workers.length) sh.getRange('C2:C5').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(workers, true).setAllowInvalid(true).build());
   } catch (e) { /* worker list is only a help */ }
-  // Name Tags: add Priority, Tests, Retest of, Job batch, Assigned on, Job status now (not only at the first Assign)
+  // Name Tags: add Priority, Tests, Job batch, Assigned on, Job status now (not only at the first Assign)
   const t = readTags_();
   t.sheet.getRange(t.headerRow + 2, t.idx.urgent + 1, Math.max(1, t.sheet.getMaxRows() - t.headerRow - 1), 1)
     .setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(['URGENT'], true).setAllowInvalid(true).build());
   ss.setActiveSheet(sh);
-  SpreadsheetApp.getUi().alert('The Today tab is ready, and Name Tags now has the Priority, Tests, Retest of, Job batch, Assigned on and Job status columns. Set who works today and how many samples (and the Batch mode in G1), then use "Assign today\'s jobs".');
+  SpreadsheetApp.getUi().alert('The Today tab is ready, and Name Tags now has the Priority, Tests, Job batch, Assigned on and Job status columns. Set who works today and how many samples (and the Batch mode in G1), then use "Assign today\'s jobs".');
 }
 
 function assignToday() {
@@ -254,10 +253,8 @@ function readTags_() {
     const g = k => idx[k] === undefined ? '' : String(shown[r][idx[k]] || '').trim();
     const code = g('code').toUpperCase().replace(/\s+/g, '');
     if (!code) continue;
-    const retestOf = g('retestOf').toUpperCase().replace(/\s+/g, '');
     rows.push({ r, code, machine: g('machine').toUpperCase(), assigned: toISO_(g('assigned'), g('assigned')), date: idx.date === undefined ? '' : toISO_(raw[r][idx.date], g('date')),
-      tests: testsOf(g('tests')), retestOf,
-      retest: retestOf ? 1 : 0,
+      tests: testsOf(g('tests')), retest: 0,
       urgent: /urgent/i.test(g('urgent')) ? 1 : 0 });
   }
 
