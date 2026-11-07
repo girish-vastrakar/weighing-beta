@@ -20,7 +20,7 @@
  *     Batch mode "Fixed 10": batches of 10 samples (the Ash card), the same 10 on all three cards (Job batch column).
  *   - Job type per balance (Today column E): Both (default), New samples (no retests) or Retest (only retests).
  *   - Samples go round the working balances 10 at a time (W1, W2, W1 …) until each has its Samples today.
- *   - A retest goes to a different balance from the one that weighed the first test ("Retest of" column).
+ *   - A retest goes to any balance with room (Girish 2026-11-07: no "different balance" rule, keep it simple).
  *   - Samples already on a card, being weighed or done are never moved.
  *   - Samples the script assigned on an earlier day but never put on a card go back to the pool.
  *   - A Machine typed by hand (no "Assigned on") is kept and gets a batch on that balance.
@@ -116,9 +116,9 @@ function assign_() {
   for (let i = 0; i < most; i++) work.forEach(w => { const room = Math.min(JA.batchSize, w.samples - i * JA.batchSize);
     if (room > 0) slots.push({ bal: w.bal, batch: fixed ? st.nextBatch(w.bal) + i : '', worker: w.worker + (w.kind === 'both' ? '' : ' (' + (w.kind === 'retest' ? 'retests only' : 'new only') + ')'), kind: w.kind, room: room, codes: [] }); });
 
-  // a sample reset on the results page counts as a retest (it avoids the balance that weighed it)
+  // a sample reset on the results page counts as a retest
   const rows = t.rows.map(r => Object.assign(r, { state: st.status(r.code, r.tests) },
-    st.wasReset(r.code) ? { retest: 1, retestOf: r.retestOf || r.code } : {}));
+    st.wasReset(r.code) ? { retest: 1 } : {}));
   const free = r => r.state === 'Waiting';
   const notes = [];
   // Job type of each working balance (Today column E): a hand-typed Machine that does not fit it goes back to the pool
@@ -140,16 +140,10 @@ function assign_() {
     else { r.out = { keep: true }; notes.push(r.code + ' stays on ' + r.machine + ' (typed by hand) but ' + (work.some(w => w.bal === b) ? 'its batches are full' : r.machine + ' is not working today') + '.'); }
   });
 
-  // 2. the pool, by priority; a retest avoids the balance of its first test
+  // 2. the pool, by priority, into the first balance with room whose Job type fits
   let left = [];
   sortPriority_(pool).forEach(r => {
-    const avoid = r.retest ? st.balanceOf(r.retestOf) : null;
-    const fits = x => x.codes.length < x.room && fitsKind(x.kind, r);
-    let s = slots.find(x => fits(x) && x.bal !== avoid);
-    if (!s && avoid) {
-      s = slots.find(fits);
-      if (s) notes.push(r.code + ' is a retest of ' + r.retestOf + ' but goes to the same balance W' + avoid + ': no other balance has room.');
-    }
+    const s = slots.find(x => x.codes.length < x.room && fitsKind(x.kind, r));
     if (s) { s.codes.push(r.code); r.out = { bal: s.bal, batch: s.batch }; }
     else { r.out = { clear: true }; left.push(r.code); }
   });
@@ -198,7 +192,7 @@ function readData_() {
   return JSON.parse(r.getContentText());
 }
 
-/** What the app knows about each code: status, balance of its first weighing, next batch number per balance. */
+/** What the app knows about each code: status, reset, next batch number per balance. */
 function sampleState_(f) {
   const samples = f.samples || {}, cards = f.cards || {};
   // Reset on the results page: the test's weights are cleared and it must be weighed again (a card from before the reset no longer counts)
@@ -224,10 +218,6 @@ function sampleState_(f) {
       return 'Waiting';
     },
     wasReset(c) { return JA.tests.some(k => resetAt[c + '|' + k] && !done(c, k)); },
-    balanceOf(c) {
-      const ev = ((samples[c] || {}).ev || []).filter(e => e.a === 'w' && e.b);
-      return ev.length ? +ev[0].b : null;
-    },
     nextBatch(bal) {
       return 1 + Math.max.apply(null, [0].concat(Object.keys(cards).map(k => cards[k]).filter(j => +j.bal === bal).map(j => +j.batch || 0)));
     },
