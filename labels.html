@@ -66,6 +66,10 @@
   #jobmsg { font-weight: 700; }
   .oldrow { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid #e3e6ea; flex-wrap: wrap; }
   .oldrow b { min-width: 70px; } .oldrow span { flex: 1; min-width: 180px; }
+  .oldday { margin: 12px 0 2px; font-weight: 700; color: #1d2733; } .oldday small { font-weight: 400; color: #5b6673; }
+  details.oldday > summary { cursor: pointer; } details.oldday > .oldrow:first-of-type { margin-top: 4px; }
+  .oldrow em { font-style: normal; font-size: .85em; padding: 1px 7px; border-radius: 999px; background: #fff3d6; color: #8a5a00; }
+  .oldrow em.ok { background: #e3f4e8; color: #1f7a3a; }
   .bd.job .bh { gap: 6mm; }
   .bd.job .qr { text-align: center; } .bd.job .qr svg { width: 46mm; height: 46mm; display: block; } .bd.job .qr b { font-size: 5mm; }
   .bd.job .cell { flex-direction: column; }
@@ -109,7 +113,7 @@
       <p class="sub">One Moisture card (12), one Ash card (10) and one VM card (18) per balance per batch: print all three before the batch starts. The Moisture card is paper only (no QR): the worker writes the dish number used next to each code. The codes come from the Google Sheet allotment (Machine column). The worker scans the card's QR on the weighing phone, weighs W1 and W2 spot by spot, and scans it again for W3 when the crucibles are back.</p>
       <div class="opts">
         <div><label for="jbal">Weighing machine</label><select id="jbal"><option value="1">W1</option><option value="2">W2</option><option value="3">W3</option><option value="4">W4</option></select></div>
-        <div><label for="jbatch">Batch</label><input type="text" id="jbatch" placeholder="next"></div>
+        <div><label for="jbatch">Today's batch</label><input type="text" id="jbatch" placeholder="next"></div>
       </div>
       <div class="opts">
         <div><label for="jmc">Moisture card codes (max 12)</label><input type="text" id="jmc" placeholder="T740, T741 …"></div>
@@ -119,7 +123,7 @@
       <div class="row" style="margin-bottom:6px"><button id="jnext">Fill from the Google Sheet</button><button class="primary" id="jprint">Save and print job cards</button></div>
       <div class="sub" id="jobmsg"></div>
       <h3 style="margin:14px 0 6px">Reprint a saved card</h3>
-      <p class="sub" style="margin:0 0 6px">The cards already saved for this weighing machine. Reprint prints the same card again: nothing changes on the phones.</p>
+      <p class="sub" style="margin:0 0 6px">The cards already saved for this weighing machine, by day: batch numbers start again at 1 every day. Batches not finished yet (W3 still to do) carry over to today. Reprint prints the same card again: nothing changes on the phones.</p>
       <div id="jold" class="sub">…</div>
     </div>
     <div class="jobbox">
@@ -228,7 +232,35 @@ const codeNum = c => +((String(c).match(/\d+/) || [0])[0]);
 let TAGSOF = {};
 const setTags = f => { TAGSOF = {}; Object.keys(f.tags || {}).forEach(id => { TAGSOF[f.tags[id].code] = id; }); };
 const tagLine = c => TAGSOF[c] ? `<u>${esc(TAGSOF[c])}</u>` : '';
+// cards[tray].batch is the card's serial (the "ASH W1-8" in its QR, never reused); since lab-v56 a card also has
+// day ("2026-11-03", lab computer's date) and dn (batch number of that day for that balance: 1, 2, 3 … every day).
+// Older cards have no dn and keep showing the batch number printed on them.
 const nextBatch = (f, bal) => 1 + Math.max(0, ...Object.values(f.cards || {}).filter(j => +j.bal === bal).map(j => +j.batch || 0));
+const dayKey = t => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+const todayKey = () => dayKey(Date.now());
+const dayName = k => new Date(k + 'T12:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+const cardDay = j => j.day || dayKey(j.at || 0);
+// W3 saved for this code on this test
+const hasW3 = (f, c, k) => { const w = f.samples && f.samples[c] && f.samples[c].w && f.samples[c].w[k]; return !!w && w[2] != null; };
+// This balance's batches: { serial, day, dn, trays, at, done, total }, newest first
+function batchesOf(f, bal) {
+  const c = f.cards || {}, by = {};
+  Object.keys(c).filter(tr => +c[tr].bal === bal).forEach(tr => (by[c[tr].batch] = by[c[tr].batch] || []).push(tr));
+  return Object.keys(by).map(n => { const trs = by[n], js = trs.map(tr => c[tr]);
+    // a code reset on the results page after this card was printed goes on a new card: it no longer counts here
+    const gone = (x, j) => ((f.samples && f.samples[x] && f.samples[x].ev) || []).some(e => e.a === 'reset' && e.k === j.test && (+e.t || 0) > (+j.at || 0));
+    let done = 0, total = 0; js.forEach(j => j.codes.filter(x => x && !gone(x, j)).forEach(x => { total++; if (hasW3(f, x, j.test)) done++; }));
+    return { serial: +n, day: cardDay(js[0]), dn: +js[0].dn || 0, trays: trs, at: Math.max(...js.map(j => j.at || 0)), done, total }; })
+    .sort((a, b) => b.at - a.at || b.serial - a.serial);
+}
+// Next batch number of the day: older cards of that day (no dn) count as one each
+function nextDayNo(f, bal, day) {
+  const bs = batchesOf(f, bal).filter(b => b.day === day);
+  return 1 + Math.max(bs.filter(b => !b.dn).length, ...bs.map(b => b.dn));
+}
+const batchName = b => `${dayName(b.day)} · Batch ${b.dn || b.serial}`;
+// Serial the sheet's "Fixed 10" batch gave on the last Fill (that sheet number is the card serial), per balance
+let FILLED = {};
 // Codes the Google Sheet gives this machine, not on a card yet for this test and not weighed yet.
 // Older codes that never came into this app were weighed in the old app: only codes after the newest one
 // started here count, plus codes already in this app's list.
@@ -258,7 +290,8 @@ async function fillNext() {
     const names = n.names || {};
     // Sheet batch (same samples on all three cards) when the sheet assigned one; its number unless already used
     const sb = sheetBatch(f, names, bal), used = sb != null && Object.values(f.cards || {}).some(j => +j.bal === bal && +j.batch === sb);
-    const num = sb != null && !used ? sb : nextBatch(f, bal);
+    FILLED[bal] = sb != null && !used ? sb : null;
+    const num = nextDayNo(f, bal, todayKey());
     document.getElementById('jbatch').value = num;
     document.getElementById('jmc').value = allotted(f, names, bal, 'MC', sb).slice(0, CAP.MC).join(', ');
     document.getElementById('jash').value = allotted(f, names, bal, 'ASH', sb).slice(0, CAP.ASH).join(', ');
@@ -266,7 +299,7 @@ async function fillNext() {
     const got = ['jmc', 'jash', 'jvm'].some(id => document.getElementById(id).value);
     // nothing new: say why, so it does not look broken
     const inSheet = Object.keys(names).filter(c => String(names[c].machine || '').toUpperCase().split(/[^A-Z0-9]+/).includes('W' + bal)).length;
-    jmsg(got ? `W${bal} batch ${num}${sb != null ? ' (from the sheet assignment)' : ''}: check the codes, then Save and print.`
+    jmsg(got ? `W${bal} · ${dayName(todayKey())} · batch ${num}${sb != null ? ' (sheet batch ' + sb + ')' : ''}: check the codes, then Save and print.`
       : `No new codes for W${bal} in the Google Sheet: its ${inSheet} W${bal} codes are all on a saved card or weighed already (here or in the old app). Put new codes on W${bal} in the sheet (Machine column), wait for the sheet to sync, then Fill again. To print an old card again, use Reprint below.`);
   } catch (e) { jmsg('⚠ ' + (e.message === 'Failed to fetch' ? 'No internet.' : e.message) + ' Open the weighing app setup link on this computer once so it has the lab key.'); }
 }
@@ -274,18 +307,20 @@ async function fillNext() {
 // Moisture: paper only, no QR; a box per code for the dish number the worker used, and In / Out ticks
 function jobCard(tray, j) {
   const k = j.test, rows = Math.ceil(CAP[k] / COLS[k]), when = new Date(j.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  // the big number is the day's batch number; older cards keep the number printed on them
+  const no = j.dn || j.batch, bname = j.dn ? `${dayName(cardDay(j))} batch ${j.dn}` : `batch ${j.batch}`;
   if (k === 'MC') {
     const cells = Array.from({ length: CAP.MC }, (x, i) => { const c = j.codes[i];
       return `<div class="mcell${c ? '' : ' empty'}"><i>${i + 1}</i><b>${c ? esc(c) : '—'}</b>${c ? tagLine(c) : ''}${c ? '<span>Dish <em class="dish"></em></span><span>In <em class="tick"></em> Out <em class="tick"></em></span>' : ''}</div>`; }).join('');
-    return `<div class="bd job mc"><div class="bh"><div class="big"><b>W${esc(j.bal)}</b><i>#${esc(j.batch)}</i></div>
-      <div class="bt">${esc(TNAME.MC)}<small>Balance W${esc(j.bal)} · batch ${esc(j.batch)}<br>${when} · ${j.codes.filter(Boolean).length} samples</small></div></div>
+    return `<div class="bd job mc"><div class="bh"><div class="big"><b>W${esc(j.bal)}</b><i>#${esc(no)}</i></div>
+      <div class="bt">${esc(TNAME.MC)}<small>Balance W${esc(j.bal)} · ${esc(bname)}<br>${when} · ${j.codes.filter(Boolean).length} samples</small></div></div>
       <div class="cells" style="grid-template-columns:repeat(${COLS.MC},1fr);grid-template-rows:repeat(${rows},auto)">${cells}</div></div>`;
   }
   const cells = Array.from({ length: CAP[k] }, (x, i) => { const c = j.codes[i];
     return `<div class="cell"><div class="ring${c ? '' : ' empty'}"><i>${i + 1}</i>${c ? esc(c) : ''}${c ? tagLine(c) : ''}</div></div>`; }).join('');
   return `<div class="bd job ${k.toLowerCase()}"><div class="bh"><div class="qr">${svg(tray)}<b>${esc(tray)}</b></div>
-    <div class="big"><b>W${esc(j.bal)}</b><i>#${esc(j.batch)}</i></div>
-    <div class="bt">${esc(TNAME[k])}<small>Balance W${esc(j.bal)} · batch ${esc(j.batch)}<br>${when} · ${j.codes.filter(Boolean).length} samples</small></div></div>
+    <div class="big"><b>W${esc(j.bal)}</b><i>#${esc(no)}</i></div>
+    <div class="bt">${esc(TNAME[k])}<small>Balance W${esc(j.bal)} · ${esc(bname)}<br>${when} · ${j.codes.filter(Boolean).length} samples</small></div></div>
     <div class="cells" style="grid-template-columns:repeat(${COLS[k]},1fr);grid-template-rows:repeat(${rows},auto)">${cells}</div></div>`;
 }
 async function printJobs() {
@@ -298,11 +333,15 @@ async function printJobs() {
   try {
     for (let attempt = 0; ; attempt++) {
       const { f, sha } = await readJSON(GH.path); setTags(f);
-      const batch = +document.getElementById('jbatch').value || nextBatch(f, bal);
+      // today's batch number (typed or next); the same number again today replaces that batch's cards
+      const day = todayKey(), dn = +document.getElementById('jbatch').value || nextDayNo(f, bal, day);
+      const same = batchesOf(f, bal).find(b => b.day === day && b.dn === dn);
+      const free = n => n && !Object.values(f.cards || {}).some(j => +j.bal === bal && +j.batch === n);
+      const batch = same ? same.serial : free(FILLED[bal]) ? FILLED[bal] : nextBatch(f, bal);
       f.cards = f.cards || {}; made = {};
       ['MC', 'ASH', 'VM'].forEach(k => { if (!want[k].length) return;
         const tray = `${k} W${bal}-${batch}`;
-        made[tray] = f.cards[tray] = { test: k, bal, batch, codes: want[k], at: Date.now(), by: 'labels page' }; });
+        made[tray] = f.cards[tray] = { test: k, bal, batch, day, dn, codes: want[k], at: Date.now(), by: 'labels page' }; });
       const put = await fetch(api(GH.path), { method: 'PUT', headers: hdr(), body: JSON.stringify({ message: `job cards: ${Object.keys(made).join(', ')}`, branch: GH.branch, sha, content: b64(JSON.stringify(f, null, 1)) }) });
       if (put.ok) break;
       if ((put.status !== 409 && put.status !== 422) || attempt >= 4) { note = 'GitHub error ' + put.status; break; }
@@ -311,26 +350,38 @@ async function printJobs() {
   btn.disabled = false;
   if (note) { jmsg('⚠ Not saved (' + note + '). Nothing printed: the phones would not know the card.'); return; }
   document.getElementById('jobcards').innerHTML = Object.keys(made).map(tr => jobCard(tr, made[tr])).join('');
-  jmsg(`✓ ${Object.keys(made).join(', ')} saved: the phones know them on their next sync.`);
+  const m0 = Object.values(made)[0];
+  jmsg(`✓ W${bal} · ${dayName(m0.day)} · batch ${m0.dn} saved (${Object.keys(made).join(', ')}): the phones know them on their next sync.`);
+  FILLED[bal] = null;
   listOld();
   document.body.classList.add('onlyjobs'); window.print();
 }
-// Saved cards of this balance, newest batch first, each batch with a Reprint button (prints, saves nothing)
+// Saved cards of this balance by day, today on top: today's batches, then older batches not finished yet
+// (carried over: W3 still to do on some spot), then the older days (closed). Reprint prints, saves nothing.
 let OLD = {};
 async function listOld() {
   const el = document.getElementById('jold'), bal = +document.getElementById('jbal').value;
   if (!store.get('ghkey')) { el.textContent = 'Open the weighing app setup link on this computer once so it has the lab key.'; return; }
-  try { const { f } = await readJSON(GH.path); setTags(f); OLD = f.cards || {}; } catch (e) { el.textContent = '⚠ ' + (e.message === 'Failed to fetch' ? 'No internet.' : e.message); return; }
-  const by = {};
-  Object.keys(OLD).filter(tr => +OLD[tr].bal === bal).forEach(tr => (by[OLD[tr].batch] = by[OLD[tr].batch] || []).push(tr));
-  const order = { MC: 0, ASH: 1, VM: 2 }, batches = Object.keys(by).sort((a, b) => b - a);
-  el.innerHTML = batches.length ? batches.map(n => { const trs = by[n].sort((a, b) => order[OLD[a].test] - order[OLD[b].test]);
-    const when = new Date(Math.max(...trs.map(tr => OLD[tr].at || 0))).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-    return `<div class="oldrow"><b>Batch ${esc(n)}</b><span>${trs.map(tr => `${esc(TNAME[OLD[tr].test])} ${OLD[tr].codes.filter(Boolean).length}`).join(' · ')} · ${when}</span>
-      <button data-batch="${esc(n)}">Reprint</button></div>`; }).join('') : `No cards saved for W${bal} yet.`;
-  el.querySelectorAll('button[data-batch]').forEach(b => b.addEventListener('click', () => {
-    document.getElementById('jobcards').innerHTML = by[b.dataset.batch].map(tr => jobCard(tr, OLD[tr])).join('');
-    jmsg(`Reprinting W${bal} batch ${b.dataset.batch}.`);
+  let f;
+  try { ({ f } = await readJSON(GH.path)); setTags(f); OLD = f.cards || {}; } catch (e) { el.textContent = '⚠ ' + (e.message === 'Failed to fetch' ? 'No internet.' : e.message); return; }
+  const all = batchesOf(f, bal), today = todayKey(), order = { MC: 0, ASH: 1, VM: 2 };
+  if (!all.length) { el.textContent = `No cards saved for W${bal} yet.`; return; }
+  const open = b => b.done < b.total, mine = all.filter(b => b.day === today);
+  const carried = all.filter(b => b.day < today && open(b)), past = all.filter(b => b.day < today && !open(b));
+  const row = (b, showDay) => { const trs = b.trays.slice().sort((x, y) => order[OLD[x].test] - order[OLD[y].test]);
+    const left = b.total - b.done, state = !left ? '<em class="ok">✓ all W3 done</em>' : `<em>W3 ${b.done}/${b.total}</em>`;
+    return `<div class="oldrow"><b>${esc(showDay ? batchName(b) : 'Batch ' + (b.dn || b.serial))}</b><span>${trs.map(tr => `${esc(TNAME[OLD[tr].test])} ${OLD[tr].codes.filter(Boolean).length}`).join(' · ')} ${state}</span>
+      <button data-batch="${b.serial}">Reprint</button></div>`; };
+  const days = [...new Set(past.map(b => b.day))];
+  el.innerHTML = `<div class="oldday">Today · ${esc(dayName(today))}</div>`
+    + (mine.length ? mine.map(b => row(b, false)).join('') : `<div class="oldrow"><span>No cards printed for W${bal} today yet.</span></div>`)
+    + (carried.length ? `<div class="oldday">Carried over <small>· not finished yet</small></div>` + carried.map(b => row(b, true)).join('') : '')
+    + days.map(d => { const bs = past.filter(b => b.day === d);
+      return `<details class="oldday"><summary>${esc(dayName(d))} <small>· ${bs.length} batch${bs.length > 1 ? 'es' : ''}, all done</small></summary>${bs.map(b => row(b, false)).join('')}</details>`; }).join('');
+  el.querySelectorAll('button[data-batch]').forEach(btn => btn.addEventListener('click', () => {
+    const b = all.find(x => x.serial === +btn.dataset.batch);
+    document.getElementById('jobcards').innerHTML = b.trays.sort((x, y) => order[OLD[x].test] - order[OLD[y].test]).map(tr => jobCard(tr, OLD[tr])).join('');
+    jmsg(`Reprinting W${bal} ${batchName(b)}.`);
     document.body.classList.add('onlyjobs'); window.print();
   }));
 }
