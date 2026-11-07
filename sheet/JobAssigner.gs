@@ -13,7 +13,7 @@
  *   5. labels page → Fill → Save and print, for each balance: the same 10 samples are on its Moisture, Ash and VM cards.
  *
  * Rules (agreed with Girish 2026-11-01):
- *   - Order: retests first, then URGENT samples, then oldest Date, then code number.
+ *   - Order: retests first, then URGENT samples, then part-done samples (only their remaining tests), then oldest Date.
  *   - One sample = one balance for all its tests.
  *   - Batch mode "Each card full" (Girish 2026-11-01 04:20): only Machine is filled; the labels page fills each card
  *     to its own size (Moisture 12, Ash 10, VM 18) from that balance's samples, as before.
@@ -124,28 +124,32 @@ function assign_() {
   // Job type of each working balance (Today column E): a hand-typed Machine that does not fit it goes back to the pool
   const kindOf = {}; work.forEach(w => { kindOf[w.bal] = w.kind; });
   const fitsKind = (k, r) => !k || k === 'both' || (k === 'retest') === !!r.retest;
-  const hand = [], pool = rows.filter(r => free(r) && (!r.machine || r.assigned));    // blank, or assigned by the script before
-  rows.filter(r => free(r) && r.machine && !r.assigned).forEach(r => {               // typed by hand: keep the balance
+  // A part-done sample (e.g. Ash left from yesterday) stays on its balance so all its tests are weighed on one balance
+  rows.forEach(r => { if (free(r)) { r.rest = st.rest(r.code, r.tests); r.partial = r.rest.length ? 1 : 0; } });
+  const hand = [], pool = rows.filter(r => free(r) && (!r.machine || (r.assigned && !r.partial)));   // blank, or assigned by the script before
+  rows.filter(r => free(r) && r.machine && (!r.assigned || r.partial)).forEach(r => {   // typed by hand or part done: keep the balance
     const k = kindOf[balOf_(r.machine)];
     if (fitsKind(k, r)) { hand.push(r); return; }
-    notes.push(r.code + ' was on ' + r.machine + ' (typed by hand) but ' + r.machine + ' does ' + (k === 'retest' ? 'retests only' : 'new samples only') + ' today: moved.');
+    notes.push(r.code + ' was on ' + r.machine + (r.partial ? ' (part done)' : ' (typed by hand)') + ' but ' + r.machine + ' does ' + (k === 'retest' ? 'retests only' : 'new samples only') + ' today: moved.');
     r.assigned = 'moved'; pool.push(r);
   });
 
-  // 1. hand-typed machines: into that balance's batches
-  sortPriority_(hand).forEach(r => {
-    const b = balOf_(r.machine);
-    const s = slots.find(x => x.bal === b && x.codes.length < x.room);
-    if (s) { s.codes.push(r.code); r.out = { bal: b, batch: s.batch }; }
-    else { r.out = { keep: true }; notes.push(r.code + ' stays on ' + r.machine + ' (typed by hand) but ' + (work.some(w => w.bal === b) ? 'its batches are full' : r.machine + ' is not working today') + '.'); }
-  });
-
-  // 2. the pool, by priority, into the first balance with room whose Job type fits
+  // Two rounds so priority wins: first retests, URGENT and part-done samples, then the rest.
+  // In each round: 1. hand-typed (or part-done) machines into that balance, 2. the pool into the first balance with room whose Job type fits
+  const high = r => r.retest || r.urgent || r.partial;
   let left = [];
-  sortPriority_(pool).forEach(r => {
-    const s = slots.find(x => x.codes.length < x.room && fitsKind(x.kind, r));
-    if (s) { s.codes.push(r.code); r.out = { bal: s.bal, batch: s.batch }; }
-    else { r.out = { clear: true }; left.push(r.code); }
+  [true, false].forEach(round => {
+    sortPriority_(hand.filter(r => !!high(r) === round)).forEach(r => {
+      const b = balOf_(r.machine);
+      const s = slots.find(x => x.bal === b && x.codes.length < x.room);
+      if (s) { s.codes.push(r.code); r.out = { bal: b, batch: s.batch }; }
+      else { r.out = { keep: true }; notes.push(r.code + ' stays on ' + r.machine + (r.partial ? ' (part done)' : ' (typed by hand)') + ' but ' + (work.some(w => w.bal === b) ? 'its batches are full' : r.machine + ' is not working today') + '.'); }
+    });
+    sortPriority_(pool.filter(r => !!high(r) === round)).forEach(r => {
+      const s = slots.find(x => x.codes.length < x.room && fitsKind(x.kind, r));
+      if (s) { s.codes.push(r.code); r.out = { bal: s.bal, batch: s.batch }; }
+      else { r.out = { clear: true }; left.push(r.code); }
+    });
   });
 
   // 3. write the columns
@@ -159,9 +163,9 @@ function assign_() {
     'Check the "' + JA.plan + '" tab, then use "Send assignment to phones".';
 }
 
-/** Retests first, then URGENT, then oldest date, then code number. */
+/** Retests first, then URGENT, then part-done samples (remaining tests), then oldest date, then code number. */
 function sortPriority_(list) {
-  return list.slice().sort((a, b) => (b.retest - a.retest) || (b.urgent - a.urgent) ||
+  return list.slice().sort((a, b) => (b.retest - a.retest) || (b.urgent - a.urgent) || (b.partial - a.partial) ||
     String(a.date || '9999').localeCompare(String(b.date || '9999')) || codeNum_(a.code) - codeNum_(b.code));
 }
 const codeNum_ = c => +((String(c).match(/\d+/) || [0])[0]);
@@ -214,8 +218,12 @@ function sampleState_(f) {
       if (!left.length) return 'Done';
       if (left.some(k => started(c, k))) return 'Weighing';
       if (left.some(k => on[c + '|' + k])) return 'On card';
-      if (left.length < ks.length && !this.wasReset(c)) return 'Weighing';   // some tests done, the rest not on a card yet
       return 'Waiting';
+    },
+    // Tests still to weigh when the sample is part done (e.g. Moisture and VM weighed, Ash left): [] when nothing is done yet
+    rest(c, tests) {
+      const ks = JA.tests.filter(k => !tests || tests.indexOf(k) >= 0), left = ks.filter(k => !done(c, k));
+      return left.length < ks.length && !this.wasReset(c) ? left : [];
     },
     wasReset(c) { return JA.tests.some(k => resetAt[c + '|' + k] && !done(c, k)); },
     nextBatch(bal) {
@@ -297,7 +305,7 @@ function writePlan_(today, slots, left, notes, rows, fixed) {
   const sh = ss.getSheetByName(JA.plan) || ss.insertSheet(JA.plan);
   sh.clear();
   const byCode = {}; rows.forEach(r => { byCode[r.code] = r; });
-  const tag = c => { const r = byCode[c]; return c + (r.retest ? ' (retest)' : r.urgent ? ' (urgent)' : ''); };
+  const tag = c => { const r = byCode[c]; return c + (r.retest ? ' (retest)' : r.urgent ? ' (urgent)' : r.partial ? ' (rest: ' + r.rest.map(k => ({ MC: 'Moisture', ASH: 'Ash', VM: 'VM' })[k]).join(', ') + ')' : ''); };
   const out = [['Plan for ' + today + (fixed ? ' · Fixed 10: same samples on all three cards' : ' · Each card full: Moisture 12, Ash 10, VM 18'), '', '', '', ''],
     ['Balance', fixed ? 'Batch' : 'Cards', 'Worker', 'Samples', 'Codes']];
   if (fixed) slots.filter(s => s.codes.length).forEach(s => out.push(['W' + s.bal, s.batch, s.worker, s.codes.length, s.codes.map(tag).join(', ')]));
