@@ -241,6 +241,24 @@
   .scanbig { padding: 18px; }
   .scanbig .qr { font-size: 4.2rem; line-height: 1; display: flex; }
   .scanbig .sbags { display: flex; gap: 12px; font-size: 1.6rem; opacity: .85; }
+  .tagsbtn { width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 14px; margin: 0 0 10px; text-align: left; }
+  .tagsbtn svg { width: 34px; height: 34px; flex: 0 0 auto; } .tagsbtn b { font-size: 1.6rem; } .tagsbtn em { font-style: normal; color: var(--ok, #2e7d32); font-weight: 700; }
+  .tagchip { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; padding: 2px 10px; border: 2px solid currentColor; border-radius: 999px; font-size: 1.2rem; }
+  .tagchip svg { width: 22px; height: 22px; }
+  .tagbtns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; } .tagbtns .scanbig svg { width: 52px; height: 52px; }
+  .tagrow { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--line, #d3dbe0); border-radius: 12px; margin: 6px 0; background: var(--surface, #fff); }
+  .tagrow.ready { border: 2px solid var(--ok, #2e7d32); }
+  .tagno { display: flex; align-items: center; gap: 4px; min-width: 64px; } .tagno svg { width: 24px; height: 24px; } .tagno b { font-size: 1.4rem; }
+  .tagwho { flex: 1; min-width: 0; display: flex; flex-direction: column; } .tagwho small { color: var(--muted, #5a6872); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tts { display: flex; gap: 4px; } .tts.big { justify-content: center; margin: 8px 0; }
+  .tt { display: inline-flex; align-items: center; gap: 1px; border: 2px solid var(--c); border-radius: 8px; padding: 2px 4px; color: var(--c); opacity: .55; }
+  .tt.ok { background: var(--c-bg); opacity: 1; } .tt svg { width: 18px; height: 18px; } .tt i { font-style: normal; font-size: .7rem; font-weight: 700; }
+  .redm .tt { color: #fff; border-color: #fff; opacity: 1; background: rgba(255,255,255,.15); }
+  .tts.big .tt svg { width: 34px; height: 34px; } .tts.big .tt i { font-size: 1rem; }
+  .tagbig { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 6px 0; } .tagbig svg { width: 44px; height: 44px; } .tagbig b { font-size: 2.2rem; }
+  .tagpicks { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; max-height: 46vh; overflow: auto; margin: 10px 0; }
+  .tagpick { display: flex; flex-direction: column; align-items: center; padding: 10px 4px; font: inherit; border-radius: 10px; }
+  .tagpick b { font-size: 1.2rem; } .tagpick small { font-size: .7rem; color: var(--muted, #5a6872); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .ptiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
   .ptile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; border: 2px solid var(--line); border-radius: 16px; background: var(--surface); padding: 12px 8px; min-height: 140px; }
   .ptile .pi { font-size: 2.6rem; display: flex; align-items: center; gap: 4px; color: var(--muted); }
@@ -384,8 +402,10 @@
 <body>
 <button id="sync" type="button" hidden></button>
 <input type="file" id="photofile" accept="image/*" capture="environment" hidden>
+<input type="file" id="soundfile" accept="audio/*,.mp3,.m4a,.wav,.ogg,.aac" hidden>
 <div class="wrap" id="app"><div class="empty">Loading…</div></div>
 
+<script src="lib/sounds.js"></script>
 <script src="bench.js"></script>
 <script>
 /* ====== SETTINGS: where the results are stored (a PRIVATE GitHub repository) ====== */
@@ -896,7 +916,7 @@ function toData(f) {
     recompute(s);
     return s;
   });
-  return { samples, tests: TESTS, order: ORDER, runs: Object.values(f.runs || {}).sort((a, b) => a.start - b.start), cards: f.cards || {}, settings: f.settings || {} };
+  return { samples, tests: TESTS, order: ORDER, runs: Object.values(f.runs || {}).sort((a, b) => a.start - b.start), cards: f.cards || {}, tags: f.tags || {}, settings: f.settings || {} };
 }
 // What the worker sees = last copy from GitHub + this phone's unsent changes
 function rebuild() {
@@ -1577,6 +1597,37 @@ function renderName() {
 }
 
 /* ---------- supervisor setup screen ---------- */
+/* ---------- the supervisor's own alarm music ----------
+   Uploaded to the data repository (sounds/<key>.<ext>) and listed in data.json settings.soundFiles; every phone and
+   the lab timer download it once (lib/sounds.js). Checked first that this phone can play it. */
+const MUSIC_MAX = 8e6;
+async function uploadSound(file) {
+  if (!file || !superOn()) return;
+  if (file.size > MUSIC_MAX) { toast(`Too big (${(file.size / 1e6).toFixed(1)} MB). Use a file under 8 MB, or a shorter clip.`); return; }
+  const base = file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim().slice(0, 40) || 'Music';
+  const name = ((prompt('Name for this sound', base) || '').trim() || base).slice(0, 40);
+  try {
+    const dec = new (window.OfflineAudioContext || window.webkitOfflineAudioContext)(1, 1, 44100), b = await file.arrayBuffer();
+    await new Promise((ok, no) => { const q = dec.decodeAudioData(b, ok, no); if (q && q.catch) q.catch(() => {}); });
+  } catch (e) { toast('This phone cannot play that file. Try an MP3.'); return; }
+  const key = 'u' + Date.now().toString(36), m = /\.([a-z0-9]{2,4})$/i.exec(file.name), path = `sounds/${key}.${m ? m[1].toLowerCase() : 'mp3'}`;
+  S.soundBusy = true; render();
+  try {
+    await gh('PUT', `${API}/contents/${path}`, { message: `alarm sound: ${name} by ${S.worker || 'supervisor'}`, branch: GH.branch, content: await blobB64(file) });
+    enqueue({ action: 'addSoundFile', file: { key, name, path, by: S.worker || '', at: Date.now() }, worker: S.worker });
+    toast(`♪ ${name} uploaded. Pick it for a test and tap Save alarm sounds.`, true);
+  } catch (e) { toast(e.code === 'OFFLINE' ? 'No internet. Upload again when online.' : 'Upload failed: ' + (e.message || e)); }
+  S.soundBusy = false; render();
+}
+async function removeSound(key) {
+  const u = (settings().soundFiles || []).find(x => x.key === key); if (!u) return;
+  enqueue({ action: 'delSoundFile', key, worker: S.worker });
+  toast(`♪ ${u.name} removed. A test that used it now plays Standard.`, true); render();
+  try {   // the file itself too (best effort; the list above is what counts)
+    const meta = await (await gh('GET', `${API}/contents/${u.path}?ref=${GH.branch}`)).json();
+    await gh('DELETE', `${API}/contents/${u.path}`, { message: `alarm sound removed: ${u.name}`, branch: GH.branch, sha: meta.sha });
+  } catch (e) {}
+}
 function confirmTap(el) {            // second tap within 4 s confirms a risky action
   if (el.dataset.armed) return true;
   el.dataset.armed = '1'; const old = el.textContent; el.textContent = 'Tap again to confirm';
@@ -1636,6 +1687,7 @@ function renderSetup() {
 }
 // Supervisor on this phone (PIN, off by itself after 30 minutes), the workers' sign-in list and the heating times
 function supervisorHTML() {
+  syncSounds();
   const on = superOn(), ws = settings().workers || [], used = new Set(ws.map(w => w.sym));
   const m = settings().mins || {};
   return `<div class="prev" style="margin-top:0">
@@ -1657,6 +1709,19 @@ function supervisorHTML() {
       <p class="sub" style="margin:8px 0 4px">Oven / furnace temperature (°C). After door closed the worker sees this number and scans the oven / furnace when its display reaches it; only then the minutes start.</p>
       <div class="typerow">${['MC', 'VM', 'ASH'].map(k => `<label style="flex:1;font-weight:700">${esc(lbl(k))} °C<input class="field" id="temp-${k}" type="number" inputmode="numeric" min="0" value="${esc(String(tempFor(k) || ''))}"></label>`).join('')}</div>
       <button class="secondary" data-act="save-mins" style="width:100%">Save heating times</button></div>
+    <div class="row" style="display:block"><b>Alarm sounds</b>
+      <p class="sub" style="margin:4px 0 8px">A different sound for each test, so the bench knows which load is ready without looking. The phones and the lab timer both play it. ▶ plays it here.</p>
+      ${['MC', 'VM', 'ASH'].map(k => `<div class="typerow" style="align-items:center"><b style="flex:0 0 5.5em">${esc(lbl(k))}</b>
+        <select class="field" id="snd-${k}">${window.LabSounds ? LabSounds.options((settings().sounds || {})[k] || '') : ''}</select>
+        <button class="secondary" style="flex:0 0 56px;margin:0" data-act="try-sound" data-test="${k}" aria-label="Play">▶</button></div>`).join('')}
+      <button class="secondary" data-act="save-sounds" style="width:100%">Save alarm sounds</button>
+      <p class="sub" style="margin:12px 0 6px"><b>Your music</b> (♪ in the lists above). Any song or recording from this phone, up to 8 MB.</p>
+      ${(settings().soundFiles || []).map(u => `<div style="display:flex;align-items:center;gap:8px;margin:4px 0">
+        <button class="secondary" style="flex:0 0 56px;margin:0" data-act="try-music" data-key="${esc(u.key)}" aria-label="Play">▶</button>
+        <b style="flex:1;min-width:0;overflow-wrap:anywhere">♪ ${esc(u.name)}</b>
+        <button class="link" data-act="music-rename" data-key="${esc(u.key)}">Rename</button>
+        <button class="link" data-act="music-del" data-key="${esc(u.key)}">Remove</button></div>`).join('') || '<p class="sub" style="margin:0 0 6px">None yet.</p>'}
+      <button class="secondary" data-act="music-add" style="width:100%" ${S.soundBusy ? 'disabled' : ''}>${S.soundBusy ? 'Uploading…' : '＋ Upload music'}</button></div>
     <div class="row" style="display:block"><b>Sample weight range (g)</b>
       <p class="sub" style="margin:4px 0 8px">W2 − W1 must be inside this range, or the worker gets a red screen and weighs again. Leave TM empty to not check it.</p>
       ${['MC', 'VM', 'ASH', 'TM'].map(k => { const r = rangeFor(k) || ['', ''];
@@ -1901,6 +1966,7 @@ document.addEventListener('change', e => {
 });
 
 document.getElementById('photofile').addEventListener('change', e => { takePhoto(e.target.files && e.target.files[0]); });
+document.getElementById('soundfile').addEventListener('change', e => { uploadSound(e.target.files && e.target.files[0]); });
 
 function renderModal() {
   const m = S.modal;
@@ -1990,7 +2056,7 @@ function render() {
   if (!S.worker && S.view !== 'setup' && S.view !== 'name') S.view = 'who';
   if (S.worker && !balNo() && !['setup', 'name', 'who', 'bal'].includes(S.view)) S.view = 'bal';
   if (!S.data && !['name', 'setup', 'bal', 'who'].includes(S.view)) { app.innerHTML = `<div class="empty">${esc(T().loading)}</div>`; return; }
-  const v = { home: renderHomeB, run: renderRun, card: renderCard, sample: renderSampleB, step: renderStepB, review: renderReviewB, name: renderName, who: renderWho, bal: renderBal, setup: renderSetup }[S.view];
+  const v = { home: renderHomeB, run: renderRun, card: renderCard, sample: renderSampleB, step: renderStepB, review: renderReviewB, tags: renderTags, name: renderName, who: renderWho, bal: renderBal, setup: renderSetup }[S.view];
   const tc = document.getElementById('typecode'), typed = tc && tc.value, typing = tc && document.activeElement === tc;
   app.innerHTML = v() + renderModal();
   const tc2 = document.getElementById('typecode');      // a refresh must not wipe a half-typed code
@@ -2225,6 +2291,26 @@ document.addEventListener('click', e => {
       const temp = {}; ['MC', 'VM', 'ASH'].forEach(k => { const v = +document.getElementById('temp-' + k).value; temp[k] = v > 0 ? v : null; });
       enqueue({ action: 'setTemp', temp, worker: S.worker }); toast('Saved.', true); render(); break;
     }
+    case 'try-sound': { const v = document.getElementById('snd-' + el.dataset.test).value;
+      try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+      if (window.LabSounds) { syncSounds(); LabSounds.stop(); LabSounds.play(v, 'beep', AC); } break; }
+    case 'try-music': if (window.LabSounds) { syncSounds(); LabSounds.stop();
+      try { AC = AC || new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {}
+      if (!LabSounds.ready(el.dataset.key)) toast('Downloading the music… tap ▶ again in a moment.', true);
+      LabSounds.play(el.dataset.key, 'beep', AC); } break;
+    case 'music-add': if (superOn() && !S.soundBusy) { const inp = document.getElementById('soundfile'); inp.value = ''; inp.click(); } break;
+    case 'music-del': if (superOn() && confirmTap(el)) removeSound(el.dataset.key); break;
+    case 'music-rename': {
+      if (!superOn()) break;
+      const u = (settings().soundFiles || []).find(x => x.key === el.dataset.key); if (!u) break;
+      const name = ((prompt('New name', u.name) || '').trim()).slice(0, 40); if (!name || name === u.name) break;
+      enqueue({ action: 'addSoundFile', file: Object.assign({}, u, { name }), worker: S.worker }); render(); break;
+    }
+    case 'save-sounds': {
+      if (!superOn()) break;
+      const sounds = {}; ['MC', 'VM', 'ASH'].forEach(k => { sounds[k] = document.getElementById('snd-' + k).value; });
+      enqueue({ action: 'setSounds', sounds, worker: S.worker }); toast('Saved.', true); render(); break;
+    }
     case 'after': afterSaved(); render(); break;
     case 'photo-take': {
       S.photoFor = { code: S.code, test: el.dataset.test || S.test };
@@ -2300,6 +2386,7 @@ document.addEventListener('keydown', e => {
   else if (e.target.id === 'nm') saveName();
   else if (e.target.id === 'typecode') { if (e.target.value.trim()) onScan(e.target.value.trim(), 'any'); }
   else if (e.target.id === 'scantype') scanTyped();
+  else if (e.target.id === 'tagcode') { if (e.target.value.trim()) tagPut(S.modal && S.modal.tag, e.target.value.trim()); }
   else if (e.target.id === 'newcodes') addCodes();
   else if (e.target.id === 'key') saveKey();
 });

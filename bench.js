@@ -19,7 +19,7 @@
               samples[code].ev = the trail: every weight, fix, undo, reset, pairing and red-screen warning.
               runs[rid] = { rid, place, test, tray, items: [{ h, code, w2 }], start, mins, bal, by, outAt, outBy, early, cancelled }.
               cards[tray] = { test, bal, batch, codes: [code on spot 1, spot 2 …], at, by }   (job cards, labels page)
-              settings = { mins: { MC, VM, ASH }, workers: [{ name, sym }] }   (set by the supervisor)
+              settings = { mins: { MC, VM, ASH }, sounds: { MC, VM, ASH } (alarm sound keys, lib/sounds.js), soundFiles: [{ key, name, path }] (uploaded music), workers: [{ name, sym }] }   (set by the supervisor)
    Loaded before the main script: only declarations here, nothing that runs at load time. */
 
 const CAP = { MC: 12, VM: 18, ASH: 10 };          // dishes per oven load, spots per board (= one furnace load)
@@ -57,7 +57,8 @@ const BL = {
       nothing: 'Nothing is waiting to go in.', empty: 'Nothing is on this.', notSample: 'Not in the sample list.',
       locked: 'Only the supervisor can change this now.', otherLoad: 'This load belongs to another balance.', wrongPlace: 'Wrong oven / furnace. Scan this one:',
       noCard: 'Not on a job card. Scan the job card.', otherCard: 'This job card is for another balance.', notCard: 'Job card not found. Ask the supervisor.',
-      waitOut: 'Wait: the supervisor takes it out first.', wrongBag: 'Wrong bag. Put it back. Take this one:'
+      waitOut: 'Wait: the supervisor takes it out first.', wrongBag: 'Wrong bag. Put it back. Take this one:',
+      tagFree: 'This tag is not on any sample. Give it to the supervisor.'
     },
     small: {
       scanSub: 'bag · dish · job card', scanDish: 'scan an empty dish', start: 'start',
@@ -87,7 +88,8 @@ const BL = {
       nothing: 'અંદર જવા માટે કંઈ નથી.', empty: 'આના પર કંઈ નથી.', notSample: 'સેમ્પલ યાદીમાં નથી.',
       locked: 'હવે ફક્ત સુપરવાઇઝર બદલી શકે.', otherLoad: 'આ લોડ બીજા કાંટાનો છે.', wrongPlace: 'ખોટું ઓવન / ફર્નેસ. આ સ્કેન કરો:',
       noCard: 'જોબ કાર્ડ પર નથી. જોબ કાર્ડ સ્કેન કરો.', otherCard: 'આ જોબ કાર્ડ બીજા કાંટાનું છે.', notCard: 'જોબ કાર્ડ મળ્યું નથી. સુપરવાઇઝરને પૂછો.',
-      waitOut: 'રાહ જુઓ: પહેલા સુપરવાઇઝર બહાર કાઢે.', wrongBag: 'ખોટી બેગ. પાછી મૂકો. આ લો:'
+      waitOut: 'રાહ જુઓ: પહેલા સુપરવાઇઝર બહાર કાઢે.', wrongBag: 'ખોટી બેગ. પાછી મૂકો. આ લો:',
+      tagFree: 'આ ટેગ કોઈ સેમ્પલ પર નથી. સુપરવાઇઝરને આપો.'
     },
     small: {
       scanSub: 'બેગ · ડિશ · જોબ કાર્ડ', scanDish: 'ખાલી ડિશ સ્કેન કરો', start: 'શરૂ',
@@ -164,6 +166,7 @@ const ICON = {
   VM: svgI('<path d="M24 42c-8 0-12-6-9-13 2-4 6-6 5-13 7 3 13 10 12 17 0 5-3 9-8 9z"/>'),
   ASH: svgI('<path d="M12 18h24l-4 22H16z"/><circle cx="20" cy="30" r="1.5" fill="currentColor"/><circle cx="27" cy="27" r="1.5" fill="currentColor"/><circle cx="25" cy="34" r="1.5" fill="currentColor"/>'),
   card: svgI('<rect x="9" y="5" width="30" height="38" rx="3"/><path d="M14 10h9v9h-9zM17 13h3v3h-3z"/><circle cx="19" cy="30" r="3.5"/><circle cx="30" cy="30" r="3.5"/><circle cx="19" cy="38" r="2"/><circle cx="30" cy="38" r="2"/>'),
+  tag: svgI('<path d="M8 8h16l18 18-16 16L8 24z"/><circle cx="16" cy="16" r="3"/>'),
   TM: svgI('<path d="M16 8c5 7 8 11 8 15a8 8 0 01-16 0c0-4 3-8 8-15zM32 18c5 7 8 11 8 15a8 8 0 01-16 0c0-4 3-8 8-15z"/>')
 };
 const vesselIcon = k => k === 'MC' || k === 'TM' ? ICON.dish : ICON.crucible;
@@ -241,12 +244,18 @@ function batchApply(f, j) {
     s.hb = s.hb || {}; s.hb[j.key] = j.bal || 0;
     return true;
   }
+  if (j.action === 'tagOn' || j.action === 'tagOff') { tagApply(f, j); return true; }
   if (j.action === 'warn') { trailAdd(f, j.code, j, { a: 'warn', k: j.key, s: j.step, v: j.value, x: j.kind, b: j.bal || 0 }); return true; }
   if (j.action === 'setRange') { f.settings = f.settings || {}; f.settings.range = Object.assign({}, f.settings.range, j.range); return true; }
   if (j.action === 'setPhotoLim') { f.settings = f.settings || {}; f.settings.photoLim = Object.assign({}, f.settings.photoLim, j.photoLim); return true; }
   if (j.action === 'setLimits') { f.settings = f.settings || {}; f.settings.limits = Object.assign({}, f.settings.limits, j.limits); return true; }
   if (j.action === 'setPin') { f.settings = f.settings || {}; f.settings.pin = j.pin; return true; }
   if (j.action === 'setTemp') { f.settings = f.settings || {}; f.settings.temp = Object.assign({}, f.settings.temp, j.temp); return true; }
+  if (j.action === 'addSoundFile') { f.settings = f.settings || {}; f.settings.soundFiles = (f.settings.soundFiles || []).filter(u => u.key !== j.file.key).concat([j.file]); return true; }
+  if (j.action === 'delSoundFile') { f.settings = f.settings || {};
+    f.settings.soundFiles = (f.settings.soundFiles || []).filter(u => u.key !== j.key);
+    const m = f.settings.sounds || {}; Object.keys(m).forEach(k => { if (m[k] === j.key) m[k] = ''; }); return true; }
+  if (j.action === 'setSounds') { f.settings = f.settings || {}; f.settings.sounds = Object.assign({}, f.settings.sounds, j.sounds); return true; }
   if (j.action === 'setMins') { f.settings = f.settings || {}; f.settings.mins = Object.assign({}, f.settings.mins, j.mins); return true; }
   if (j.action === 'setWorkers') { f.settings = f.settings || {}; f.settings.workers = j.workers; return true; }
   if (!/^run/.test(j.action)) return false;
@@ -267,6 +276,24 @@ function batchApply(f, j) {
     if (all[j.rid]) all[j.rid].cancelled = { at: j.at, by: j.worker || '' };   // kept for the trail, ignored everywhere else
   }
   return true;
+}
+
+// Reusable tags: data.json tags["TAG 07"] = { code, at, by } (one sample per tag, one tag per sample)
+// and tagLog = [{ tag, code, a: 'on' | 'off', t, by, early, n }], the history, oldest first (last 3000 kept).
+// A tag already on another sample, or a sample that already has a tag, is left alone: another phone was first.
+function tagApply(f, j) {
+  f.tags = f.tags || {}; f.tagLog = f.tagLog || [];
+  const cur = f.tags[j.tag], log = e => { f.tagLog.push(Object.assign({ tag: j.tag, code: j.code, t: j.at, by: j.worker || '' }, e)); if (f.tagLog.length > 3000) f.tagLog.splice(0, f.tagLog.length - 3000); };
+  if (j.action === 'tagOn') {
+    if (cur || Object.keys(f.tags).some(id => f.tags[id].code === j.code)) return;
+    f.tags[j.tag] = { code: j.code, at: j.at, by: j.worker || '' };
+    log({ a: 'on' }); trailAdd(f, j.code, j, { a: 'tag', x: j.tag });
+  } else {
+    if (!cur || cur.code !== j.code) return;
+    delete f.tags[j.tag];
+    log(Object.assign({ a: 'off' }, j.early ? { early: j.early } : {}, j.why ? { n: j.why } : {}));
+    trailAdd(f, j.code, j, Object.assign({ a: 'untag', x: j.tag }, j.early ? { o: j.early } : {}, j.why ? { n: j.why } : {}));
+  }
 }
 
 /* ---------- what the app works out from the data ---------- */
@@ -484,7 +511,7 @@ function renderSampleB() {
         <button aria-pressed="${s.tmRequired}" data-act="tm" data-val="1">${esc(t.yes)}</button></div>
       ${s.tmRequired ? testTile(s, tmK) : ''}</div>` : '';
   return `${topBar(true)}
-    <div class="bagline"><span class="bi">${ICON.bag}</span><h2 class="title">${esc(s.code)}</h2></div>${infoHTML(s.code)}
+    <div class="bagline"><span class="bi">${ICON.bag}</span><h2 class="title">${esc(s.code)}</h2>${tagOf(s.code) ? `<span class="tagchip">${ICON.tag}<b>${esc(tagNo(tagOf(s.code)))}</b></span>` : ''}</div>${infoHTML(s.code)}
     ${flagsOf(s).length ? `<div class="flagnote">⚠ ${esc(flagsOf(s).map(lbl).join(', '))}</div>` : ''}${superOn() ? approvalHTML(s) + photoBoxHTML(s) : ''}
     <div class="tiles">${main}</div>${tm}`;
 }
@@ -593,6 +620,7 @@ function renderHomeB() {
     <button class="primary scanbig" data-act="scan"><span class="qr">${ICON.scan}</span><span class="sbags">${ICON.bag}${ICON.dish}${ICON.card}</span><small>${esc(t.small.scanSub)}</small></button>
     <div class="typerow"><input class="field" id="typecode" type="text" autocomplete="off" autocapitalize="characters" placeholder="${esc(T().find)}">
       <button class="secondary" data-act="type-open">→</button></div>
+    ${superOn() ? tagsTile() : ''}
     <div class="ptiles">${Object.keys(PLACES).map(placeTile).join('')}</div>
     ${mc.length || boards.length ? `<h3 class="bhead">${esc(t.small.boardsWaiting)}</h3><div class="waits">
       ${mc.length ? `<div class="wtile" style="${cvar('MC')}"><span class="wi">${ICON.dish}</span><b>${mc.length}</b></div>` : ''}
@@ -671,6 +699,7 @@ function placeFromText(txt) {
   return m ? (m[1][0] + m[2]) : null;
 }
 function codeFromText(txt) {
+  const tg = tagFromText(txt); if (tg) return tagCode(tg);        // a reusable tag: the sample it is on now (none = null)
   const raw = String(txt).trim(), up = raw.toUpperCase();
   const codes = S.data ? S.data.samples.map(s => s.code) : [];
   const hit = codes.find(c => c.toUpperCase() === up) || Object.keys(NAMES).find(c => c.toUpperCase() === up);
@@ -686,7 +715,7 @@ function scanEl() {
   if (!el) { el = document.createElement('div'); el.id = 'scanner'; document.body.appendChild(el); }
   return el;
 }
-const SCAN_PIC = { dish: () => ICON.dish, redish: () => ICON.dish, any: () => ICON.bag, bag: () => `${ICON.bag}<b class="scannum">${esc(S.code || '')}</b>` };
+const SCAN_PIC = { tagon: () => ICON.tag, tagoff: () => ICON.tag, dish: () => ICON.dish, redish: () => ICON.dish, any: () => ICON.bag, bag: () => `${ICON.bag}<b class="scannum">${esc(S.code || '')}</b>` };
 async function openScanner(purpose) {
   closeScanner();
   const t = B(), el = scanEl();
@@ -743,6 +772,9 @@ function scanTyped() {
 // What a scan (or a typed code) does, depending on what it was started for
 function onScan(txt, purpose) {
   if (purpose === 'bag') return bagScan(txt);
+  if (purpose === 'tagon' || purpose === 'tagoff') return tagScan(txt, purpose);
+  const tg = tagFromText(txt);
+  if (tg && !tagCode(tg)) { redScreen(B().bad.tagFree, { icon: ICON.tag, num: tagNo(tg) }); return; }
   const t = B(), p = placeFromText(txt), h = holderFromText(txt);
   if (purpose === 'dish' || purpose === 'redish') {
     if (!h || !h.id || h.test !== 'MC') { redScreen(t.bad.wrongThing, { icon: ICON.dish }); return; }
@@ -925,6 +957,7 @@ function renderBenchModal(m) {
   if (m.type === 'fix') return renderFix(m);
   if (m.type === 'addcode') return renderAddCode(m);
   if (m.type === 'saved') return renderSavedB(m);
+  if (/^tag/.test(m.type)) return renderTagModal(m);
   return null;
 }
 
@@ -933,6 +966,13 @@ function batchAct(el) {
   const r = S.rid && runBy(S.rid);
   switch (el.dataset.act) {
     case 'scan': openScanner('any'); return true;
+    case 'tags': S.view = 'tags'; render(); return true;
+    case 'tag-on': S.modal = null; openScanner('tagon'); return true;
+    case 'tag-off': S.modal = null; openScanner('tagoff'); return true;
+    case 'tag-pick': tagPut(S.modal && S.modal.tag, el.dataset.code); return true;
+    case 'tag-typed': { const v = (document.getElementById('tagcode') || {}).value; if (v && v.trim()) tagPut(S.modal && S.modal.tag, v.trim()); return true; }
+    case 'tag-early': tagEarly(); return true;
+    case 'tag-done': S.modal = null; S.view = 'tags'; render(); return true;
     case 'scan-close': closeScanner(); return true;
     case 'scan-typed': scanTyped(); return true;
     case 'type-open': { const v = (document.getElementById('typecode') || {}).value; if (v && v.trim()) onScan(v.trim(), 'any'); return true; }
@@ -1011,16 +1051,27 @@ const dueRuns = () => !S.data ? [] : runs().filter(r => myRun(r) && runPhase(r) 
   && !(Date.now() - (ackAll()[r.rid] || 0) < ALARM_AGAIN)).sort((a, b) => runEnd(a) - runEnd(b));
 const heatingMine = () => !!S.data && runs().some(r => myRun(r) && ['heat', 'warm'].includes(runPhase(r)));
 
-function alarmPlay() {
+// the sound the supervisor picked for this test (Setup or the lab timer), else the phone's own beep beep
+const soundFor = test => { const m = settings().sounds; return (m && m[test]) || ''; };
+// uploaded music (settings.soundFiles): tell lib/sounds.js the list and how to download a file with this phone's key
+function syncSounds() {
+  if (window.LabSounds) LabSounds.setUser(settings().soundFiles || [],
+    path => gh('GET', `${API}/contents/${path}?ref=${GH.branch}`, null, 'application/vnd.github.raw+json').then(r => r.arrayBuffer()));
+}
+function alarmPlay(test) {
+  syncSounds();
   try {
     AC = AC || new (window.AudioContext || window.webkitAudioContext)(); if (AC.state === 'suspended') AC.resume();
-    const t = AC.currentTime;
-    [0, .3, .6, 1.2, 1.5, 1.8].forEach((o, i) => {
-      const os = AC.createOscillator(), g = AC.createGain();
-      os.type = 'square'; os.frequency.value = i % 2 ? 1318 : 988; os.connect(g); g.connect(AC.destination);
-      g.gain.setValueAtTime(0.0001, t + o); g.gain.exponentialRampToValueAtTime(0.5, t + o + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + o + 0.25);
-      os.start(t + o); os.stop(t + o + 0.27);
-    });
+    if (window.LabSounds) LabSounds.play(soundFor(test), 'beep', AC);
+    else {
+      const t = AC.currentTime;
+      [0, .3, .6, 1.2, 1.5, 1.8].forEach((o, i) => {
+        const os = AC.createOscillator(), g = AC.createGain();
+        os.type = 'square'; os.frequency.value = i % 2 ? 1318 : 988; os.connect(g); g.connect(AC.destination);
+        g.gain.setValueAtTime(0.0001, t + o); g.gain.exponentialRampToValueAtTime(0.5, t + o + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + o + 0.25);
+        os.start(t + o); os.stop(t + o + 0.27);
+      });
+    }
   } catch (e) { /* no sound on this phone */ }
   if (navigator.vibrate) navigator.vibrate([600, 200, 600, 200, 900]);
 }
@@ -1036,10 +1087,10 @@ function alarmShow(r) {
     <span class="al-door">${ICON.doorOpen}</span>
     <small>${esc(placeName(r.place))} · ${esc(B().timeUp)}</small></button>`;
   el.querySelector('button').onclick = () => alarmStop(r.rid);
-  clearInterval(alarmSnd); alarmPlay(); alarmSnd = setInterval(alarmPlay, 2600);
+  clearInterval(alarmSnd); if (window.LabSounds) LabSounds.stop(); alarmPlay(r.test); alarmSnd = setInterval(() => alarmPlay(r.test), 2600);
 }
 function alarmHide() {
-  clearInterval(alarmSnd); alarmSnd = null; alarmRid = null;
+  clearInterval(alarmSnd); alarmSnd = null; alarmRid = null; if (window.LabSounds) LabSounds.stop();
   if (navigator.vibrate) navigator.vibrate(0);
   const el = document.getElementById('alarm'); if (el) el.remove();
 }
@@ -1067,6 +1118,7 @@ function closeNote(rid) {
 const NOTED = {};
 function alarmCheck() {
   if (typeof S === 'undefined' || !S.data || !S.worker) return;
+  syncSounds();
   const due = dueRuns();
   if (document.visibilityState === 'visible') {
     if (due.length) alarmShow(due.find(r => r.rid === alarmRid) || due[0]);
@@ -1122,3 +1174,103 @@ setInterval(() => {
     if (!S.modal && !S.busy && !SCAN && !typing) render();
   }
 }, 1000);
+
+/* ---------- reusable tags: the supervisor's screens ----------
+   Laminated cards "TAG 07" (printed on the labels page) go on the reusable sample bags instead of stickers.
+   Put on: scan a free tag → tap the sample code. Take off: scan the tag; only when every test of that sample
+   has its W3 (Tests column of the sheet: blank = MC, Ash and VM). A tag scanned anywhere else = its sample. */
+const tagFromText = txt => { const m = String(txt).trim().toUpperCase().match(/^TAG\s*[-_ ]?\s*0*(\d{1,3})$/); return m ? 'TAG ' + String(+m[1]).padStart(2, '0') : null; };
+const tagNo = id => String(id).replace(/^TAG /, '');
+const tagsNow = () => (S.data && S.data.tags) || {};
+const tagCode = id => (tagsNow()[id] || {}).code || null;
+const tagOf = code => Object.keys(tagsNow()).find(id => tagsNow()[id].code === code) || null;
+const testsOf = code => { const n = nameOf(code);
+  return HELD.filter(k => !n || !n.tests || String(n.tests).toUpperCase().split(/[^A-Z]+/).map(x => x === 'MOISTURE' || x === 'MT' ? 'MC' : x).includes(k)); };
+const tagMissing = code => { const s = sample(code); return testsOf(code).filter(k => !(s && isNum(s.tests[k].w[2]))); };
+function tagsTile() {
+  const ids = Object.keys(tagsNow()), ready = ids.filter(id => !tagMissing(tagCode(id)).length).length;
+  return `<button class="secondary tagsbtn" data-act="tags">${ICON.tag}<b>${ids.length}</b><small>tags on bags${ready ? ` · <em>${ready} ready to take off</em>` : ''}</small></button>`;
+}
+// Codes to offer when a tag goes on: sheet-assigned (Job batch) or already started, not finished, no tag yet
+function tagCandidates() {
+  const tagged = new Set(Object.values(tagsNow()).map(x => x.code)), have = new Set(S.data.samples.map(s => s.code));
+  const pool = new Set([...Object.keys(NAMES).filter(c => +NAMES[c].batch > 0), ...S.data.samples.filter(s => s.status === 'In progress').map(s => s.code)]);
+  const num = c => +((String(c).match(/\d+/) || [0])[0]);
+  return [...pool].filter(c => !tagged.has(c) && (!have.has(c) || tagMissing(c).length))
+    .sort((a, b) => ((+(NAMES[a] || {}).batch || 999) - (+(NAMES[b] || {}).batch || 999)) || num(a) - num(b)).slice(0, 80);
+}
+function tagScan(txt, purpose) {
+  const id = tagFromText(txt);
+  if (!id) { redScreen('Not a tag. Scan a laminated TAG card.', { icon: ICON.tag }); return; }
+  const code = tagCode(id);
+  if (purpose === 'tagon') {
+    if (code) { redScreen(`This tag is still on ${code}. Take it off first.`, { icon: ICON.tag, num: tagNo(id), sub: code }); return; }
+    good(); S.modal = { type: 'tagpick', tag: id }; render(); return;
+  }
+  if (!code) { redScreen('This tag is free already: put it in the box.', { icon: ICON.tag, num: tagNo(id) }); return; }
+  const miss = tagMissing(code);
+  if (miss.length) { bad(); S.modal = { type: 'tagnotyet', tag: id, code, miss }; render(); return; }
+  tagOff(id, code);
+}
+function tagPut(id, typed) {
+  if (!id) return;
+  const code = codeFromText(typed) || String(typed).trim().toUpperCase();
+  if (tagFromText(code)) { redScreen('That is a tag. Tap or type the sample code.', { icon: ICON.tag }); return; }
+  if (!/^[A-Z]{0,4}\d{1,6}[A-Z0-9 -]{0,12}$/.test(code)) { redScreen(B().bad.notSample, { icon: ICON.bag, sub: code }); return; }
+  const had = tagOf(code);
+  if (had) { redScreen(`${code} already has tag ${tagNo(had)}.`, { icon: ICON.tag, num: tagNo(had), sub: code }); return; }
+  enqueue({ action: 'tagOn', tag: id, code, worker: S.worker });
+  good(); S.modal = { type: 'tagdone', on: true, tag: id, code }; render();
+}
+function tagOff(id, code, early, why) {
+  enqueue(Object.assign({ action: 'tagOff', tag: id, code, worker: S.worker }, early ? { early, why } : {}));
+  good(); S.modal = { type: 'tagdone', on: false, tag: id, code }; render();
+}
+// Lost bag, cancelled sample …: off before every W3, with a reason, kept in the history
+function tagEarly() {
+  const m = S.modal; if (!m || m.type !== 'tagnotyet') return;
+  const why = (prompt(`Take ${m.tag} off ${m.code} before ${m.miss.map(lbl).join(', ')} W3? Reason:`) || '').trim();
+  if (!why) return;
+  tagOff(m.tag, m.code, m.miss.join(','), why.slice(0, 120));
+}
+const tagTests = code => { const s = sample(code);
+  return testsOf(code).map(k => { const ok = s && isNum(s.tests[k].w[2]);
+    return `<span class="tt${ok ? ' ok' : ''}" style="${cvar(k)}">${ICON[k]}${ok ? ICON.check : '<i>W3</i>'}</span>`; }).join(''); };
+function renderTags() {
+  if (!superOn()) { S.view = 'home'; return renderHomeB(); }
+  const ids = Object.keys(tagsNow()).sort(), ready = ids.filter(id => !tagMissing(tagCode(id)).length);
+  const row = id => { const c = tagCode(id), n = nameOf(c);
+    return `<div class="tagrow${ready.includes(id) ? ' ready' : ''}"><span class="tagno">${ICON.tag}<b>${esc(tagNo(id))}</b></span>
+      <span class="tagwho"><b>${esc(c)}</b>${n && n.name ? `<small>${esc(n.name)}</small>` : ''}</span><span class="tts">${tagTests(c)}</span></div>`; };
+  return `${topBar(true)}
+    <h2 class="title" style="margin:6px 0 10px">${ICON.tag} Reusable tags</h2>
+    <div class="tagbtns"><button class="primary scanbig" data-act="tag-on"><span class="qr">${ICON.tag}</span><b>+ Put on a bag</b><small>scan a free tag, then tap the sample</small></button>
+      <button class="secondary scanbig" data-act="tag-off"><span class="qr">${ICON.tag}</span><b>Take off</b><small>scan the tag; only after every W3</small></button></div>
+    <p class="sub">${ids.length} on bags · ${ready.length} ready to take off</p>
+    ${ready.length ? `<h3 class="bhead">Ready to take off (every W3 done)</h3>${ready.map(row).join('')}` : ''}
+    ${ids.length > ready.length ? `<h3 class="bhead">On bags, still testing</h3>${ids.filter(id => !ready.includes(id)).map(row).join('')}` : ''}`;
+}
+function renderTagModal(m) {
+  if (m.type === 'tagpick') {
+    const list = tagCandidates();
+    return `<div class="modal"><div class="sheet" role="dialog" aria-modal="true">
+      <div class="tagbig">${ICON.tag}<b>${esc(tagNo(m.tag))}</b><span class="plus">→</span>${ICON.bag}<b>?</b></div>
+      <p class="sub center-t">Tap the sample this bag is (write the T code on the bag too).</p>
+      <div class="typerow"><input class="field" id="tagcode" type="text" autocomplete="off" autocapitalize="characters" placeholder="T829">
+        <button class="secondary" data-act="tag-typed">→</button></div>
+      <div class="tagpicks">${list.map(c => `<button class="tagpick" data-act="tag-pick" data-code="${esc(c)}"><b>${esc(c)}</b>${(NAMES[c] || {}).name ? `<small>${esc(NAMES[c].name)}</small>` : ''}</button>`).join('') || '<p class="sub">No assigned samples without a tag: type the code.</p>'}</div>
+      <div class="btnrow"><button class="secondary" data-act="tag-done">${ICON.cross}</button></div></div></div>`;
+  }
+  if (m.type === 'tagnotyet') return `<div class="modal redm"><div class="sheet" role="alertdialog" aria-modal="true">
+      <div class="redicon">${ICON.tag}<b>${esc(tagNo(m.tag))}</b></div><p class="redsub">${esc(m.code)}</p>
+      <div class="tts big">${m.miss.map(k => `<span class="tt" style="${cvar(k)}">${ICON[k]}<i>W3</i></span>`).join('')}</div>
+      <p class="redmsg">Not finished: ${esc(m.miss.map(lbl).join(', '))} W3 still to weigh. Leave the tag on.</p>
+      <div class="btnrow"><button class="primary" data-act="tag-done">${ICON.check}</button></div>
+      <button class="link center" data-act="tag-early">Take it off anyway (lost bag, cancelled …)</button></div></div>`;
+  return `<div class="modal greenm"><div class="sheet" role="dialog" aria-modal="true">
+      <div class="tick big">${ICON.check}</div>
+      <div class="tagbig">${ICON.tag}<b>${esc(tagNo(m.tag))}</b><span class="plus">${m.on ? '→' : '✕'}</span>${ICON.bag}<b>${esc(m.code)}</b></div>
+      <p class="sub center-t">${m.on ? 'Clip the tag on this bag.' : 'Tag is free: put it back in the box.'}</p>
+      <div class="btnrow"><button class="secondary" data-act="tag-done">${ICON.check}</button>
+        <button class="primary" data-act="${m.on ? 'tag-on' : 'tag-off'}">${ICON.scan}<small>${m.on ? 'next tag' : 'next'}</small></button></div></div></div>`;
+}
