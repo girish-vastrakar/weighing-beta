@@ -22,6 +22,7 @@
  * Other columns (e.g. Product Of) are ignored.
  * Optional: "Tests" (blank = all three, or e.g. "VM") and "Job batch" (filled by "Assign today's jobs",
  * see JobAssigner.gs) also go to the app, so the labels page puts the same samples on the three cards.
+ * "Retest of" (the first code) also goes to the app: when the two results agree, a flagged result is approved by itself.
  */
 
 const CFG = {
@@ -45,6 +46,7 @@ const CFG = {
     machine:  ['machine', 'weighing machine', 'machine no', 'machine no.'],
     batch:    ['job batch'],          // written by "Assign today's jobs" (JobAssigner.gs)
     tests:    ['tests'],              // blank = all three; e.g. "VM" or "Ash, VM" for a retest
+    retestOf: ['retest of', 'original code'],  // the first code, so the app can check the retest agrees with it
   },
 };
 
@@ -212,6 +214,7 @@ function readNames_() {
     if (idx.machine !== undefined)  item.machine = String(shown[r][idx.machine] || '').trim().toUpperCase().replace(/\s+/g, ' ');
     if (idx.batch !== undefined && +shown[r][idx.batch] > 0) item.batch = +shown[r][idx.batch];
     if (idx.tests !== undefined)    item.tests = String(shown[r][idx.tests] || '').trim();
+    if (idx.retestOf !== undefined) item.retestOf = String(shown[r][idx.retestOf] || '').trim().toUpperCase().replace(/\s+/g, '');
     Object.keys(item).forEach(k => { if (!item[k]) delete item[k]; });
     if (Object.keys(item).length) out[code] = item;   // later rows win if a code repeats
   }
