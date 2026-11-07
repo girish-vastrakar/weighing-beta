@@ -28,7 +28,7 @@
  * Name Tags columns the script adds at the end of the header row when missing:
  *   Priority (type URGENT to put a sample first) · Tests (blank = all three, or e.g. "VM") · Retest of (the first code)
  *   · Job batch · Assigned on · Job status
- * A retest is also recognised from "Retest" or " R<number>" in the name or supplier.
+ * A sample reset on the results page also counts as a retest. A retest is also recognised from "Retest" or " R<number>" in the name or supplier.
  */
 
 const JA = {
@@ -116,11 +116,21 @@ function assign_() {
   for (let i = 0; i < most; i++) work.forEach(w => { const room = Math.min(JA.batchSize, w.samples - i * JA.batchSize);
     if (room > 0) slots.push({ bal: w.bal, batch: fixed ? st.nextBatch(w.bal) + i : '', worker: w.worker + (w.kind === 'both' ? '' : ' (' + (w.kind === 'retest' ? 'retests only' : 'new only') + ')'), kind: w.kind, room: room, codes: [] }); });
 
-  const rows = t.rows.map(r => Object.assign(r, { state: st.status(r.code, r.tests) }));
+  // a sample reset on the results page counts as a retest (it avoids the balance that weighed it)
+  const rows = t.rows.map(r => Object.assign(r, { state: st.status(r.code, r.tests) },
+    st.wasReset(r.code) ? { retest: 1, retestOf: r.retestOf || r.code } : {}));
   const free = r => r.state === 'Waiting';
-  const hand = rows.filter(r => free(r) && r.machine && !r.assigned);                 // typed by hand: keep the balance
-  const pool = rows.filter(r => free(r) && (!r.machine || r.assigned));               // blank, or assigned by the script before
   const notes = [];
+  // Job type of each working balance (Today column E): a hand-typed Machine that does not fit it goes back to the pool
+  const kindOf = {}; work.forEach(w => { kindOf[w.bal] = w.kind; });
+  const fitsKind = (k, r) => !k || k === 'both' || (k === 'retest') === !!r.retest;
+  const hand = [], pool = rows.filter(r => free(r) && (!r.machine || r.assigned));    // blank, or assigned by the script before
+  rows.filter(r => free(r) && r.machine && !r.assigned).forEach(r => {               // typed by hand: keep the balance
+    const k = kindOf[balOf_(r.machine)];
+    if (fitsKind(k, r)) { hand.push(r); return; }
+    notes.push(r.code + ' was on ' + r.machine + ' (typed by hand) but ' + r.machine + ' does ' + (k === 'retest' ? 'retests only' : 'new samples only') + ' today: moved.');
+    r.assigned = 'moved'; pool.push(r);
+  });
 
   // 1. hand-typed machines: into that balance's batches
   sortPriority_(hand).forEach(r => {
@@ -134,7 +144,7 @@ function assign_() {
   let left = [];
   sortPriority_(pool).forEach(r => {
     const avoid = r.retest ? st.balanceOf(r.retestOf) : null;
-    const fits = x => x.codes.length < x.room && (x.kind === 'both' || (x.kind === 'retest') === !!r.retest);
+    const fits = x => x.codes.length < x.room && fitsKind(x.kind, r);
     let s = slots.find(x => fits(x) && x.bal !== avoid);
     if (!s && avoid) {
       s = slots.find(fits);
@@ -191,8 +201,12 @@ function readData_() {
 /** What the app knows about each code: status, balance of its first weighing, next batch number per balance. */
 function sampleState_(f) {
   const samples = f.samples || {}, cards = f.cards || {};
+  // Reset on the results page: the test's weights are cleared and it must be weighed again (a card from before the reset no longer counts)
+  const resetAt = {};
+  Object.keys(samples).forEach(c => (samples[c].ev || []).forEach(e => { if (e.a === 'reset' && e.k) resetAt[c + '|' + e.k] = Math.max(resetAt[c + '|' + e.k] || 0, +e.t || 0); }));
   const on = {};
-  Object.keys(cards).forEach(tr => (cards[tr].codes || []).forEach(c => { if (c) on[c + '|' + cards[tr].test] = true; }));
+  Object.keys(cards).forEach(tr => (cards[tr].codes || []).forEach(c => { const key = c + '|' + cards[tr].test;
+    if (c && (+cards[tr].at || 0) > (resetAt[key] || 0)) on[key] = true; }));
   const w = (c, k) => { const s = samples[c]; return (s && s.w && s.w[k]) || []; };
   const started = (c, k) => w(c, k)[0] != null, done = (c, k) => w(c, k)[2] != null;
   // Codes older than the newest started one that never came into this app were weighed in the old app
@@ -202,11 +216,14 @@ function sampleState_(f) {
     status(c, tests) {
       if (!here[c] && codeNum_(c) <= floor) return '';
       const ks = JA.tests.filter(k => !tests || tests.indexOf(k) >= 0);
-      if (ks.every(k => done(c, k))) return 'Done';
-      if (ks.some(k => started(c, k))) return 'Weighing';
-      if (ks.some(k => on[c + '|' + k])) return 'On card';
+      const left = ks.filter(k => !done(c, k));
+      if (!left.length) return 'Done';
+      if (left.some(k => started(c, k))) return 'Weighing';
+      if (left.some(k => on[c + '|' + k])) return 'On card';
+      if (left.length < ks.length && !this.wasReset(c)) return 'Weighing';   // some tests done, the rest not on a card yet
       return 'Waiting';
     },
+    wasReset(c) { return JA.tests.some(k => resetAt[c + '|' + k] && !done(c, k)); },
     balanceOf(c) {
       const ev = ((samples[c] || {}).ev || []).filter(e => e.a === 'w' && e.b);
       return ev.length ? +ev[0].b : null;
