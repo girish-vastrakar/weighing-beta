@@ -28,7 +28,8 @@
  * Name Tags columns the script adds at the end of the header row when missing:
  *   Priority (type URGENT to put a sample first) · Tests (blank = all three, or e.g. "VM") · Retest of (the first code)
  *   · Job batch · Assigned on · Job status
- * A sample reset on the results page also counts as a retest. A retest is also recognised from "Retest" or " R<number>" in the name or supplier.
+ * A retest is ONLY a sample reset on the results page, or a row with a code in "Retest of". Names are not read
+ * ("R1" in a sample name means something else, Girish 2026-11-07).
  */
 
 const JA = {
@@ -253,11 +254,10 @@ function readTags_() {
     const g = k => idx[k] === undefined ? '' : String(shown[r][idx[k]] || '').trim();
     const code = g('code').toUpperCase().replace(/\s+/g, '');
     if (!code) continue;
-    const text = g('name') + ' ' + g('supplier');
     const retestOf = g('retestOf').toUpperCase().replace(/\s+/g, '');
     rows.push({ r, code, machine: g('machine').toUpperCase(), assigned: toISO_(g('assigned'), g('assigned')), date: idx.date === undefined ? '' : toISO_(raw[r][idx.date], g('date')),
       tests: testsOf(g('tests')), retestOf,
-      retest: retestOf || /retest|\sR\d+\b/i.test(text) ? 1 : 0,
+      retest: retestOf ? 1 : 0,
       urgent: /urgent/i.test(g('urgent')) ? 1 : 0 });
   }
 
