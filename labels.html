@@ -70,6 +70,11 @@
   details.oldday > summary { cursor: pointer; } details.oldday > .oldrow:first-of-type { margin-top: 4px; }
   .oldrow em { font-style: normal; font-size: .85em; padding: 1px 7px; border-radius: 999px; background: #fff3d6; color: #8a5a00; }
   .oldrow em.ok { background: #e3f4e8; color: #1f7a3a; }
+  .oldrow button.del { color: #b3261e; border-color: #e3b3ae; }
+  .delbox { width: 100%; background: #fdf1f0; border: 1px solid #e3b3ae; border-radius: 10px; padding: 10px 12px; margin: 2px 0 6px; }
+  .delbox label { display: flex; align-items: center; gap: 8px; padding: 4px 0; } .delbox label.no { color: #6b7280; }
+  .delbox input { width: 20px; height: 20px; } .delbox p { margin: 4px 0 8px; font-size: .9em; }
+  .delbox button.go { background: #b3261e; color: #fff; border-color: #b3261e; }
   .bd.job .bh { gap: 6mm; }
   .bd.job .qr { text-align: center; } .bd.job .qr svg { width: 46mm; height: 46mm; display: block; } .bd.job .qr b { font-size: 5mm; }
   .bd.job .cell { flex-direction: column; }
@@ -235,7 +240,9 @@ const tagLine = c => TAGSOF[c] ? `<u>${esc(TAGSOF[c])}</u>` : '';
 // cards[tray].batch is the card's serial (the "ASH W1-8" in its QR, never reused); since lab-v56 a card also has
 // day ("2026-11-03", lab computer's date) and dn (batch number of that day for that balance: 1, 2, 3 … every day).
 // Older cards have no dn and keep showing the batch number printed on them.
-const nextBatch = (f, bal) => 1 + Math.max(0, ...Object.values(f.cards || {}).filter(j => +j.bal === bal).map(j => +j.batch || 0));
+// deleted cards (f.cardsDeleted) count too: a serial is never given to a new card, so an old paper card can't open it
+const allCards = f => Object.values(f.cards || {}).concat(Object.values(f.cardsDeleted || {}));
+const nextBatch = (f, bal) => 1 + Math.max(0, ...allCards(f).filter(j => +j.bal === bal).map(j => +j.batch || 0));
 const dayKey = t => { const d = new Date(t); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const todayKey = () => dayKey(Date.now());
 const dayName = k => new Date(k + 'T12:00').toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
@@ -289,7 +296,7 @@ async function fillNext() {
     const [{ f }, { f: n }] = await Promise.all([readJSON(GH.path), readJSON(GH.names)]);
     const names = n.names || {};
     // Sheet batch (same samples on all three cards) when the sheet assigned one; its number unless already used
-    const sb = sheetBatch(f, names, bal), used = sb != null && Object.values(f.cards || {}).some(j => +j.bal === bal && +j.batch === sb);
+    const sb = sheetBatch(f, names, bal), used = sb != null && allCards(f).some(j => +j.bal === bal && +j.batch === sb);
     FILLED[bal] = sb != null && !used ? sb : null;
     const num = nextDayNo(f, bal, todayKey());
     document.getElementById('jbatch').value = num;
@@ -336,7 +343,7 @@ async function printJobs() {
       // today's batch number (typed or next); the same number again today replaces that batch's cards
       const day = todayKey(), dn = +document.getElementById('jbatch').value || nextDayNo(f, bal, day);
       const same = batchesOf(f, bal).find(b => b.day === day && b.dn === dn);
-      const free = n => n && !Object.values(f.cards || {}).some(j => +j.bal === bal && +j.batch === n);
+      const free = n => n && !allCards(f).some(j => +j.bal === bal && +j.batch === n);
       const batch = same ? same.serial : free(FILLED[bal]) ? FILLED[bal] : nextBatch(f, bal);
       f.cards = f.cards || {}; made = {};
       ['MC', 'ASH', 'VM'].forEach(k => { if (!want[k].length) return;
@@ -371,7 +378,7 @@ async function listOld() {
   const row = (b, showDay) => { const trs = b.trays.slice().sort((x, y) => order[OLD[x].test] - order[OLD[y].test]);
     const left = b.total - b.done, state = !left ? '<em class="ok">✓ all W3 done</em>' : `<em>W3 ${b.done}/${b.total}</em>`;
     return `<div class="oldrow"><b>${esc(showDay ? batchName(b) : 'Batch ' + (b.dn || b.serial))}</b><span>${trs.map(tr => `${esc(TNAME[OLD[tr].test])} ${OLD[tr].codes.filter(Boolean).length}`).join(' · ')} ${state}</span>
-      <button data-batch="${b.serial}">Reprint</button></div>`; };
+      <button data-batch="${b.serial}">Reprint</button><button class="del" data-del="${b.serial}">Delete</button></div>`; };
   const days = [...new Set(past.map(b => b.day))];
   el.innerHTML = `<div class="oldday">Today · ${esc(dayName(today))}</div>`
     + (mine.length ? mine.map(b => row(b, false)).join('') : `<div class="oldrow"><span>No cards printed for W${bal} today yet.</span></div>`)
@@ -384,6 +391,67 @@ async function listOld() {
     jmsg(`Reprinting W${bal} ${batchName(b)}.`);
     document.body.classList.add('onlyjobs'); window.print();
   }));
+  el.querySelectorAll('button[data-del]').forEach(btn => btn.addEventListener('click', () => delBox(btn, all.find(x => x.serial === +btn.dataset.del), f)));
+}
+/* ---------- delete job cards printed by mistake (supervisor PIN + confirm) ----------
+   Only a card with nothing weighed on it can go (same rule as the weighing app, bench.js cardUsed):
+   Ash / VM a weight on one of its spots, Moisture any weight of its samples. The card moves to
+   data.json cardsDeleted (kept: its serial is never reused), and its samples go back to Fill. */
+function cardUsed(f, tray) {
+  const j = f.cards && f.cards[tray]; if (!j) return [];
+  const k = j.test;
+  return (j.codes || []).filter((c, i) => { const s = c && f.samples && f.samples[c], w = s && s.w && s.w[k];
+    return !!w && w.some(v => v != null) && (k === 'MC' || (s.h || {})[k] === `${tray}-${i + 1}`); });
+}
+async function pinHash(pin) {
+  const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode('lab-pin:' + pin));
+  return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join('');
+}
+function delBox(btn, b, f) {
+  document.querySelectorAll('.delbox').forEach(x => x.remove());
+  if (!b) return;
+  const order = { MC: 0, ASH: 1, VM: 2 }, trs = b.trays.slice().sort((x, y) => order[OLD[x].test] - order[OLD[y].test]);
+  const box = document.createElement('div'); box.className = 'delbox';
+  box.innerHTML = `<p><b>Delete ${esc(batchName(b))} (W${esc(OLD[trs[0]].bal)})?</b> Tick the cards to delete. A card with a sample already weighed on it can't be deleted, so no weight is lost.</p>`
+    + trs.map(tr => { const u = cardUsed(f, tr), n = OLD[tr].codes.filter(Boolean).length;
+      return u.length ? `<label class="no"><input type="checkbox" disabled> ${esc(TNAME[OLD[tr].test])} · ${n} samples · <em>${u.length} weighed: stays</em></label>`
+        : `<label><input type="checkbox" data-tray="${esc(tr)}" checked> ${esc(TNAME[OLD[tr].test])} · ${n} samples · nothing weighed</label>`; }).join('')
+    + `<p>The phones stop knowing the deleted cards, and their samples go back to Fill from the Google Sheet. Throw the paper cards away.</p>
+    <div class="row" style="margin:0"><button class="go">Delete ticked cards (supervisor PIN)</button><button class="no">Cancel</button></div>`;
+  btn.closest('.oldrow').after(box);
+  box.querySelector('button.no').addEventListener('click', () => box.remove());
+  box.querySelector('button.go').addEventListener('click', () => {
+    const pick = [...box.querySelectorAll('input[data-tray]:checked')].map(x => x.dataset.tray);
+    if (!pick.length) { jmsg('Tick a card to delete first.'); return; }
+    deleteCards(pick, b);
+  });
+}
+async function deleteCards(trays, b) {
+  if (!store.get('ghkey')) { jmsg('⚠ This computer has no lab key: open the weighing app setup link here once.'); return; }
+  let note = '', gone = [], kept = [];
+  try {
+    const { f } = await readJSON(GH.path), set = f.settings && f.settings.pin;
+    if (!set) { jmsg('Set the supervisor PIN in the weighing app first (Setup → Supervisor on).'); return; }
+    const p = prompt(`Supervisor PIN to delete ${trays.length} job card${trays.length > 1 ? 's' : ''} (${batchName(b)})`); if (p == null) return;
+    if (await pinHash(p.trim()) !== set) { jmsg('⚠ Wrong PIN. Nothing deleted.'); return; }
+    jmsg('Deleting…');
+    for (let attempt = 0; ; attempt++) {
+      const { f, sha } = await readJSON(GH.path); gone = []; kept = [];
+      // checked again on the newest data.json: a phone may have weighed on the card meanwhile
+      trays.forEach(tr => { if (!f.cards || !f.cards[tr]) return; if (cardUsed(f, tr).length) { kept.push(tr); return; }
+        f.cardsDeleted = f.cardsDeleted || {}; f.cardsDeleted[tr] = Object.assign({}, f.cards[tr], { delAt: Date.now(), delBy: 'labels page' });
+        delete f.cards[tr]; gone.push(tr); });
+      if (!gone.length) break;
+      const put = await fetch(api(GH.path), { method: 'PUT', headers: hdr(), body: JSON.stringify({ message: `delete job cards: ${gone.join(', ')}`, branch: GH.branch, sha, content: b64(JSON.stringify(f, null, 1)) }) });
+      if (put.ok) break;
+      if ((put.status !== 409 && put.status !== 422) || attempt >= 4) { note = 'GitHub error ' + put.status; break; }
+    }
+  } catch (e) { note = e.message === 'Failed to fetch' ? 'no internet' : e.message; }
+  if (note) { jmsg('⚠ Not deleted (' + note + ').'); return; }
+  jmsg((gone.length ? `✓ Deleted ${gone.join(', ')}: the phones drop them on their next sync, and the samples can go on a new card (Fill).` : 'Nothing deleted.')
+    + (kept.length ? ` ${kept.join(', ')} stays: a sample on it was weighed meanwhile.` : ''));
+  document.getElementById('jobcards').innerHTML = '';
+  listOld();
 }
 document.getElementById('jbal').addEventListener('change', listOld);
 listOld();

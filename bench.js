@@ -58,7 +58,7 @@ const BL = {
       wrongPlace: 'This oven / furnace is not for this test.', full: 'Full.', notWaiting: 'Not waiting to go in.',
       nothing: 'Nothing is waiting to go in.', empty: 'Nothing is on this.', notSample: 'Not in the sample list.',
       locked: 'Only the supervisor can change this now.', otherLoad: 'This load belongs to another balance.', wrongPlace: 'Wrong oven / furnace. Scan this one:',
-      noCard: 'Not on a job card. Scan the job card.', otherCard: 'This job card is for another balance.', notCard: 'Job card not found. Ask the supervisor.',
+      noCard: 'Not on a job card. Scan the job card.', otherCard: 'This job card is for another balance.', notCard: 'Job card not found. Ask the supervisor.', cardUsed: 'Samples on this card are weighed already: the card stays.',
       waitOut: 'Wait: the supervisor takes it out first.', wrongBag: 'Wrong bag. Put it back. Take this one:',
       tagFree: 'This tag is not on any sample. Give it to the supervisor.'
     },
@@ -89,7 +89,7 @@ const BL = {
       wrongPlace: 'આ ઓવન / ફર્નેસ આ ટેસ્ટ માટે નથી.', full: 'ભરાઈ ગયું.', notWaiting: 'અંદર જવાની રાહમાં નથી.',
       nothing: 'અંદર જવા માટે કંઈ નથી.', empty: 'આના પર કંઈ નથી.', notSample: 'સેમ્પલ યાદીમાં નથી.',
       locked: 'હવે ફક્ત સુપરવાઇઝર બદલી શકે.', otherLoad: 'આ લોડ બીજા કાંટાનો છે.', wrongPlace: 'ખોટું ઓવન / ફર્નેસ. આ સ્કેન કરો:',
-      noCard: 'જોબ કાર્ડ પર નથી. જોબ કાર્ડ સ્કેન કરો.', otherCard: 'આ જોબ કાર્ડ બીજા કાંટાનું છે.', notCard: 'જોબ કાર્ડ મળ્યું નથી. સુપરવાઇઝરને પૂછો.',
+      noCard: 'જોબ કાર્ડ પર નથી. જોબ કાર્ડ સ્કેન કરો.', otherCard: 'આ જોબ કાર્ડ બીજા કાંટાનું છે.', notCard: 'જોબ કાર્ડ મળ્યું નથી. સુપરવાઇઝરને પૂછો.', cardUsed: 'આ કાર્ડ પરના નમૂનાનું વજન થઈ ગયું છે: કાર્ડ રહેશે.',
       waitOut: 'રાહ જુઓ: પહેલા સુપરવાઇઝર બહાર કાઢે.', wrongBag: 'ખોટી બેગ. પાછી મૂકો. આ લો:',
       tagFree: 'આ ટેગ કોઈ સેમ્પલ પર નથી. સુપરવાઇઝરને આપો.'
     },
@@ -168,6 +168,7 @@ const ICON = {
   VM: svgI('<path d="M24 42c-8 0-12-6-9-13 2-4 6-6 5-13 7 3 13 10 12 17 0 5-3 9-8 9z"/>'),
   ASH: svgI('<path d="M12 18h24l-4 22H16z"/><circle cx="20" cy="30" r="1.5" fill="currentColor"/><circle cx="27" cy="27" r="1.5" fill="currentColor"/><circle cx="25" cy="34" r="1.5" fill="currentColor"/>'),
   card: svgI('<rect x="9" y="5" width="30" height="38" rx="3"/><path d="M14 10h9v9h-9zM17 13h3v3h-3z"/><circle cx="19" cy="30" r="3.5"/><circle cx="30" cy="30" r="3.5"/><circle cx="19" cy="38" r="2"/><circle cx="30" cy="38" r="2"/>'),
+  trash: svgI('<path d="M8 12h32M18 12V7h12v5M12 12l2 29h20l2-29M21 19v15M27 19v15"/>'),
   tag: svgI('<path d="M8 8h16l18 18-16 16L8 24z"/><circle cx="16" cy="16" r="3"/>'),
   TM: svgI('<path d="M16 8c5 7 8 11 8 15a8 8 0 01-16 0c0-4 3-8 8-15zM32 18c5 7 8 11 8 15a8 8 0 01-16 0c0-4 3-8 8-15z"/>')
 };
@@ -259,6 +260,15 @@ function batchApply(f, j) {
   if (j.action === 'setPhotoLim') { f.settings = f.settings || {}; f.settings.photoLim = Object.assign({}, f.settings.photoLim, j.photoLim); return true; }
   if (j.action === 'setRetestGap') { f.settings = f.settings || {}; f.settings.retestGap = Object.assign({}, f.settings.retestGap, j.retestGap); return true; }
   if (j.action === 'setLimits') { f.settings = f.settings || {}; f.settings.limits = Object.assign({}, f.settings.limits, j.limits); return true; }
+  if (j.action === 'cardDelete') {                    // supervisor (PIN): only a card with nothing weighed on it
+    const c = f.cards && f.cards[j.tray];
+    if (c && !cardUsed(f, j.tray).length) {
+      f.cardsDeleted = f.cardsDeleted || {};           // kept, so its serial (the QR) is never given to a new card
+      f.cardsDeleted[j.tray] = Object.assign({}, c, { delAt: j.at, delBy: j.worker || '' });
+      delete f.cards[j.tray];
+    }
+    return true;
+  }
   if (j.action === 'setPin') { f.settings = f.settings || {}; f.settings.pin = j.pin; return true; }
   if (j.action === 'setTemp') { f.settings = f.settings || {}; f.settings.temp = Object.assign({}, f.settings.temp, j.temp); return true; }
   if (j.action === 'addSoundFile') { f.settings = f.settings || {}; f.settings.soundFiles = (f.settings.soundFiles || []).filter(u => u.key !== j.file.key).concat([j.file]); return true; }
@@ -389,6 +399,27 @@ function pickSpot(k) {
 
 /* ---------- job cards (printed on the labels page from the Google Sheet allotment) ---------- */
 const cards = () => (S.data && S.data.cards) || {};
+// Codes of a job card (in data.json f) that already have a weight on it: Ash / VM on one of its spots,
+// Moisture any weight. A card with any of these can't be deleted, so no weighing is ever lost.
+// (Same rule in labels.html.)
+function cardUsed(f, tray) {
+  const j = f.cards && f.cards[tray]; if (!j) return [];
+  const k = j.test;
+  return (j.codes || []).filter((c, i) => { const s = c && f.samples && f.samples[c], w = s && s.w && s.w[k];
+    return !!w && w.some(v => v != null) && (k === 'MC' || (s.h || {})[k] === `${tray}-${i + 1}`); });
+}
+// Supervisor: delete a job card printed by mistake (PIN and a confirm). Weighed cards stay.
+async function cardDelete(tray) {
+  const t = B(), j = cards()[tray]; if (!j || !superOn()) return;
+  const f = JSON.parse(JSON.stringify(S.file || {})); Q.forEach(x => fileApply(f, x));
+  const used = cardUsed(f, tray);
+  if (used.length) { redScreen(t.bad.cardUsed, { icon: ICON[j.test], num: String(used.length), sub: used.join(', ') }); return; }
+  const n = (j.codes || []).filter(Boolean).length;
+  if (!confirm(`Delete this job card?\n\n${trayName(tray)} (${tray}), ${n} samples.\n\nNothing is weighed on it. The phones stop knowing this card, and its samples go back to the Google Sheet allotment for a new card. Throw the paper card away.`)) return;
+  if (!await askPin()) return;
+  enqueue({ action: 'cardDelete', tray, worker: S.worker });
+  toast('Job card deleted.', true); S.card = null; S.view = 'home'; render();
+}
 // The job card a sample's Ash / VM test is on (the newest card, if it was printed twice)
 function cardSpot(code, k) {
   let best = null; const c = cards();
@@ -472,7 +503,8 @@ function renderCard() {
   if (r) S.rid = r.rid;
   return `<div style="${cvar(k)}">${topBar(true)}
     <div class="placehead"><span class="ti">${ICON[k]}</span><span class="bnum">${esc(String(i.bal))}<i>${esc(i.letter)}</i></span>
-      ${r ? `${placeIcon(r.place)}<b>${placeNo(r.place)}</b>` : ''}</div>
+      ${r ? `${placeIcon(r.place)}<b>${placeNo(r.place)}</b>` : ''}
+      ${superOn() ? `<button class="iconbtn carddel" data-act="card-del" aria-label="Delete job card">${ICON.trash}</button>` : ''}</div>
     <div class="runboard cardboard">${boardMap(tray, 0, cell)}</div>
     <div class="bact">${act}</div></div>`;
 }
@@ -989,6 +1021,7 @@ function batchAct(el) {
     case 'place': onPlace(el.dataset.place); return true;
     case 'walk': { const w = S.view === 'card' ? cardRun(S.card) : r; if (w) startWalk(w); return true; }
     case 'card': openCard(el.dataset.tray); return true;
+    case 'card-del': if (S.card) cardDelete(S.card); return true;
     case 'bag-scan': openScanner('bag'); return true;
     case 'go-w': goW(+el.dataset.step); return true;
     case 'card-go': if (S.card) { if (S.skip) delete S.skip[S.card]; S.walk = { card: S.card }; cardNext(); } return true;
