@@ -83,6 +83,14 @@
   .bd.job.vm .ring { width: 27mm; height: 27mm; font-size: 6.5mm; }
   .bd.job.vm .ring i { font-size: 4mm; }
   .bd.job .ring.empty { opacity: .3; }
+  /* reprint of a batch already started: spots finished are faded with a tick, spots still to do stand out */
+  .bd.job .ring.done, .bd.mc .mcell.done { opacity: .35; border-style: dashed; }
+  .bd.job .ring.done::after, .bd.mc .mcell.done b::after { content: ' ✓'; }
+  .bd.job .ring.left { background: #fff1b8; border-width: 2.4mm; box-shadow: 0 0 0 1.2mm #1f2a33; color: #1f2a33; }
+  .bd.mc .mcell.left { background: #fff1b8; border-width: 1.6mm; box-shadow: 0 0 0 .8mm #1f2a33; }
+  .bd.job .ring s, .bd.mc .mcell s { text-decoration: none; font-size: 3.6mm; font-weight: 800; margin-top: .8mm; padding: .3mm 1.5mm; border-radius: 1mm; background: #1f2a33; color: #fff; }
+  .bd.job.vm .ring s { font-size: 3mm; } .bd.mc .mcell s { align-self: flex-start; }
+  .bd .left-note { margin-top: 1mm; font-weight: 800; color: #1f2a33; background: #fff1b8; padding: .5mm 2mm; border-radius: 1mm; display: inline-block; }
   .bd.job .ring u, .bd.mc .mcell u { text-decoration: none; font-size: 3.6mm; font-weight: 700; margin-top: .8mm; color: #333; }
   body.onlyjobs .alllabels, body.nojobs #jobcards { display: none !important; }
   /* reusable tag cards: 50 x 70 mm, 4 x 4 on A4, laminated, hole at the top for a rubber band or clip */
@@ -312,22 +320,35 @@ async function fillNext() {
 }
 // The card: big balance and batch, one QR for the whole card, the sample code in every circle
 // Moisture: paper only, no QR; a box per code for the dish number the worker used, and In / Out ticks
-function jobCard(tray, j) {
+// Where a code on a saved card stands: 'done' (W3 saved), 'moved' (reset after this card: it is on a newer card),
+// or what is still to weigh ("W3", "W2 W3", "W1 W2 W3")
+function spotState(f, c, j) {
+  const s = f.samples && f.samples[c], w = (s && s.w && s.w[j.test]) || [];
+  if (((s && s.ev) || []).some(e => e.a === 'reset' && e.k === j.test && (+e.t || 0) > (+j.at || 0))) return 'moved';
+  if (w[2] != null) return 'done';
+  return ['W1', 'W2', 'W3'].filter((x, i) => w[i] == null).join(' ');
+}
+// st (reprint only, when part of the batch is weighed): code → spotState; finished spots fade, the rest stand out
+function jobCard(tray, j, st) {
   const k = j.test, rows = Math.ceil(CAP[k] / COLS[k]), when = new Date(j.at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   // the big number is the day's batch number; older cards keep the number printed on them
   const no = j.dn || j.batch, bname = j.dn ? `${dayName(cardDay(j))} batch ${j.dn}` : `batch ${j.batch}`;
+  const cls = c => !st || !c ? '' : st[c] === 'done' || st[c] === 'moved' ? ' done' : ' left';
+  const todo = c => !st || !c || st[c] === 'done' ? '' : `<s>${st[c] === 'moved' ? 'new card' : esc(st[c])}</s>`;
+  const nLeft = st ? j.codes.filter(c => c && cls(c) === ' left').length : 0;
+  const leftNote = st ? `<br><span class="left-note">${nLeft ? `${nLeft} left to weigh (highlighted)` : 'All weighed'} · ${new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</span>` : '';
   if (k === 'MC') {
     const cells = Array.from({ length: CAP.MC }, (x, i) => { const c = j.codes[i];
-      return `<div class="mcell${c ? '' : ' empty'}"><i>${i + 1}</i><b>${c ? esc(c) : '—'}</b>${c ? tagLine(c) : ''}${c ? '<span>Dish <em class="dish"></em></span><span>In <em class="tick"></em> Out <em class="tick"></em></span>' : ''}</div>`; }).join('');
+      return `<div class="mcell${c ? '' : ' empty'}${cls(c)}"><i>${i + 1}</i><b>${c ? esc(c) : '—'}</b>${todo(c)}${c ? tagLine(c) : ''}${c ? '<span>Dish <em class="dish"></em></span><span>In <em class="tick"></em> Out <em class="tick"></em></span>' : ''}</div>`; }).join('');
     return `<div class="bd job mc"><div class="bh"><div class="big"><b>W${esc(j.bal)}</b><i>#${esc(no)}</i></div>
-      <div class="bt">${esc(TNAME.MC)}<small>Balance W${esc(j.bal)} · ${esc(bname)}<br>${when} · ${j.codes.filter(Boolean).length} samples</small></div></div>
+      <div class="bt">${esc(TNAME.MC)}<small>Balance W${esc(j.bal)} · ${esc(bname)}<br>${when} · ${j.codes.filter(Boolean).length} samples${leftNote}</small></div></div>
       <div class="cells" style="grid-template-columns:repeat(${COLS.MC},1fr);grid-template-rows:repeat(${rows},auto)">${cells}</div></div>`;
   }
   const cells = Array.from({ length: CAP[k] }, (x, i) => { const c = j.codes[i];
-    return `<div class="cell"><div class="ring${c ? '' : ' empty'}"><i>${i + 1}</i>${c ? esc(c) : ''}${c ? tagLine(c) : ''}</div></div>`; }).join('');
+    return `<div class="cell"><div class="ring${c ? '' : ' empty'}${cls(c)}"><i>${i + 1}</i>${c ? esc(c) : ''}${todo(c)}${c ? tagLine(c) : ''}</div></div>`; }).join('');
   return `<div class="bd job ${k.toLowerCase()}"><div class="bh"><div class="qr">${svg(tray)}<b>${esc(tray)}</b></div>
     <div class="big"><b>W${esc(j.bal)}</b><i>#${esc(no)}</i></div>
-    <div class="bt">${esc(TNAME[k])}<small>Balance W${esc(j.bal)} · ${esc(bname)}<br>${when} · ${j.codes.filter(Boolean).length} samples</small></div></div>
+    <div class="bt">${esc(TNAME[k])}<small>Balance W${esc(j.bal)} · ${esc(bname)}<br>${when} · ${j.codes.filter(Boolean).length} samples${leftNote}</small></div></div>
     <div class="cells" style="grid-template-columns:repeat(${COLS[k]},1fr);grid-template-rows:repeat(${rows},auto)">${cells}</div></div>`;
 }
 async function printJobs() {
@@ -387,8 +408,18 @@ async function listOld() {
       return `<details class="oldday"><summary>${esc(dayName(d))} <small>· ${bs.length} batch${bs.length > 1 ? 'es' : ''}, all done</small></summary>${bs.map(b => row(b, false)).join('')}</details>`; }).join('');
   el.querySelectorAll('button[data-batch]').forEach(btn => btn.addEventListener('click', () => {
     const b = all.find(x => x.serial === +btn.dataset.batch);
-    document.getElementById('jobcards').innerHTML = b.trays.sort((x, y) => order[OLD[x].test] - order[OLD[y].test]).map(tr => jobCard(tr, OLD[tr])).join('');
-    jmsg(`Reprinting W${bal} ${batchName(b)}.`);
+    // part of the batch weighed (e.g. carried over): mark each spot as finished or still to do on the reprint
+    const trs = b.trays.sort((x, y) => order[OLD[x].test] - order[OLD[y].test]);
+    const marks = trs.map(tr => { const j = OLD[tr], m = {}; j.codes.filter(Boolean).forEach(c => { m[c] = spotState(f, c, j); }); return m; });
+    const started = marks.some(m => Object.values(m).some(v => v !== 'W1 W2 W3'));
+    // a card with every spot finished is not printed again
+    const finished = m => Object.values(m).every(v => v === 'done' || v === 'moved');
+    const keep = trs.map((tr, i) => i).filter(i => !started || !finished(marks[i]));
+    const skipped = trs.filter((tr, i) => !keep.includes(i)).map(tr => TNAME[OLD[tr].test]);
+    if (!keep.length) { jmsg(`W${bal} ${batchName(b)}: every spot is weighed already, nothing to reprint.`); return; }
+    document.getElementById('jobcards').innerHTML = keep.map(i => jobCard(trs[i], OLD[trs[i]], started ? marks[i] : null)).join('');
+    const left = b.total - b.done;
+    jmsg(`Reprinting W${bal} ${batchName(b)}${started ? `: the ${left} spot${left === 1 ? '' : 's'} still to weigh ${left === 1 ? 'is' : 'are'} highlighted` : ''}${skipped.length ? ` (${skipped.join(' and ')} card${skipped.length > 1 ? 's' : ''} all weighed, not printed)` : ''}.`);
     document.body.classList.add('onlyjobs'); window.print();
   }));
   el.querySelectorAll('button[data-del]').forEach(btn => btn.addEventListener('click', () => delBox(btn, all.find(x => x.serial === +btn.dataset.del), f)));
