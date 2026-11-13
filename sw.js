@@ -1,11 +1,13 @@
 // Service worker for the weighing app.
 // Change VERSION whenever you upload a new index.html so phones pick it up.
-const VERSION = 'lab-v59';
+const VERSION = 'lab-v60';
 const SHELL = ['./', './index.html', './bench.js', './lib/jsQR.js', './lib/sounds.js', './lib/retest.js', './manifest.json',
   './icon-192.png', './icon-512.png', './icon-maskable-512.png', './apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  // cache: 'reload' skips the browser's HTTP cache (GitHub Pages lets it keep files 10 minutes), so a phone that
+  // updates right after a deploy does not store the old bench.js under the new version
+  e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL.map(u => new Request(u, { cache: 'reload' })))).then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
