@@ -452,12 +452,20 @@ function skipSpot() {
 }
 const canSkip = () => !!(S.walk && S.walk.card && !S.walk.w3 && S.step <= 2 && !S.editing);
 const skipBtn = () => canSkip() ? `<button class="secondary skipbtn" data-act="skip">${ICON.skip}<small>${esc(B().small.skip)}</small></button>` : '';
+// Is this sample on spot id of a card? Also when its W1 / W2 were weighed on a spot of another card that was
+// saved again since with other codes (2026-11-13: Ash #1 replaced while spots 1-6 were weighed, the same codes
+// printed again on #2): that old spot no longer has it, so it belongs to this card's spot now.
+function onSpot(s, k, id) {
+  const h = holdOf(s, k); if (!h || h === id) return !!h;
+  const i = hInfo(h); if (!i.card || !i.pos || i.tray === hInfo(id).tray) return false;
+  const o = cards()[i.tray]; return !o || o.codes[i.pos - 1] !== s.code;
+}
 // Next spot of a card with W2 saved and W3 still to do (any time, not locked to the timer app)
 function cardW3(tray) {
   const j = cards()[tray]; if (!j) return null;
   for (let i = 0; i < j.codes.length && i < CAP[j.test]; i++) {
     const code = j.codes[i], id = `${tray}-${i + 1}`, s = code && sample(code);
-    if (s && s.tests[j.test] && s.tests[j.test].done === 2 && holdOf(s, j.test) === id) return { code, pos: i + 1, id };
+    if (s && s.tests[j.test] && s.tests[j.test].done === 2 && onSpot(s, j.test, id)) return { code, pos: i + 1, id };
   }
   return null;
 }
@@ -475,6 +483,8 @@ function cardNext() {
   if (S.walk.w3) {
     const w = cardW3(tray);
     if (!w) { S.walk = null; S.card = tray; S.view = 'card'; good(); render(); return; }
+    // weighed on a card that was replaced: it is on this card's spot now
+    if (holdOf(sample(w.code), j.test) !== w.id) enqueue({ action: 'hold', code: w.code, key: j.test, holder: w.id, bal: balNo(), worker: S.worker });
     goTest(w.code, j.test); return;
   }
   const n = cardTodo(tray, skipped(tray));
@@ -489,7 +499,7 @@ function renderCard() {
   const k = j.test, i = hInfo(tray), r = cardRun(tray), ph = r && runPhase(r), todo = cardTodo(tray), sk = skipped(tray), w3 = (!todo || !cardTodo(tray, sk)) && cardW3(tray);
   const cell = pos => {
     const code = j.codes[pos - 1]; if (!code) return `<span class="bs off">${pos}</span>`;
-    const s = sample(code), st = s && s.tests[k], d = st ? st.done : 0, onIt = s && holdOf(s, k) === `${tray}-${pos}`;
+    const s = sample(code), st = s && s.tests[k], d = st ? st.done : 0, onIt = s && onSpot(s, k, `${tray}-${pos}`);
     const cls = d === 3 ? 'w3' : d === 2 && onIt ? 'full' : d < 2 && sk.includes(pos) ? 'skip' : d === 1 && onIt ? 'half' : '';
     return `<span class="bs code ${cls}${todo && todo.pos === pos && !r ? ' lit' : ''}"><i>${pos}</i><b>${esc(code)}</b>${d === 3 ? '<em>✓</em>' : cls === 'skip' ? '<em>↷</em>' : ''}</span>`;
   };

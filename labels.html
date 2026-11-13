@@ -364,6 +364,12 @@ async function printJobs() {
       // today's batch number (typed or next); the same number again today replaces that batch's cards
       const day = todayKey(), dn = +document.getElementById('jbatch').value || nextDayNo(f, bal, day);
       const same = batchesOf(f, bal).find(b => b.day === day && b.dn === dn);
+      // never replace a batch that is already being weighed: its spots would point at other samples
+      if (same) {
+        const busy = same.trays.some(tr => { const j = f.cards[tr]; return j.codes.some(c => c && !['W1 W2 W3', 'moved'].includes(spotState(f, c, j))); });
+        if (busy) { note = `batch ${dn} of today is already being weighed. Leave Today's batch empty to save a new batch`; break; }
+        if (!confirm(`W${bal} batch ${dn} of today is saved already (nothing weighed on it yet). Replace its cards?`)) { note = 'not replaced'; break; }
+      }
       const free = n => n && !allCards(f).some(j => +j.bal === bal && +j.batch === n);
       const batch = same ? same.serial : free(FILLED[bal]) ? FILLED[bal] : nextBatch(f, bal);
       f.cards = f.cards || {}; made = {};
@@ -380,7 +386,7 @@ async function printJobs() {
   document.getElementById('jobcards').innerHTML = Object.keys(made).map(tr => jobCard(tr, made[tr])).join('');
   const m0 = Object.values(made)[0];
   jmsg(`✓ W${bal} · ${dayName(m0.day)} · batch ${m0.dn} saved (${Object.keys(made).join(', ')}): the phones know them on their next sync.`);
-  FILLED[bal] = null;
+  FILLED[bal] = null; document.getElementById('jbatch').value = '';   // the next save is a new batch unless a number is typed again
   listOld();
   document.body.classList.add('onlyjobs'); window.print();
 }
