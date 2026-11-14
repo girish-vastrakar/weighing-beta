@@ -387,6 +387,24 @@ function oldBatches() {
 const live = () => S.batches.concat(appBatches(), oldBatches());
 const muted = b => b.app && MUTE[b.id] > Date.now();
 
+/* ---------- safe reads of big files (data.json is over 1 MB) ----------
+   Over 1 MB GitHub leaves "content" empty, so the file is read again by its sha (git blob: one fixed file, nothing a
+   cache can mix up). On 14 Nov 2026 a save read GitHub's file details instead of data.json and wrote them back,
+   wiping all samples: checkFile refuses anything that is not really the file, checkWrite refuses a save that
+   would drop many samples. */
+function checkFile(path, f) {
+  const bad = !f || typeof f !== 'object' || Array.isArray(f) || 'download_url' in f || 'git_url' in f || f.encoding === 'none' ||
+    (/(^|\/)data\.json$/.test(path) && (!f.samples || typeof f.samples !== 'object' || !Array.isArray(f.codes)));
+  if (bad) throw new Error(`${path} did not load properly. Nothing was saved, try again in a minute.`);
+  return f;
+}
+function checkWrite(path, before, after) {
+  checkFile(path, after);
+  if (!/(^|\/)data\.json$/.test(path) || !before || !before.samples) return;
+  const n0 = Object.keys(before.samples).length, n1 = Object.keys(after.samples).length;
+  if (n1 < n0 - 5 && n1 < n0 * 0.9) throw new Error(`Save stopped: it would remove ${n0 - n1} of ${n0} samples from ${path}. Nothing was saved.`);
+}
+
 /* ---------- supervisor changes to data.json (open a door early, cancel a load, heating times) ----------
    Read, change, write with the file's sha; another phone saving at the same moment makes GitHub refuse it, so read again. */
 async function dataEdit(change, what) {
@@ -397,8 +415,10 @@ async function dataEdit(change, what) {
       const r = await fetch(url + '?ref=' + GH.branch, { cache: 'no-store', headers: hdr });
       if (!r.ok) throw new Error('GitHub ' + r.status);
       const m = await r.json();
-      const f = m.content ? JSON.parse(b64d(m.content)) : await (await fetch(url + '?ref=' + GH.branch, { cache: 'no-store', headers: { ...hdr, Accept: 'application/vnd.github.raw+json' } })).json();
+      const f = checkFile(GH.data, m.content ? JSON.parse(b64d(m.content)) : await (await fetch(`https://api.github.com/repos/${GH.owner}/${GH.repo}/git/blobs/${m.sha}`, { cache: 'no-store', headers: { ...hdr, Accept: 'application/vnd.github.raw+json' } })).json());
+      const before = { samples: Object.assign({}, f.samples) };
       if (!change(f)) return false;
+      checkWrite(GH.data, before, f);
       const w = await fetch(url, { method: 'PUT', headers: { ...hdr, 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: `timer supervisor: ${what}`, branch: GH.branch, sha: m.sha, content: b64e(JSON.stringify(f, null, 1)) }) });
       if (w.ok) { S.file = f; DATATAG = ''; render(); return true; }
@@ -445,7 +465,7 @@ async function syncLog() {
       const r = await fetch(url + '?ref=' + GH.branch, { cache: 'no-store', headers: hdr });
       let file = { batches: {} }, sha;
       if (r.ok) { const m = await r.json(); sha = m.sha;
-        file = m.content ? JSON.parse(b64d(m.content)) : await (await fetch(url + '?ref=' + GH.branch, { cache: 'no-store', headers: { ...hdr, Accept: 'application/vnd.github.raw+json' } })).json(); }
+        file = checkFile(GH.log, m.content ? JSON.parse(b64d(m.content)) : await (await fetch(`https://api.github.com/repos/${GH.owner}/${GH.repo}/git/blobs/${m.sha}`, { cache: 'no-store', headers: { ...hdr, Accept: 'application/vnd.github.raw+json' } })).json()); }
       else if (r.status !== 404) throw new Error('GitHub ' + r.status);
       file.batches = file.batches || {};
       Object.values(batch).forEach(e => { file.batches[e.id] = mergeEntry(file.batches[e.id], e); });
