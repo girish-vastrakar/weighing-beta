@@ -288,6 +288,23 @@ function isoLocal(ms) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}${sign}${p(Math.floor(a / 60))}:${p(a % 60)}`;
 }
 const b64 = str => btoa(unescape(encodeURIComponent(str)));
+/* ---------- safe reads of big files (data.json is over 1 MB) ----------
+   Over 1 MB GitHub leaves "content" empty, so the file is read again by its sha (git blob: one fixed file, nothing a
+   cache can mix up). On 14 Nov 2026 a save read GitHub's file details instead of data.json and wrote them back,
+   wiping all samples: checkFile refuses anything that is not really the file, checkWrite refuses a save that
+   would drop many samples. */
+function checkFile(path, f) {
+  const bad = !f || typeof f !== 'object' || Array.isArray(f) || 'download_url' in f || 'git_url' in f || f.encoding === 'none' ||
+    (/(^|\/)data\.json$/.test(path) && (!f.samples || typeof f.samples !== 'object' || !Array.isArray(f.codes)));
+  if (bad) throw new Error(`${path} did not load properly. Nothing was saved, try again in a minute.`);
+  return f;
+}
+function checkWrite(path, before, after) {
+  checkFile(path, after);
+  if (!/(^|\/)data\.json$/.test(path) || !before || !before.samples) return;
+  const n0 = Object.keys(before.samples).length, n1 = Object.keys(after.samples).length;
+  if (n1 < n0 - 5 && n1 < n0 * 0.9) throw new Error(`Save stopped: it would remove ${n0 - n1} of ${n0} samples from ${path}. Nothing was saved.`);
+}
 const unb64 = str => decodeURIComponent(escape(atob(str.replace(/\n/g, ''))));
 async function setApproval(r, approve) {
   const msg = document.getElementById('apmsg'), by = document.getElementById('apby'), note = document.getElementById('apnote');
@@ -768,7 +785,7 @@ async function saveLimits() {
       const g = await fetch(url + '?ref=' + GH.branch, { cache: 'no-store', headers: H });
       if (!g.ok) throw new Error(g.status === 401 || g.status === 403 ? 'The key was not accepted.' : 'GitHub error ' + g.status);
       const meta = await g.json();
-      const f = meta.content ? JSON.parse(unb64(meta.content)) : await (await fetch(url + '?ref=' + GH.branch, { cache: 'no-store', headers: { ...H, Accept: 'application/vnd.github.raw+json' } })).json();
+      const f = checkFile('data.json', meta.content ? JSON.parse(unb64(meta.content)) : await (await fetch(`https://api.github.com/repos/${GH.owner}/${SRC.qr.repo}/git/blobs/${meta.sha}`, { cache: 'no-store', headers: { ...H, Accept: 'application/vnd.github.raw+json' } })).json());
       f.settings = f.settings || {}; f.settings.limits = Object.assign({}, f.settings.limits, lim);
       const put = await fetch(url, { method: 'PUT', headers: H, body: JSON.stringify({ message: 'settings: result limits (results page)', branch: GH.branch, sha: meta.sha, content: b64(JSON.stringify(f, null, 1)) }) });
       if (put.ok) { SD.qr.settings = f.settings; break; }
@@ -1131,9 +1148,11 @@ async function ghEdit(path, change, message) {
     if (g.status === 401 || g.status === 403) throw new Error('The key was not accepted.');
     let f = null, sha = null;
     if (g.ok) { const meta = await g.json(); sha = meta.sha;
-      f = meta.content ? JSON.parse(unb64(meta.content)) : await (await fetch(url + '?ref=' + GH.branch, { cache: 'no-store', headers: { ...H, Accept: 'application/vnd.github.raw+json' } })).json(); }
+      f = checkFile(path, meta.content ? JSON.parse(unb64(meta.content)) : await (await fetch(`https://api.github.com/repos/${GH.owner}/${SRC.qr.repo}/git/blobs/${meta.sha}`, { cache: 'no-store', headers: { ...H, Accept: 'application/vnd.github.raw+json' } })).json()); }
     else if (g.status !== 404) throw new Error('GitHub error ' + g.status);
+    const before = f && f.samples ? { samples: Object.assign({}, f.samples) } : null;
     f = change(f);
+    if (f) checkWrite(path, before, f);
     if (!f) return null;
     const put = await fetch(url, { method: 'PUT', headers: H, body: JSON.stringify({ message, branch: GH.branch, content: b64(JSON.stringify(f, null, 1)), ...(sha ? { sha } : {}) }) });
     if (put.ok) return f;
